@@ -1,2 +1,2 @@
 # murailobot
-Useless bot for useless telegram channels
+Useless bot for useless telegram channel
