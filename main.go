@@ -25,9 +25,9 @@ func sendMessagePiu(bot *tgbotapi.BotAPI, update tgbotapi.Update, db *sqlx.DB) {
 		}
 	}
 
-	for i := 0; i <= rand.Intn(4-3)+3; i++ {
+	for i := 0; i <= randomIntRange(3, 4); i++ {
 		var piu string
-		for x := 0; x <= rand.Intn(4-1)+1; x++ {
+		for x := 0; x <= randomIntRange(1, 4); x++ {
 			piu += "piu "
 		}
 		sendMessage(bot, update, piu)
@@ -75,6 +75,10 @@ func processMessage(bot *tgbotapi.BotAPI, update tgbotapi.Update, db *sqlx.DB) {
 	}
 
 	sendMessage(bot, update, "Mensagem adicionada ao banco de dados!")
+}
+
+func randomIntRange(min int, max int) int {
+	return rand.Intn(max-min+1) + min
 }
 
 func main() {
