@@ -13,7 +13,19 @@ import (
 	"github.com/tkanos/gonfig"
 )
 
+var userList []User
+
 func sendMessagePiu(bot *tgbotapi.BotAPI, update tgbotapi.Update, db *sqlx.DB) {
+
+	for i := range(userList) {
+		if userList[i].UserID == update.Message.From.ID {
+			if time.Since(userList[i].Timestamp).Minutes() <= 5 {
+				return
+			}
+		}
+    }
+	userList = append(userList, User{update.Message.From.ID, time.Now()})
+
 	var msgRef MessageReference
 	err := db.Get(&msgRef, "SELECT message_id, chat_id FROM messages ORDER BY RANDOM() LIMIT 1")
 	if err != nil {
@@ -25,14 +37,14 @@ func sendMessagePiu(bot *tgbotapi.BotAPI, update tgbotapi.Update, db *sqlx.DB) {
 		}
 	}
 
-	for i := 0; i <= randomIntRange(3, 4); i++ {
-		var piu string
-		for x := 0; x <= randomIntRange(1, 4); x++ {
-			piu += "piu "
-		}
-		sendMessage(bot, update, piu)
-		time.Sleep(time.Duration(rand.Intn(3)) * time.Second)
-	}
+	// for i := 0; i <= randomIntRange(1, 3); i++ {
+	// 	var piu string
+	// 	for x := 0; x <= randomIntRange(1, 4); x++ {
+	// 		piu += "piu "
+	// 	}
+	// 	sendMessage(bot, update, piu)
+	// 	time.Sleep(time.Duration(rand.Intn(3)) * time.Second)
+	// }
 
 	sendForward(bot, update, msgRef.ChatID, msgRef.MessageID)
 }
@@ -77,9 +89,9 @@ func processMessage(bot *tgbotapi.BotAPI, update tgbotapi.Update, db *sqlx.DB) {
 	sendMessage(bot, update, "Mensagem adicionada ao banco de dados!")
 }
 
-func randomIntRange(min int, max int) int {
-	return rand.Intn(max-min+1) + min
-}
+// func randomIntRange(min int, max int) int {
+// 	return rand.Intn(max-min+1) + min
+// }
 
 func main() {
 	config := Configuration{}
@@ -129,8 +141,6 @@ func main() {
 			sendMessagePiu(bot, update, db)
 		case "start":
 			sendMessage(bot, update, "Olar! Me faça forward de uma mensagem para guardar.")
-		default:
-			sendMessage(bot, update, "Desculpa, não conheco esse commando.")
 		}
 	}
 }

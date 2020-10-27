@@ -1,4 +1,4 @@
-ACCOUNT := docker.home.edgard.org
+ACCOUNT := registry.home.edgard.org
 SERVICE := murailobot
 IMAGE := $(ACCOUNT)/$(SERVICE)
 
