@@ -8,6 +8,7 @@ type Configuration struct {
 }
 
 type MessageReference struct {
+	ID        int   `db:"id"`
 	MessageID int   `db:"message_id"`
 	ChatID    int64 `db:"chat_id"`
 }

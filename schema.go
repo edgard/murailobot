@@ -2,6 +2,8 @@ package main
 
 var schema = `
 CREATE TABLE IF NOT EXISTS messages (
-    message_id integer PRIMARY KEY,
-    chat_id integer
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    message_id INTEGER,
+    chat_id INTEGER,
+    last_used INTEGER
 );`

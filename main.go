@@ -27,7 +27,7 @@ func sendMessagePiu(bot *tgbotapi.BotAPI, update tgbotapi.Update, db *sqlx.DB) {
 	userList = append(userList, User{update.Message.From.ID, time.Now()})
 
 	var msgRef MessageReference
-	err := db.Get(&msgRef, "SELECT message_id, chat_id FROM messages ORDER BY RANDOM() LIMIT 1")
+	err := db.Get(&msgRef, "SELECT id, message_id, chat_id FROM messages WHERE id IN (SELECT id FROM messages ORDER BY last_used ASC LIMIT 3) ORDER BY RANDOM() LIMIT 1")
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			log.Println("No results found, database empty?")
@@ -35,6 +35,11 @@ func sendMessagePiu(bot *tgbotapi.BotAPI, update tgbotapi.Update, db *sqlx.DB) {
 		} else {
 			log.Panic(err)
 		}
+	}
+
+	_, err = db.Exec("UPDATE messages SET last_used=$1 WHERE id=$2", time.Now(), msgRef.ID)
+	if err != nil {
+		log.Println(err)
 	}
 
 	// for i := 0; i <= randomIntRange(1, 3); i++ {
@@ -74,7 +79,7 @@ func processMessage(bot *tgbotapi.BotAPI, update tgbotapi.Update, db *sqlx.DB) {
 		log.Println(err)
 		return
 	}
-	_, err = tx.Exec("INSERT INTO messages (message_id, chat_id) VALUES ($1, $2)", update.Message.MessageID, update.Message.Chat.ID)
+	_, err = tx.Exec("INSERT INTO messages (message_id, chat_id, last_used) VALUES ($1, $2, $3)", update.Message.MessageID, update.Message.Chat.ID, time.Now())
 	if err != nil {
 		tx.Rollback()
 		log.Println(err)
@@ -110,7 +115,7 @@ func main() {
 	if err != nil {
 		log.Panic(err)
 	}
-	bot.Debug = true
+	bot.Debug = false
 
 	log.Printf("Authorized on account %s", bot.Self.UserName)
 
