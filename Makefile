@@ -1,4 +1,4 @@
-ACCOUNT := registry.home.edgard.org
+ACCOUNT := ghcr.io/edgard
 SERVICE := murailobot
 IMAGE := $(ACCOUNT)/$(SERVICE)
 

@@ -1,19 +1,28 @@
 package main
 
-import "time"
+import (
+	"time"
 
-type Configuration struct {
-	Token string
-	DB    string
-}
+	"gorm.io/gorm"
+)
 
-type MessageReference struct {
-	ID        int   `db:"id"`
-	MessageID int   `db:"message_id"`
-	ChatID    int64 `db:"chat_id"`
+type MessageRef struct {
+	gorm.Model
+	MessageID int
+	ChatID    int64
+	LastUsed  time.Time
 }
 
 type User struct {
-	UserID	int
-	Timestamp time.Time
+	gorm.Model
+	UserID   int
+	LastUsed time.Time
+}
+
+type Config struct {
+	AuthToken     string  `mapstructure:"auth_token"`
+	UpdateTimeout int     `mapstructure:"update_timeout"`
+	UserTimeout   float64 `mapstructure:"user_timeout"`
+	TelegramDebug bool    `mapstructure:"telegram_debug"`
+	DBName        string  `mapstructure:"db_name"`
 }

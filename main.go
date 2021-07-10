@@ -1,134 +1,157 @@
 package main
 
 import (
-	"database/sql"
 	"errors"
-	"log"
-	"math/rand"
 	"time"
 
+	"github.com/spf13/viper"
+	"gorm.io/driver/sqlite"
+	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
+
+	log "github.com/sirupsen/logrus"
+
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api"
-	"github.com/jmoiron/sqlx"
-	_ "github.com/mattn/go-sqlite3"
-	"github.com/tkanos/gonfig"
 )
 
-var userList []User
+var config Config
 
-func sendMessagePiu(bot *tgbotapi.BotAPI, update tgbotapi.Update, db *sqlx.DB) {
-
-	for i := range(userList) {
-		if userList[i].UserID == update.Message.From.ID {
-			if time.Since(userList[i].Timestamp).Minutes() <= 5 {
-				return
+func sendMessagePiu(db *gorm.DB, bot *tgbotapi.BotAPI, update tgbotapi.Update) {
+	var user User
+	if err := db.Where("user_id = ?", update.Message.From.ID).First(&user).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			log.WithFields(log.Fields{
+				"user_id":  update.Message.From.ID,
+				"username": update.Message.From.UserName,
+			}).Info("User not found, creating new user")
+			user = User{UserID: update.Message.From.ID, LastUsed: time.Now().Add(-time.Minute * time.Duration(config.UserTimeout+1))}
+			if err := db.Create(&user).Error; err != nil {
+				log.WithError(err).Info("Error creating new user")
 			}
-		}
-    }
-	userList = append(userList, User{update.Message.From.ID, time.Now()})
-
-	var msgRef MessageReference
-	err := db.Get(&msgRef, "SELECT id, message_id, chat_id FROM messages WHERE id IN (SELECT id FROM messages ORDER BY last_used ASC LIMIT 3) ORDER BY RANDOM() LIMIT 1")
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			log.Println("No results found, database empty?")
-			return
 		} else {
-			log.Panic(err)
+			log.WithError(err).Info("Error querying for user")
+			return
 		}
 	}
 
-	_, err = db.Exec("UPDATE messages SET last_used=$1 WHERE id=$2", time.Now(), msgRef.ID)
-	if err != nil {
-		log.Println(err)
+	if time.Since(user.LastUsed).Minutes() <= config.UserTimeout {
+		log.WithFields(log.Fields{
+			"user_id":   user.UserID,
+			"username":  update.Message.From.UserName,
+			"last_used": int(time.Since(user.LastUsed).Minutes()),
+		}).Info("User on timeout")
+		return
 	}
 
-	// for i := 0; i <= randomIntRange(1, 3); i++ {
-	// 	var piu string
-	// 	for x := 0; x <= randomIntRange(1, 4); x++ {
-	// 		piu += "piu "
-	// 	}
-	// 	sendMessage(bot, update, piu)
-	// 	time.Sleep(time.Duration(rand.Intn(3)) * time.Second)
-	// }
+	user.LastUsed = time.Now()
+	if err := db.Save(&user).Error; err != nil {
+		log.WithError(err).Info("Error updating user last_updated timestamp")
+	}
 
+	var msgRef MessageRef
+	result := db.Where("id IN (?)", db.Order("last_used ASC").Limit(5).Select("id").Table("message_refs")).Order("RANDOM()").Take(&msgRef)
+	if result.Error != nil {
+		log.WithError(result.Error).Info("Failed getting message reference")
+		return
+	}
+
+	msgRef.LastUsed = time.Now()
+	if err := db.Save(&msgRef).Error; err != nil {
+		log.WithError(err).Info("Error updating message reference last_updated timestamp")
+	}
+
+	log.WithFields(log.Fields{
+		"msgref_chatid":   msgRef.ChatID,
+		"msgref_id":       msgRef.MessageID,
+		"update_user_id":  update.Message.From.ID,
+		"update_username": update.Message.From.UserName,
+	}).Info("Sending forward")
 	sendForward(bot, update, msgRef.ChatID, msgRef.MessageID)
 }
 
 func sendMessage(bot *tgbotapi.BotAPI, update tgbotapi.Update, text string) {
 	msg := tgbotapi.NewMessage(update.Message.Chat.ID, text)
 	if _, err := bot.Send(msg); err != nil {
-		log.Println(err)
+		log.WithError(err).Warn("Failed to send message")
 	}
 }
 
 func sendForward(bot *tgbotapi.BotAPI, update tgbotapi.Update, forwardChatID int64, forwardMessageID int) {
 	msg := tgbotapi.NewForward(update.Message.Chat.ID, forwardChatID, forwardMessageID)
 	if _, err := bot.Send(msg); err != nil {
-		log.Println(err)
+		log.WithError(err).Warn("Failed to send forward")
 	}
 }
 
-func processMessage(bot *tgbotapi.BotAPI, update tgbotapi.Update, db *sqlx.DB) {
+func processMessage(db *gorm.DB, bot *tgbotapi.BotAPI, update tgbotapi.Update) {
 	if update.Message.ForwardDate == 0 {
-		log.Println("Not a forward, ignoring")
+		log.WithField("update_id", update.UpdateID).Info("Ignoring non-forward update")
 		return
 	}
 
-	tx, err := db.Begin()
-	if err != nil {
-		log.Println(err)
-		return
-	}
-	_, err = tx.Exec("INSERT INTO messages (message_id, chat_id, last_used) VALUES ($1, $2, $3)", update.Message.MessageID, update.Message.Chat.ID, time.Now())
-	if err != nil {
-		tx.Rollback()
-		log.Println(err)
-		return
-	}
-	err = tx.Commit()
-	if err != nil {
-		log.Println(err)
+	msgRef := MessageRef{MessageID: update.Message.MessageID, ChatID: update.Message.Chat.ID, LastUsed: time.Now()}
+	if err := db.Create(&msgRef).Error; err != nil {
+		log.WithError(err).Info("Error creating new message reference")
 		return
 	}
 
+	log.WithField("id", msgRef.ID).Info("New message reference created")
 	sendMessage(bot, update, "Mensagem adicionada ao banco de dados!")
 }
 
-// func randomIntRange(min int, max int) int {
-// 	return rand.Intn(max-min+1) + min
-// }
-
 func main() {
-	config := Configuration{}
-	err := gonfig.GetConf("config.json", &config)
-	if err != nil {
-		log.Panic(err)
+	// init config
+	viper.SetConfigName("config")
+	viper.SetConfigType("yml")
+	viper.AddConfigPath(".")
+	viper.AutomaticEnv()
+
+	if err := viper.ReadInConfig(); err != nil {
+		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
+			log.WithError(err).Fatal("Error reading config file")
+		}
 	}
 
-	db, err := sqlx.Connect("sqlite3", config.DB)
-	if err != nil {
-		log.Panic(err)
+	// defaults
+	viper.SetDefault("update_timeout", 60)
+	viper.SetDefault("user_timeout", 5)
+	viper.SetDefault("telegram_debug", false)
+	viper.SetDefault("db_name", "storage.db")
+
+	if err := viper.Unmarshal(&config); err != nil {
+		log.WithError(err).Fatal("Unable to decode config file")
 	}
-	db.MustExec(schema)
 
-	bot, err := tgbotapi.NewBotAPI(config.Token)
+	// init db
+	db, err := gorm.Open(sqlite.Open(config.DBName), &gorm.Config{
+		Logger: logger.Default.LogMode(logger.Silent),
+	})
 	if err != nil {
-		log.Panic(err)
+		log.WithError(err).Fatal("Failed to connect to database")
 	}
-	bot.Debug = false
 
-	log.Printf("Authorized on account %s", bot.Self.UserName)
+	// migrate the schema
+	if err := db.AutoMigrate(&MessageRef{}, &User{}); err != nil {
+		log.WithError(err).Fatal("Database auto migration failed")
+	}
 
-	// initialize random seed
-	rand.Seed(time.Now().UnixNano())
+	// start bot
+	log.Info("Logging in to Telegram")
+	bot, err := tgbotapi.NewBotAPI(config.AuthToken)
+	if err != nil {
+		log.WithError(err).Fatal("Error logging in to Telegram")
+	}
+	bot.Debug = config.TelegramDebug
+
+	log.WithField("username", bot.Self.UserName).Info("Logged in to Telegram")
 
 	// messages loop
 	u := tgbotapi.NewUpdate(0)
-	u.Timeout = 60
+	u.Timeout = config.UpdateTimeout
 
 	updates, err := bot.GetUpdatesChan(u)
 	if err != nil {
-		log.Println(err)
+		log.WithError(err).Warn("Failed to get updates")
 	}
 
 	for update := range updates {
@@ -137,15 +160,15 @@ func main() {
 		}
 
 		if !update.Message.IsCommand() {
-			processMessage(bot, update, db)
+			processMessage(db, bot, update)
 			continue
 		}
 
 		switch update.Message.Command() {
 		case "piu":
-			sendMessagePiu(bot, update, db)
+			sendMessagePiu(db, bot, update)
 		case "start":
-			sendMessage(bot, update, "Olar! Me faça forward de uma mensagem para guardar.")
+			sendMessage(bot, update, "Ola! Me faça forward de uma mensagem para guardar.")
 		}
 	}
 }
