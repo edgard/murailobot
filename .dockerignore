@@ -1,4 +1,5 @@
 .git
 murailobot
-config.yml
+start.sh
+start.sh.example
 storage.db

@@ -2,27 +2,37 @@ package main
 
 import (
 	"time"
-
-	"gorm.io/gorm"
 )
 
+var db_schema = `
+CREATE TABLE IF NOT EXISTS message_ref (
+    id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    message_id INTEGER NOT NULL,
+    chat_id INTEGER NOT NULL,
+    last_used DATETIME
+);
+
+CREATE TABLE IF NOT EXISTS user (
+    user_id INTEGER NOT NULL PRIMARY KEY,
+    last_used DATETIME
+)`
+
 type MessageRef struct {
-	gorm.Model
-	MessageID int
-	ChatID    int64
-	LastUsed  time.Time
+	ID        int       `db:"id"`
+	MessageID int       `db:"message_id"`
+	ChatID    int64     `db:"chat_id"`
+	LastUsed  time.Time `db:"last_used"`
 }
 
 type User struct {
-	gorm.Model
-	UserID   int
-	LastUsed time.Time
+	UserID   int       `db:"user_id"`
+	LastUsed time.Time `db:"last_used"`
 }
 
 type Config struct {
-	AuthToken     string  `mapstructure:"auth_token"`
-	UpdateTimeout int     `mapstructure:"update_timeout"`
-	UserTimeout   float64 `mapstructure:"user_timeout"`
-	TelegramDebug bool    `mapstructure:"telegram_debug"`
-	DBName        string  `mapstructure:"db_name"`
+	AuthToken     string  `envconfig:"auth_token" required:"true"`
+	UpdateTimeout int     `envconfig:"update_timeout" default:"60"`
+	UserTimeout   float64 `envconfig:"user_timeout" default:"5"`
+	TelegramDebug bool    `envconfig:"telegram_debug" default:"false"`
+	DBName        string  `envconfig:"db_name" default:"storage.db"`
 }

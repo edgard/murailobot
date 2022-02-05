@@ -1,3 +1,3 @@
 murailobot
-config.yml
-*.db
+start.sh
+storage.db

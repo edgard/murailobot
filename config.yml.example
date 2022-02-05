@@ -1,5 +1,0 @@
-auth_token: xyz
-#update_timeout: 60
-#user_timeout: 5
-#telegram_debug: false
-#db_name: storage.db

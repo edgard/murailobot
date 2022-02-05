@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+
+export MURAILOBOT_AUTH_TOKEN=xyz
+#export MURAILOBOT_UPDATE_TIMEOUT=60
+#export MURAILOBOT_USER_TIMEOUT=5
+#export MURAILOBOT_TELEGRAM_DEBUG=false
+#export MURAILOBOT_DB_NAME=storage.db
+./murailobot
