@@ -118,7 +118,7 @@ func init() {
 	}
 
 	// exec the db schema
-	if _, err := db.Exec(db_schema); err != nil {
+	if _, err := db.Exec(dbSchema); err != nil {
 		log.Fatal().Err(err).Msg("Error executing database schema")
 	}
 
