@@ -111,7 +111,7 @@ func processMessage(update tgbotapi.Update) {
 }
 
 func sendMessageGPT(update tgbotapi.Update) {
-	message := strings.TrimSpace(strings.TrimPrefix(update.Message.Text, "/alo"))
+	message := strings.TrimSpace(strings.TrimPrefix(update.Message.Text, "/mrl"))
 
 	log.Info().
 		Int("user_id", update.Message.From.ID).
@@ -238,7 +238,7 @@ func main() {
 			sendMessagePiu(update)
 		case "start":
 			sendMessage(update, "Ola! Me encaminhe uma mensagem para guardar.")
-		case "alo":
+		case "mrl":
 			sendMessageGPT(update)
 		}
 	}
