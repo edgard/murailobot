@@ -123,7 +123,7 @@ func sendMessageGPT(update tgbotapi.Update) {
 	reqBody, err := json.Marshal(map[string]interface{}{
 		"model": "gpt-4o",
 		"messages": []map[string]string{
-			{"role": "system", "content": "You are MurailoGPT, an AI assistant that provides sarcastic, funny and very hostile responses. All answers should be a max of one line and your responses should be in Brazilian Portuguese."},
+			{"role": "system", "content": config.OpenAIInstruction},
 			{"role": "user", "content": message},
 		},
 	})
