@@ -1,7 +1,13 @@
 package main
 
 import (
+	"bytes"
 	"database/sql"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"strings"
 	"time"
 
 	"github.com/jmoiron/sqlx"
@@ -104,6 +110,80 @@ func processMessage(update tgbotapi.Update) {
 	sendMessage(update, "Mensagem adicionada ao banco de dados!")
 }
 
+func sendMessageGPT(update tgbotapi.Update) {
+	message := strings.TrimSpace(strings.TrimPrefix(update.Message.Text, "/alo"))
+
+	log.Info().
+		Int("user_id", update.Message.From.ID).
+		Str("username", update.Message.From.UserName).
+		Int("update_id", update.UpdateID).Msg(fmt.Sprintf("Received MPT request: %s", message))
+
+	url := "https://api.openai.com/v1/chat/completions"
+
+	reqBody, err := json.Marshal(map[string]interface{}{
+		"model": "gpt-4o",
+		"messages": []map[string]string{
+			{"role": "system", "content": "You are MurailoGPT, an AI assistant that provides sarcastic, funny and very hostile responses. All answers should be a max of one line and your responses should be in Brazilian Portuguese."},
+			{"role": "user", "content": message},
+		},
+	})
+	if err != nil {
+		sendMessage(update, "Ignorei")
+		log.Error().Err(err).Msg("Unable to marshall request")
+		return
+	}
+
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(reqBody))
+	if err != nil {
+		sendMessage(update, "Ignorei")
+		log.Error().Err(err).Msg("Unable to create request")
+		return
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", config.OpenAIToken))
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		sendMessage(update, "Ignorei")
+		log.Error().Err(err).Msg("Unable to get reponse")
+		return
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		sendMessage(update, "Ignorei")
+		log.Error().Err(err).Msg("Unable to read response")
+		return
+	}
+
+	var response map[string]interface{}
+	err = json.Unmarshal(body, &response)
+	if err != nil {
+		sendMessage(update, "Ignorei")
+		log.Error().Err(err).Msg("Unable to unmarshall response")
+		return
+	}
+
+	if choices, ok := response["choices"].([]interface{}); ok {
+		if len(choices) > 0 {
+			if choice, ok := choices[0].(map[string]interface{}); ok {
+				if message, ok := choice["message"].(map[string]interface{}); ok {
+					if content, ok := message["content"].(string); ok {
+						sendMessage(update, content)
+						return
+					}
+				}
+			}
+		}
+	}
+
+	sendMessage(update, "Ignorei")
+	log.Error().Err(err).Msg("Unexpected msg format")
+}
+
 func init() {
 	// init config
 	err := envconfig.Process("murailobot", &config)
@@ -158,6 +238,8 @@ func main() {
 			sendMessagePiu(update)
 		case "start":
 			sendMessage(update, "Ola! Me encaminhe uma mensagem para guardar.")
+		case "alo":
+			sendMessageGPT(update)
 		}
 	}
 }

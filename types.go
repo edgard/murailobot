@@ -22,4 +22,5 @@ type Config struct {
 	UserTimeout   float64 `envconfig:"user_timeout" default:"5"`
 	TelegramDebug bool    `envconfig:"telegram_debug" default:"false"`
 	DBName        string  `envconfig:"db_name" default:"storage.db"`
+	OpenAIToken   string  `envconfig:"openai_token" required:"true"`
 }
