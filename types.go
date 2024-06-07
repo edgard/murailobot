@@ -16,6 +16,14 @@ type User struct {
 	LastUsed time.Time `db:"last_used"`
 }
 
+type Hist struct {
+	ID       int       `db:"id"`
+	UserName string    `db:"user_name"`
+	UserMsg  string    `db:"user_msg"`
+	BotMsg   string    `db:"bot_msg"`
+	LastUsed time.Time `db:"last_used"`
+}
+
 type Config struct {
 	AuthToken         string  `envconfig:"auth_token" required:"true"`
 	UpdateTimeout     int     `envconfig:"update_timeout" default:"60"`

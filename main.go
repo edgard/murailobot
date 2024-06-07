@@ -116,27 +116,41 @@ func sendMessageGPT(update tgbotapi.Update) {
 	log.Info().
 		Int("user_id", update.Message.From.ID).
 		Str("username", update.Message.From.UserName).
-		Int("update_id", update.UpdateID).Msg(fmt.Sprintf("Received MPT request: %s", message))
+		Int("update_id", update.UpdateID).Msg(fmt.Sprintf("Received GPT request: %s", message))
+
+	// Fetch GPT history
+	gptHist := []Hist{}
+	if err := db.Select(&gptHist, "SELECT * FROM gpt_hist ORDER BY last_used DESC LIMIT 10"); err != nil {
+		log.Error().Err(err).Msg("Error getting GPT history")
+		sendMessage(update, "Ignorei")
+		return
+	}
 
 	url := "https://api.openai.com/v1/chat/completions"
+
+	var gptReq strings.Builder
+	gptReq.WriteString(config.OpenAIInstruction)
+	gptReq.WriteString("\n\nFor context to be used on the reply if needed, the last user requests and your replies are below, formatted as |Username|User Req|MurailoGPT (You) Reply|Timestamp|\n\n")
+	for _, hist := range gptHist {
+		gptReq.WriteString(fmt.Sprintf("|%s|%s|%s|%s|\n", hist.UserName, hist.UserMsg, hist.BotMsg, hist.LastUsed.Format("2006-01-02T15:04:05-0700")))
+	}
 
 	reqBody, err := json.Marshal(map[string]interface{}{
 		"model": "gpt-4o",
 		"messages": []map[string]string{
-			{"role": "system", "content": config.OpenAIInstruction},
+			{"role": "system", "content": gptReq.String()},
 			{"role": "user", "content": message},
 		},
 	})
+
 	if err != nil {
-		sendMessage(update, "Ignorei")
-		log.Error().Err(err).Msg("Unable to marshall request")
+		handleError(update, err, "Unable to marshall request")
 		return
 	}
 
 	req, err := http.NewRequest("POST", url, bytes.NewBuffer(reqBody))
 	if err != nil {
-		sendMessage(update, "Ignorei")
-		log.Error().Err(err).Msg("Unable to create request")
+		handleError(update, err, "Unable to create request")
 		return
 	}
 
@@ -146,42 +160,49 @@ func sendMessageGPT(update tgbotapi.Update) {
 	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
-		sendMessage(update, "Ignorei")
-		log.Error().Err(err).Msg("Unable to get reponse")
+		handleError(update, err, "Unable to get response")
 		return
 	}
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		sendMessage(update, "Ignorei")
-		log.Error().Err(err).Msg("Unable to read response")
+		handleError(update, err, "Unable to read response")
 		return
 	}
 
-	var response map[string]interface{}
+	var response struct {
+		Choices []struct {
+			Message struct {
+				Content string `json:"content"`
+			} `json:"message"`
+		} `json:"choices"`
+	}
+
 	err = json.Unmarshal(body, &response)
 	if err != nil {
-		sendMessage(update, "Ignorei")
-		log.Error().Err(err).Msg("Unable to unmarshall response")
+		handleError(update, err, "Unable to unmarshal response")
 		return
 	}
 
-	if choices, ok := response["choices"].([]interface{}); ok {
-		if len(choices) > 0 {
-			if choice, ok := choices[0].(map[string]interface{}); ok {
-				if message, ok := choice["message"].(map[string]interface{}); ok {
-					if content, ok := message["content"].(string); ok {
-						sendMessage(update, content)
-						return
-					}
-				}
-			}
+	if len(response.Choices) > 0 {
+		content := response.Choices[0].Message.Content
+		sendMessage(update, content)
+		histRef := Hist{UserName: update.Message.From.UserName, UserMsg: message, BotMsg: content, LastUsed: time.Now()}
+		if _, err := db.NamedExec("INSERT INTO gpt_hist (user_name, user_msg, bot_msg, last_used) VALUES (:user_name, :user_msg, :bot_msg, :last_used)", histRef); err != nil {
+			log.Error().Err(err).Msg("Error creating history reference")
+		} else {
+			log.Info().Str("user_name", histRef.UserName).Str("user_msg", histRef.UserMsg).Msg("History reference created")
 		}
+		return
 	}
 
+	handleError(update, fmt.Errorf("unexpected msg format"), "Unexpected msg format")
+}
+
+func handleError(update tgbotapi.Update, err error, msg string) {
 	sendMessage(update, "Ignorei")
-	log.Error().Err(err).Msg("Unexpected msg format")
+	log.Error().Err(err).Msg(msg)
 }
 
 func init() {
