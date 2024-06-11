@@ -127,31 +127,29 @@ func handleMrlRequest(b *gotgbot.Bot, ctx *ext.Context) error {
 
 	url := "https://api.openai.com/v1/chat/completions"
 
-	var gptRequest strings.Builder
-	gptRequest.WriteString(appConfig.OpenAIInstruction)
-	gptRequest.WriteString(fmt.Sprintf("\n\n---\n\nFor context to be used on the response if needed:\n- The user that sent this message was: %s\n- The last requests and your responses are below, formatted as JSON:\n", ctx.EffectiveMessage.From.Username))
+	messages := []map[string]string{
+		{"role": "system", "content": appConfig.OpenAIInstruction},
+	}
 
-	var jsonObjects []map[string]interface{}
 	for _, history := range gptHistory {
-		jsonObjects = append(jsonObjects, map[string]interface{}{
-			"username":     history.UserName,
-			"user_message": history.UserMsg,
-			"bot_response": history.BotMsg,
-			"timestamp":    history.LastUsed.Format("2006-01-02T15:04:05-0700"),
+		if history.UserName == "" {
+			history.UserName = "Unknown User"
+		}
+		messages = append(messages, map[string]string{
+			"role": "user", "content": fmt.Sprintf("%s: %s", history.UserName, history.UserMsg),
+		})
+		messages = append(messages, map[string]string{
+			"role": "assistant", "content": history.BotMsg,
 		})
 	}
-	jsonData, err := json.Marshal(jsonObjects)
-	if err != nil {
-		return err
-	}
-	gptRequest.WriteString(string(jsonData))
+
+	messages = append(messages, map[string]string{
+		"role": "user", "content": fmt.Sprintf("%s: %s", ctx.EffectiveMessage.From.Username, message),
+	})
 
 	reqBody, err := json.Marshal(map[string]interface{}{
-		"model": "gpt-4o",
-		"messages": []map[string]string{
-			{"role": "system", "content": gptRequest.String()},
-			{"role": "user", "content": message},
-		},
+		"model":    "gpt-4o",
+		"messages": messages,
 	})
 	if err != nil {
 		return err
