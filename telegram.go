@@ -129,10 +129,24 @@ func handleMrlRequest(b *gotgbot.Bot, ctx *ext.Context) error {
 
 	var gptRequest strings.Builder
 	gptRequest.WriteString(appConfig.OpenAIInstruction)
-	gptRequest.WriteString("\n\nFor context to be used on the response if needed, the last requests and your responses are below, formatted as |User|User Request|MurailoGPT (You) Response|Timestamp|\n\n")
+	gptRequest.WriteString(fmt.Sprintf("\n\n---\n\nFor context to be used on the response if needed:\n- The user that sent this message was: %s\n- The last requests and your responses are below, formatted in JSON:\n", ctx.EffectiveMessage.From.Username))
+
+	var jsonObjects []map[string]interface{}
 	for _, history := range gptHistory {
-		gptRequest.WriteString(fmt.Sprintf("|%s|%s|%s|%s|\n", history.UserName, history.UserMsg, history.BotMsg, history.LastUsed.Format("2006-01-02T15:04:05-0700")))
+		jsonObjects = append(jsonObjects, map[string]interface{}{
+			"username":     history.UserName,
+			"user_message": history.UserMsg,
+			"bot_response": history.BotMsg,
+			"timestamp":    history.LastUsed.Format("2006-01-02T15:04:05-0700"),
+		})
 	}
+	jsonData, err := json.Marshal(jsonObjects)
+	if err != nil {
+		return err
+	}
+	gptRequest.WriteString(string(jsonData))
+
+	fmt.Println(gptRequest.String())
 
 	reqBody, err := json.Marshal(map[string]interface{}{
 		"model": "gpt-4o",
