@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 
@@ -131,12 +132,16 @@ func handleMrlRequest(b *gotgbot.Bot, ctx *ext.Context) error {
 		{"role": "system", "content": appConfig.OpenAIInstruction},
 	}
 
+	sort.Slice(gptHistory, func(i, j int) bool {
+		return gptHistory[i].LastUsed.Before(gptHistory[j].LastUsed)
+	})
+
 	for _, history := range gptHistory {
 		if history.UserName == "" {
 			history.UserName = "Unknown User"
 		}
 		messages = append(messages, map[string]string{
-			"role": "user", "content": fmt.Sprintf("%s: %s", history.UserName, history.UserMsg),
+			"role": "user", "content": fmt.Sprintf("%s [%s]: %s", history.UserName, history.LastUsed.Format(time.RFC3339), history.UserMsg),
 		})
 		messages = append(messages, map[string]string{
 			"role": "assistant", "content": history.BotMsg,
