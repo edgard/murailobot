@@ -137,11 +137,12 @@ func handleMrlRequest(b *gotgbot.Bot, ctx *ext.Context) error {
 	})
 
 	for _, history := range gptHistory {
-		if history.UserName == "" {
-			history.UserName = "Unknown User"
+		userName := history.UserName
+		if userName == "" {
+			userName = "Unknown User"
 		}
 		messages = append(messages, map[string]string{
-			"role": "user", "content": fmt.Sprintf("%s [%s]: %s", history.UserName, history.LastUsed.Format(time.RFC3339), history.UserMsg),
+			"role": "user", "content": fmt.Sprintf("%s [%s]: %s", userName, history.LastUsed.Format(time.RFC3339), history.UserMsg),
 		})
 		messages = append(messages, map[string]string{
 			"role": "assistant", "content": history.BotMsg,
@@ -149,7 +150,7 @@ func handleMrlRequest(b *gotgbot.Bot, ctx *ext.Context) error {
 	}
 
 	messages = append(messages, map[string]string{
-		"role": "user", "content": fmt.Sprintf("%s: %s", ctx.EffectiveMessage.From.Username, message),
+		"role": "user", "content": fmt.Sprintf("%s [%s]: %s", ctx.EffectiveMessage.From.Username, time.Now().Format(time.RFC3339), message),
 	})
 
 	reqBody, err := json.Marshal(map[string]interface{}{
@@ -168,7 +169,7 @@ func handleMrlRequest(b *gotgbot.Bot, ctx *ext.Context) error {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", config.OpenAIToken))
 
-	var httpClient = &http.Client{}
+	httpClient := &http.Client{}
 	resp, err := httpClient.Do(req)
 	if err != nil {
 		return err
