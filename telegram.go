@@ -129,7 +129,7 @@ func handleMrlRequest(b *gotgbot.Bot, ctx *ext.Context) error {
 
 	var gptRequest strings.Builder
 	gptRequest.WriteString(appConfig.OpenAIInstruction)
-	gptRequest.WriteString(fmt.Sprintf("\n\n---\n\nFor context to be used on the response if needed:\n- The user that sent this message was: %s\n- The last requests and your responses are below, formatted in JSON:\n", ctx.EffectiveMessage.From.Username))
+	gptRequest.WriteString(fmt.Sprintf("\n\n---\n\nFor context to be used on the response if needed:\n- The user that sent this message was: %s\n- The last requests and your responses are below, formatted as JSON:\n", ctx.EffectiveMessage.From.Username))
 
 	var jsonObjects []map[string]interface{}
 	for _, history := range gptHistory {
@@ -145,8 +145,6 @@ func handleMrlRequest(b *gotgbot.Bot, ctx *ext.Context) error {
 		return err
 	}
 	gptRequest.WriteString(string(jsonData))
-
-	fmt.Println(gptRequest.String())
 
 	reqBody, err := json.Marshal(map[string]interface{}{
 		"model": "gpt-4o",
