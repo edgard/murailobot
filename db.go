@@ -26,6 +26,7 @@ type User struct {
 // ChatHistory represents chat history in the database
 type ChatHistory struct {
 	ID       uint      `db:"id"`
+	UserID   int64     `db:"user_id"`
 	UserName string    `db:"user_name"`
 	UserMsg  string    `db:"user_msg"`
 	BotMsg   string    `db:"bot_msg"`
@@ -60,6 +61,7 @@ func initDatabase() error {
 	);
 	CREATE TABLE IF NOT EXISTS chat_history (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		user_id INTEGER,
 		user_name TEXT,
 		user_msg TEXT,
 		bot_msg TEXT,
@@ -133,7 +135,7 @@ func getRecentChatHistory(limit int) ([]ChatHistory, error) {
 }
 
 func insertChatHistory(history *ChatHistory) error {
-	_, err := db.NamedExec("INSERT INTO chat_history (user_name, user_msg, bot_msg, last_used) VALUES (:user_name, :user_msg, :bot_msg, :last_used)", history)
+	_, err := db.NamedExec("INSERT INTO chat_history (user_id, user_name, user_msg, bot_msg, last_used) VALUES (:user_id, :user_name, :user_msg, :bot_msg, :last_used)", history)
 	return err
 }
 

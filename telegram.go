@@ -142,7 +142,7 @@ func handleMrlRequest(b *gotgbot.Bot, ctx *ext.Context) error {
 			userName = "Unknown User"
 		}
 		messages = append(messages, map[string]string{
-			"role": "user", "content": fmt.Sprintf("%s [%s]: %s", userName, history.LastUsed.Format(time.RFC3339), history.UserMsg),
+			"role": "user", "content": fmt.Sprintf("[UID: %d] %s [%s]: %s", history.UserID, userName, history.LastUsed.Format(time.RFC3339), history.UserMsg),
 		})
 		messages = append(messages, map[string]string{
 			"role": "assistant", "content": history.BotMsg,
@@ -150,16 +150,19 @@ func handleMrlRequest(b *gotgbot.Bot, ctx *ext.Context) error {
 	}
 
 	messages = append(messages, map[string]string{
-		"role": "user", "content": fmt.Sprintf("%s [%s]: %s", ctx.EffectiveMessage.From.Username, time.Now().Format(time.RFC3339), message),
+		"role": "user", "content": fmt.Sprintf("[UID: %d] %s [%s]: %s", ctx.EffectiveMessage.From.Id, ctx.EffectiveMessage.From.Username, time.Now().Format(time.RFC3339), message),
 	})
 
 	reqBody, err := json.Marshal(map[string]interface{}{
-		"model":    "gpt-4o",
-		"messages": messages,
+		"model":       "gpt-4o",
+		"messages":    messages,
+		"temperature": 0.2,
 	})
 	if err != nil {
 		return err
 	}
+
+	fmt.Println(string(reqBody))
 
 	req, err := http.NewRequest("POST", url, bytes.NewBuffer(reqBody))
 	if err != nil {
@@ -198,7 +201,7 @@ func handleMrlRequest(b *gotgbot.Bot, ctx *ext.Context) error {
 		if err := sendTelegramMessage(ctx, content); err != nil {
 			return err
 		}
-		historyRecord := ChatHistory{UserName: ctx.EffectiveMessage.From.Username, UserMsg: message, BotMsg: content, LastUsed: time.Now()}
+		historyRecord := ChatHistory{UserID: ctx.EffectiveMessage.From.Id, UserName: ctx.EffectiveMessage.From.Username, UserMsg: message, BotMsg: content, LastUsed: time.Now()}
 		if err := insertChatHistory(&historyRecord); err != nil {
 			return err
 		}
