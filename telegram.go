@@ -44,7 +44,7 @@ func startTelegramBot() {
 	dispatcher.AddHandler(handlers.NewMessage(message.Text, handleIncomingMessage))
 
 	err := updater.StartPolling(bot, &ext.PollingOpts{
-		DropPendingUpdates: true,
+		DropPendingUpdates: false,
 		GetUpdatesOpts: &gotgbot.GetUpdatesOpts{
 			Timeout: 9,
 			RequestOpts: &gotgbot.RequestOpts{
@@ -161,8 +161,6 @@ func handleMrlRequest(b *gotgbot.Bot, ctx *ext.Context) error {
 	if err != nil {
 		return err
 	}
-
-	fmt.Println(string(reqBody))
 
 	req, err := http.NewRequest("POST", url, bytes.NewBuffer(reqBody))
 	if err != nil {
