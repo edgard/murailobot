@@ -10,6 +10,7 @@ type Config struct {
 	OpenAIToken   string  `envconfig:"openai_token" required:"true"`
 	UserTimeout   float64 `envconfig:"user_timeout" default:"5"`
 	DBName        string  `envconfig:"db_name" default:"storage.db"`
+	AdminUID      int64   `envconfig:"admin_uid" required:"true"`
 }
 
 var config Config

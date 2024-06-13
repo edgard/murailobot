@@ -139,6 +139,11 @@ func insertChatHistory(history *ChatHistory) error {
 	return err
 }
 
+func resetChatHistory() error {
+	_, err := db.Exec("DELETE FROM chat_history")
+	return err
+}
+
 // App configuration-related functions
 func getAppConfig() (AppConfig, error) {
 	var appConfig AppConfig

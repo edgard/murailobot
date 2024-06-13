@@ -41,6 +41,7 @@ func startTelegramBot() {
 	dispatcher.AddHandler(handlers.NewCommand("start", handleStartRequest))
 	dispatcher.AddHandler(handlers.NewCommand("piu", handlePiuRequest))
 	dispatcher.AddHandler(handlers.NewCommand("mrl", handleMrlRequest))
+	dispatcher.AddHandler(handlers.NewCommand("mrl_reset", handleMrlResetRequest))
 	dispatcher.AddHandler(handlers.NewMessage(message.Text, handleIncomingMessage))
 
 	err := updater.StartPolling(bot, &ext.PollingOpts{
@@ -206,6 +207,20 @@ func handleMrlRequest(b *gotgbot.Bot, ctx *ext.Context) error {
 	}
 
 	return fmt.Errorf("unexpected message format")
+}
+
+func handleMrlResetRequest(b *gotgbot.Bot, ctx *ext.Context) error {
+	if ctx.EffectiveMessage.From.Id != config.AdminUID {
+		ctx.EffectiveMessage.Reply(b, "You are not authorized to use this command.", nil)
+		return nil
+	}
+
+	if err := resetChatHistory(); err != nil {
+		return err
+	}
+
+	_, err := ctx.EffectiveMessage.Reply(b, "All rows have been deleted successfully.", nil)
+	return err
 }
 
 func sendTelegramMessage(ctx *ext.Context, text string) error {
