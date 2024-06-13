@@ -109,7 +109,7 @@ func handlePiuRequest(b *gotgbot.Bot, ctx *ext.Context) error {
 }
 
 func handleMrlRequest(b *gotgbot.Bot, ctx *ext.Context) error {
-	logger.Info("Received GPT request", zap.Int64("user_id", ctx.EffectiveMessage.From.Id), zap.String("username", ctx.EffectiveMessage.From.Username), zap.Int64("update_id", ctx.Update.UpdateId))
+	logger.Info("Received MRL request", zap.Int64("user_id", ctx.EffectiveMessage.From.Id), zap.String("username", ctx.EffectiveMessage.From.Username), zap.Int64("update_id", ctx.Update.UpdateId))
 
 	if ctx.EffectiveMessage == nil {
 		return fmt.Errorf("ctx.EffectiveMessage is nil")
@@ -210,6 +210,12 @@ func handleMrlRequest(b *gotgbot.Bot, ctx *ext.Context) error {
 }
 
 func handleMrlResetRequest(b *gotgbot.Bot, ctx *ext.Context) error {
+	logger.Info("Received MRL_RESET request", zap.Int64("user_id", ctx.EffectiveMessage.From.Id), zap.String("username", ctx.EffectiveMessage.From.Username), zap.Int64("update_id", ctx.Update.UpdateId))
+
+	if ctx.EffectiveMessage == nil {
+		return fmt.Errorf("ctx.EffectiveMessage is nil")
+	}
+
 	if ctx.EffectiveMessage.From.Id != config.AdminUID {
 		ctx.EffectiveMessage.Reply(b, "You are not authorized to use this command.", nil)
 		return nil
