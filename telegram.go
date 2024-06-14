@@ -1,11 +1,7 @@
 package main
 
 import (
-	"bytes"
-	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"sort"
 	"strings"
 	"time"
@@ -42,6 +38,7 @@ func startTelegramBot() {
 	dispatcher.AddHandler(handlers.NewCommand("piu", handlePiuRequest))
 	dispatcher.AddHandler(handlers.NewCommand("mrl", handleMrlRequest))
 	dispatcher.AddHandler(handlers.NewCommand("mrl_reset", handleMrlResetRequest))
+	dispatcher.AddHandler(handlers.NewCommand("ask", handleAskRequest))
 	dispatcher.AddHandler(handlers.NewMessage(message.Text, handleIncomingMessage))
 
 	err := updater.StartPolling(bot, &ext.PollingOpts{
@@ -127,8 +124,6 @@ func handleMrlRequest(b *gotgbot.Bot, ctx *ext.Context) error {
 		appConfig.OpenAIInstruction = "You are MurailoGPT, an AI assistant that provides sarcastic responses."
 	}
 
-	url := "https://api.openai.com/v1/chat/completions"
-
 	messages := []map[string]string{
 		{"role": "system", "content": appConfig.OpenAIInstruction},
 	}
@@ -158,59 +153,26 @@ func handleMrlRequest(b *gotgbot.Bot, ctx *ext.Context) error {
 		"role": "user", "content": fmt.Sprintf("[UID: %d] %s [%s]: %s", ctx.EffectiveMessage.From.Id, userName, time.Now().Format(time.RFC3339), message),
 	})
 
-	reqBody, err := json.Marshal(map[string]interface{}{
-		"model":    "gpt-4o",
-		"messages": messages,
-	})
+	responseBody, err := callOpenAI(messages, "gpt-4o", 1)
 	if err != nil {
 		return err
 	}
 
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(reqBody))
+	content, err := processOpenAIResponse(responseBody)
 	if err != nil {
 		return err
 	}
 
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", config.OpenAIToken))
-
-	httpClient := &http.Client{}
-	resp, err := httpClient.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
+	if err := sendTelegramMessage(ctx, content); err != nil {
 		return err
 	}
 
-	var response struct {
-		Choices []struct {
-			Message struct {
-				Content string `json:"content"`
-			} `json:"message"`
-		} `json:"choices"`
-	}
-
-	if err := json.Unmarshal(body, &response); err != nil {
+	historyRecord := ChatHistory{UserID: ctx.EffectiveMessage.From.Id, UserName: ctx.EffectiveMessage.From.Username, UserMsg: message, BotMsg: content, LastUsed: time.Now()}
+	if err := insertChatHistory(&historyRecord); err != nil {
 		return err
 	}
 
-	if len(response.Choices) > 0 {
-		content := response.Choices[0].Message.Content
-		if err := sendTelegramMessage(ctx, content); err != nil {
-			return err
-		}
-		historyRecord := ChatHistory{UserID: ctx.EffectiveMessage.From.Id, UserName: ctx.EffectiveMessage.From.Username, UserMsg: message, BotMsg: content, LastUsed: time.Now()}
-		if err := insertChatHistory(&historyRecord); err != nil {
-			return err
-		}
-		return nil
-	}
-
-	return fmt.Errorf("unexpected message format")
+	return nil
 }
 
 func handleMrlResetRequest(b *gotgbot.Bot, ctx *ext.Context) error {
@@ -231,6 +193,37 @@ func handleMrlResetRequest(b *gotgbot.Bot, ctx *ext.Context) error {
 
 	_, err := ctx.EffectiveMessage.Reply(b, "All rows have been deleted successfully.", nil)
 	return err
+}
+
+func handleAskRequest(b *gotgbot.Bot, ctx *ext.Context) error {
+	logger.Info("Received ASK request", zap.Int64("user_id", ctx.EffectiveMessage.From.Id), zap.String("username", ctx.EffectiveMessage.From.Username), zap.Int64("update_id", ctx.Update.UpdateId))
+
+	if ctx.EffectiveMessage == nil {
+		return fmt.Errorf("ctx.EffectiveMessage is nil")
+	}
+
+	message := strings.TrimSpace(strings.TrimPrefix(ctx.EffectiveMessage.Text, "/ask"))
+
+	messages := []map[string]string{
+		{"role": "system", "content": "You are MurailoGPT, a Telegram AI assistant bot that provides very accurate, short and direct responses."},
+		{"role": "user", "content": message},
+	}
+
+	responseBody, err := callOpenAI(messages, "gpt-4o", 0)
+	if err != nil {
+		return err
+	}
+
+	content, err := processOpenAIResponse(responseBody)
+	if err != nil {
+		return err
+	}
+
+	if err := sendTelegramMessage(ctx, content); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func sendTelegramMessage(ctx *ext.Context, text string) error {
