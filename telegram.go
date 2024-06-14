@@ -150,8 +150,12 @@ func handleMrlRequest(b *gotgbot.Bot, ctx *ext.Context) error {
 		})
 	}
 
+	userName := ctx.EffectiveMessage.From.Username
+	if userName == "" {
+		userName = "Unknown User"
+	}
 	messages = append(messages, map[string]string{
-		"role": "user", "content": fmt.Sprintf("[UID: %d] %s [%s]: %s", ctx.EffectiveMessage.From.Id, ctx.EffectiveMessage.From.Username, time.Now().Format(time.RFC3339), message),
+		"role": "user", "content": fmt.Sprintf("[UID: %d] %s [%s]: %s", ctx.EffectiveMessage.From.Id, userName, time.Now().Format(time.RFC3339), message),
 	})
 
 	reqBody, err := json.Marshal(map[string]interface{}{
