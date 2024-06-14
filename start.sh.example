@@ -2,7 +2,9 @@
 
 export MURAILOBOT_TELEGRAM_TOKEN=xyz
 export MURAILOBOT_OPENAI_TOKEN=zyx
+export MURAILOBOT_ADMIN_UID=12345
 #export MURAILOBOT_USER_TIMEOUT=5
 #export MURAILOBOT_DB_NAME=storage.db
+
 
 ./murailobot
