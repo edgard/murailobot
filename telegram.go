@@ -159,9 +159,8 @@ func handleMrlRequest(b *gotgbot.Bot, ctx *ext.Context) error {
 	})
 
 	reqBody, err := json.Marshal(map[string]interface{}{
-		"model":       "gpt-4o",
-		"messages":    messages,
-		"temperature": 0.2,
+		"model":    "gpt-4o",
+		"messages": messages,
 	})
 	if err != nil {
 		return err
