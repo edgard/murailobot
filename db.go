@@ -127,7 +127,7 @@ func insertMessageRef(msgRef *MessageRef) error {
 // Chat history-related functions
 func getRecentChatHistory(limit int) ([]ChatHistory, error) {
 	var history []ChatHistory
-	err := db.Select(&history, "SELECT * FROM chat_history ORDER BY last_used DESC LIMIT ?", limit)
+	err := db.Select(&history, "SELECT * FROM chat_history ORDER BY last_used ASC LIMIT ?", limit)
 	if err != nil {
 		return nil, err
 	}
