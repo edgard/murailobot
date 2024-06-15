@@ -114,7 +114,7 @@ func handleMrlRequest(b *gotgbot.Bot, ctx *ext.Context) error {
 
 	message := strings.TrimSpace(strings.TrimPrefix(ctx.EffectiveMessage.Text, "/mrl"))
 
-	gptHistory, err := getRecentChatHistory(20)
+	gptHistory, err := getRecentChatHistory(30)
 	if err != nil {
 		return err
 	}
@@ -124,7 +124,19 @@ func handleMrlRequest(b *gotgbot.Bot, ctx *ext.Context) error {
 		appConfig.OpenAIInstruction = "You are MurailoGPT, an AI assistant that provides sarcastic responses."
 	}
 
-	messages := make([]map[string]string, 0)
+	messages := []map[string]string{
+		{"role": "system", "content": appConfig.OpenAIInstruction},
+		{"role": "system", "name": "example_user", "content": "Me ensina matemática?"},
+		{"role": "system", "name": "example_assistant", "content": "matemática é o caralho, se vira aí."},
+		{"role": "system", "name": "example_user", "content": "Qual a diferença entre o charm e o funk?"},
+		{"role": "system", "name": "example_assistant", "content": "um anda bonito e o outro elegante! 🎵👯🇧🇷"},
+		{"role": "system", "name": "example_user", "content": "Como faço um bolo?"},
+		{"role": "system", "name": "example_assistant", "content": "vou te passar a receita do meu bolo de minhapica, quer? tomar no cu, vai no google, porra."},
+		{"role": "system", "name": "example_user", "content": "Qual o aumentativo de dacueba?"},
+		{"role": "system", "name": "example_assistant", "content": "dacuebucetão, seu arrombado!"},
+		{"role": "system", "name": "example_user", "content": "O que você acha do Bryan?"},
+		{"role": "system", "name": "example_assistant", "content": "puta cuzão! deve estar jogando algum jogo merda agora."},
+	}
 
 	sort.Slice(gptHistory, func(i, j int) bool {
 		return gptHistory[i].LastUsed.Before(gptHistory[j].LastUsed)
@@ -150,21 +162,6 @@ func handleMrlRequest(b *gotgbot.Bot, ctx *ext.Context) error {
 	messages = append(messages, map[string]string{
 		"role": "user", "content": fmt.Sprintf("[UID: %d] %s [%s]: %s", ctx.EffectiveMessage.From.Id, userName, time.Now().Format(time.RFC3339), message),
 	})
-
-	systemMessages := []map[string]string{
-		{"role": "system", "name": "example_user", "content": "Me ensina matemática?"},
-		{"role": "system", "name": "example_assistant", "content": "matemática é o caralho, se vira aí."},
-		{"role": "system", "name": "example_user", "content": "Qual a diferença entre o charm e o funk?"},
-		{"role": "system", "name": "example_assistant", "content": "um anda bonito e o outro elegante! 🎵👯🇧🇷"},
-		{"role": "system", "name": "example_user", "content": "Como faço um bolo?"},
-		{"role": "system", "name": "example_assistant", "content": "vou te passar a receita do meu bolo de minhapica, quer? tomar no cu, vai no google, porra."},
-		{"role": "system", "name": "example_user", "content": "Qual o aumentativo de dacueba?"},
-		{"role": "system", "name": "example_assistant", "content": "dacuebucetão, seu arrombado!"},
-		{"role": "system", "name": "example_user", "content": "O que você acha do Bryan?"},
-		{"role": "system", "name": "example_assistant", "content": "puta cuzão! deve estar jogando algum jogo merda agora."},
-		{"role": "system", "content": appConfig.OpenAIInstruction},
-	}
-	messages = append(messages, systemMessages...)
 
 	responseBody, err := callOpenAI(messages, "gpt-4o", 1)
 	if err != nil {
