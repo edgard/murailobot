@@ -9,10 +9,12 @@ import (
 var logger *zap.Logger
 
 func main() {
-	initLogger()
+	if err := initLogger(); err != nil {
+		panic(fmt.Sprintf("Failed to initialize logger: %v", err))
+	}
 	defer logger.Sync()
 
-	if err := loadConfig(); err != nil {
+	if err := initConfig(); err != nil {
 		logger.Fatal("Failed to load config", zap.Error(err))
 	}
 	if err := initDatabase(); err != nil {
@@ -22,14 +24,11 @@ func main() {
 		logger.Fatal("Failed to init telegram bot", zap.Error(err))
 	}
 
-	startHttpServer()
 	startTelegramBot()
 }
 
-func initLogger() {
+func initLogger() error {
 	var err error
 	logger, err = zap.NewProduction()
-	if err != nil {
-		panic(fmt.Sprintf("Failed to initialize logger: %v", err))
-	}
+	return err
 }

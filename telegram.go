@@ -38,7 +38,6 @@ func startTelegramBot() {
 	dispatcher.AddHandler(handlers.NewCommand("piu", handlePiuRequest))
 	dispatcher.AddHandler(handlers.NewCommand("mrl", handleMrlRequest))
 	dispatcher.AddHandler(handlers.NewCommand("mrl_reset", handleMrlResetRequest))
-	dispatcher.AddHandler(handlers.NewCommand("ask", handleAskRequest))
 	dispatcher.AddHandler(handlers.NewMessage(message.Text, handleIncomingMessage))
 
 	err := updater.StartPolling(bot, &ext.PollingOpts{
@@ -88,7 +87,7 @@ func handlePiuRequest(b *gotgbot.Bot, ctx *ext.Context) error {
 		return err
 	}
 
-	if time.Since(user.LastUsed).Minutes() <= config.UserTimeout {
+	if time.Since(user.LastUsed).Minutes() <= config.TelegramUserTimeout {
 		logger.Info("User on timeout", zap.Int64("user_id", user.UserID), zap.String("username", ctx.EffectiveMessage.From.Username), zap.Time("last_used", user.LastUsed))
 		return nil
 	}
@@ -114,17 +113,12 @@ func handleMrlRequest(b *gotgbot.Bot, ctx *ext.Context) error {
 
 	message := strings.TrimSpace(strings.TrimPrefix(ctx.EffectiveMessage.Text, "/mrl"))
 
-	gptHistory, err := getRecentChatHistory(20)
+	gptHistory, err := getRecentChatHistory(30)
 	if err != nil {
 		return err
 	}
 
-	appConfig, err := getAppConfig()
-	if err != nil {
-		appConfig.OpenAIInstruction = "You are MurailoGPT, an AI assistant that provides sarcastic responses."
-	}
-
-	messages := make([]map[string]string, 0)
+	messages := []map[string]string{{"role": "system", "content": config.OpenAIInstruction}}
 
 	sort.Slice(gptHistory, func(i, j int) bool {
 		return gptHistory[i].LastUsed.Before(gptHistory[j].LastUsed)
@@ -151,27 +145,7 @@ func handleMrlRequest(b *gotgbot.Bot, ctx *ext.Context) error {
 		"role": "user", "content": fmt.Sprintf("[UID: %d] %s [%s]: %s", ctx.EffectiveMessage.From.Id, userName, time.Now().Format(time.RFC3339), message),
 	})
 
-	systemMessages := []map[string]string{
-		{"role": "system", "name": "example_user", "content": "Me ensina matemática?"},
-		{"role": "system", "name": "example_assistant", "content": "matemática é o caralho, se vira aí."},
-		{"role": "system", "name": "example_user", "content": "Qual a diferença entre o charm e o funk?"},
-		{"role": "system", "name": "example_assistant", "content": "um anda bonito e o outro elegante! 🎵👯🇧🇷"},
-		{"role": "system", "name": "example_user", "content": "Como faço um bolo?"},
-		{"role": "system", "name": "example_assistant", "content": "vou te passar a receita do meu bolo de minhapica, quer? tomar no cu, vai no google, porra."},
-		{"role": "system", "name": "example_user", "content": "Qual o aumentativo de dacueba?"},
-		{"role": "system", "name": "example_assistant", "content": "dacuebucetão, seu arrombado!"},
-		{"role": "system", "name": "example_user", "content": "O que você acha do Bryan?"},
-		{"role": "system", "name": "example_assistant", "content": "puta cuzão! deve estar jogando algum jogo merda agora."},
-		{"role": "system", "content": appConfig.OpenAIInstruction},
-	}
-	messages = append(messages, systemMessages...)
-
-	responseBody, err := callOpenAI(messages, "gpt-4o", 1)
-	if err != nil {
-		return err
-	}
-
-	content, err := processOpenAIResponse(responseBody)
+	content, err := callOpenAI(messages, "gpt-4o", 1)
 	if err != nil {
 		return err
 	}
@@ -195,7 +169,7 @@ func handleMrlResetRequest(b *gotgbot.Bot, ctx *ext.Context) error {
 		return fmt.Errorf("ctx.EffectiveMessage is nil")
 	}
 
-	if ctx.EffectiveMessage.From.Id != config.AdminUID {
+	if ctx.EffectiveMessage.From.Id != config.TelegramAdminUID {
 		ctx.EffectiveMessage.Reply(b, "You are not authorized to use this command.", nil)
 		return nil
 	}
@@ -204,39 +178,8 @@ func handleMrlResetRequest(b *gotgbot.Bot, ctx *ext.Context) error {
 		return err
 	}
 
-	_, err := ctx.EffectiveMessage.Reply(b, "All rows have been deleted successfully.", nil)
+	_, err := ctx.EffectiveMessage.Reply(b, "History has been reset.", nil)
 	return err
-}
-
-func handleAskRequest(b *gotgbot.Bot, ctx *ext.Context) error {
-	logger.Info("Received ASK request", zap.Int64("user_id", ctx.EffectiveMessage.From.Id), zap.String("username", ctx.EffectiveMessage.From.Username), zap.Int64("update_id", ctx.Update.UpdateId))
-
-	if ctx.EffectiveMessage == nil {
-		return fmt.Errorf("ctx.EffectiveMessage is nil")
-	}
-
-	message := strings.TrimSpace(strings.TrimPrefix(ctx.EffectiveMessage.Text, "/ask"))
-
-	messages := []map[string]string{
-		{"role": "system", "content": "You are MurailoGPT, a Telegram AI assistant bot that provides very accurate, short and direct responses."},
-		{"role": "user", "content": message},
-	}
-
-	responseBody, err := callOpenAI(messages, "gpt-4o", 0)
-	if err != nil {
-		return err
-	}
-
-	content, err := processOpenAIResponse(responseBody)
-	if err != nil {
-		return err
-	}
-
-	if err := sendTelegramMessage(ctx, content); err != nil {
-		return err
-	}
-
-	return nil
 }
 
 func sendTelegramMessage(ctx *ext.Context, text string) error {

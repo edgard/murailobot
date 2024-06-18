@@ -9,18 +9,18 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 )
 
+// User represents a user in the database
+type User struct {
+	UserID   int64     `db:"user_id"`
+	LastUsed time.Time `db:"last_used"`
+}
+
 // MessageRef represents a message reference in the database
 type MessageRef struct {
 	ID        uint      `db:"id"`
 	MessageID int64     `db:"message_id"`
 	ChatID    int64     `db:"chat_id"`
 	LastUsed  time.Time `db:"last_used"`
-}
-
-// User represents a user in the database
-type User struct {
-	UserID   int64     `db:"user_id"`
-	LastUsed time.Time `db:"last_used"`
 }
 
 // ChatHistory represents chat history in the database
@@ -33,17 +33,11 @@ type ChatHistory struct {
 	LastUsed time.Time `db:"last_used"`
 }
 
-// AppConfig represents the application configuration in the database
-type AppConfig struct {
-	ID                uint   `db:"id"`
-	OpenAIInstruction string `db:"openai_instruction"`
-}
-
 var db *sqlx.DB
 
 func initDatabase() error {
 	var err error
-	db, err = sqlx.Connect("sqlite3", config.DBName)
+	db, err = sqlx.Connect("sqlite3", "storage.db")
 	if err != nil {
 		return err
 	}
@@ -66,10 +60,6 @@ func initDatabase() error {
 		user_msg TEXT,
 		bot_msg TEXT,
 		last_used DATETIME
-	);
-	CREATE TABLE IF NOT EXISTS app_config (
-		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		openai_instruction TEXT
 	);`
 	if _, err := db.Exec(schema); err != nil {
 		return err
@@ -85,7 +75,7 @@ func getUserOrCreate(ctx *ext.Context) (User, error) {
 		if err == sql.ErrNoRows {
 			user = User{
 				UserID:   ctx.EffectiveMessage.From.Id,
-				LastUsed: time.Now().Add(-time.Minute * time.Duration(config.UserTimeout+1)),
+				LastUsed: time.Now().Add(-time.Minute * time.Duration(config.TelegramUserTimeout+1)),
 			}
 			_, err = db.NamedExec("INSERT INTO user (user_id, last_used) VALUES (:user_id, :last_used)", &user)
 			if err != nil {
@@ -141,25 +131,5 @@ func insertChatHistory(history *ChatHistory) error {
 
 func resetChatHistory() error {
 	_, err := db.Exec("DELETE FROM chat_history")
-	return err
-}
-
-// App configuration-related functions
-func getAppConfig() (AppConfig, error) {
-	var appConfig AppConfig
-	err := db.Get(&appConfig, "SELECT * FROM app_config ORDER BY id LIMIT 1")
-	if err != nil {
-		return appConfig, err
-	}
-	return appConfig, nil
-}
-
-func insertAppConfig(instruction string) error {
-	_, err := db.Exec("INSERT INTO app_config (openai_instruction) VALUES (?)", instruction)
-	return err
-}
-
-func updateAppConfig(instruction string, id uint) error {
-	_, err := db.Exec("UPDATE app_config SET openai_instruction = ? WHERE id = ?", instruction, id)
 	return err
 }
