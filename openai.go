@@ -8,42 +8,71 @@ import (
 	"net/http"
 )
 
-func callOpenAI(messages []map[string]string, model string, temperature float32) (string, error) {
-	url := "https://api.openai.com/v1/chat/completions"
+// OpenAI encapsulates the logic for interacting with the OpenAI API.
+type OpenAI struct{}
 
-	// Prepare request body
-	reqBody, err := json.Marshal(map[string]interface{}{
-		"model":       model,
-		"messages":    messages,
-		"temperature": temperature,
-	})
+// sendRequest sends a request to the OpenAI API and returns the response body and status code.
+func (client *OpenAI) sendRequest(body map[string]interface{}) ([]byte, int, error) {
+	reqBody, err := json.Marshal(body)
 	if err != nil {
-		return "", err
+		return nil, 0, fmt.Errorf("failed to marshal request body: %w", err)
 	}
 
-	// Create HTTP request
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(reqBody))
+	req, err := http.NewRequest("POST", "https://api.openai.com/v1/chat/completions", bytes.NewBuffer(reqBody))
 	if err != nil {
-		return "", err
+		return nil, 0, fmt.Errorf("failed to create request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", config.OpenAIToken))
 
-	// Send HTTP request
 	httpClient := &http.Client{}
 	resp, err := httpClient.Do(req)
 	if err != nil {
-		return "", err
+		return nil, 0, fmt.Errorf("failed to send request: %w", err)
 	}
 	defer resp.Body.Close()
 
-	// Read response body
-	body, err := io.ReadAll(resp.Body)
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to read response body: %w", err)
+	}
+
+	return respBody, resp.StatusCode, nil
+}
+
+// Init checks if the provided OpenAI token can connect to the OpenAI API.
+func (client *OpenAI) Init() error {
+	pingMessage := map[string]interface{}{
+		"model":       "gpt-4o",
+		"messages":    []map[string]string{{"role": "system", "content": "ping"}},
+		"temperature": 0.0,
+	}
+
+	_, statusCode, err := client.sendRequest(pingMessage)
+	if err != nil {
+		return err
+	}
+
+	if statusCode != http.StatusOK {
+		return fmt.Errorf("failed to connect to OpenAI API: status %d", statusCode)
+	}
+
+	return nil
+}
+
+// Call sends a request to the OpenAI API and returns the response.
+func (client *OpenAI) Call(messages []map[string]string, temperature float32) (string, error) {
+	requestBody := map[string]interface{}{
+		"model":       "gpt-4o",
+		"messages":    messages,
+		"temperature": temperature,
+	}
+
+	respBody, _, err := client.sendRequest(requestBody)
 	if err != nil {
 		return "", err
 	}
 
-	// Parse response
 	var response struct {
 		Choices []struct {
 			Message struct {
@@ -51,11 +80,10 @@ func callOpenAI(messages []map[string]string, model string, temperature float32)
 			} `json:"message"`
 		} `json:"choices"`
 	}
-	if err := json.Unmarshal(body, &response); err != nil {
-		return "", err
+	if err := json.Unmarshal(respBody, &response); err != nil {
+		return "", fmt.Errorf("failed to unmarshal response: %w", err)
 	}
 
-	// Return content if available
 	if len(response.Choices) > 0 {
 		return response.Choices[0].Message.Content, nil
 	}

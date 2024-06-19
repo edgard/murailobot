@@ -13,18 +13,24 @@ import (
 	"go.uber.org/zap"
 )
 
-var bot *gotgbot.Bot
+// TelegramBot encapsulates the bot's logic and dependencies.
+type TelegramBot struct {
+	bot     *gotgbot.Bot
+	updater *ext.Updater
+}
 
-func initTelegramBot() error {
+// Init initializes the Telegram bot.
+func (tb *TelegramBot) Init() error {
 	var err error
-	bot, err = gotgbot.NewBot(config.TelegramToken, nil)
+	tb.bot, err = gotgbot.NewBot(config.TelegramToken, nil)
 	if err != nil {
 		return err
 	}
 	return nil
 }
 
-func startTelegramBot() {
+// Start starts the Telegram bot.
+func (tb *TelegramBot) Start() {
 	dispatcher := ext.NewDispatcher(&ext.DispatcherOpts{
 		Error: func(bot *gotgbot.Bot, ctx *ext.Context, err error) ext.DispatcherAction {
 			logger.Warn("Error occurred while handling update", zap.Error(err))
@@ -32,15 +38,15 @@ func startTelegramBot() {
 		},
 		MaxRoutines: ext.DefaultMaxRoutines,
 	})
-	updater := ext.NewUpdater(dispatcher, nil)
+	tb.updater = ext.NewUpdater(dispatcher, nil)
 
-	dispatcher.AddHandler(handlers.NewCommand("start", handleStartRequest))
-	dispatcher.AddHandler(handlers.NewCommand("piu", handlePiuRequest))
-	dispatcher.AddHandler(handlers.NewCommand("mrl", handleMrlRequest))
-	dispatcher.AddHandler(handlers.NewCommand("mrl_reset", handleMrlResetRequest))
-	dispatcher.AddHandler(handlers.NewMessage(message.Text, handleIncomingMessage))
+	dispatcher.AddHandler(handlers.NewCommand("start", tb.handleStartRequest))
+	dispatcher.AddHandler(handlers.NewCommand("piu", tb.handlePiuRequest))
+	dispatcher.AddHandler(handlers.NewCommand("mrl", tb.handleMrlRequest))
+	dispatcher.AddHandler(handlers.NewCommand("mrl_reset", tb.handleMrlResetRequest))
+	dispatcher.AddHandler(handlers.NewMessage(message.Text, tb.handleIncomingMessage))
 
-	err := updater.StartPolling(bot, &ext.PollingOpts{
+	err := tb.updater.StartPolling(tb.bot, &ext.PollingOpts{
 		DropPendingUpdates: false,
 		GetUpdatesOpts: &gotgbot.GetUpdatesOpts{
 			Timeout: 9,
@@ -53,12 +59,11 @@ func startTelegramBot() {
 		logger.Fatal("Error starting polling", zap.Error(err))
 	}
 
-	logger.Info("Started Telegram Bot", zap.String("username", bot.User.Username))
-
-	updater.Idle()
+	logger.Info("Started Telegram Bot", zap.String("username", tb.bot.User.Username))
+	tb.updater.Idle()
 }
 
-func handleIncomingMessage(b *gotgbot.Bot, ctx *ext.Context) error {
+func (tb *TelegramBot) handleIncomingMessage(b *gotgbot.Bot, ctx *ext.Context) error {
 	if ctx.EffectiveMessage.ForwardOrigin == nil {
 		logger.Info("Received non-forward message, ignoring", zap.Int64("user_id", ctx.EffectiveMessage.From.Id), zap.String("username", ctx.EffectiveMessage.From.Username), zap.Int64("update_id", ctx.Update.UpdateId))
 		return nil
@@ -67,22 +72,22 @@ func handleIncomingMessage(b *gotgbot.Bot, ctx *ext.Context) error {
 	logger.Info("Received forward message", zap.Int64("user_id", ctx.EffectiveMessage.From.Id), zap.String("username", ctx.EffectiveMessage.From.Username), zap.Int64("update_id", ctx.Update.UpdateId))
 
 	msgRef := MessageRef{MessageID: ctx.EffectiveMessage.MessageId, ChatID: ctx.EffectiveMessage.Chat.Id, LastUsed: time.Now()}
-	err := insertMessageRef(&msgRef)
+	err := db.AddMessageRef(&msgRef)
 	if err != nil {
 		return err
 	}
 
-	return sendTelegramMessage(ctx, "Mensagem adicionada ao banco de dados!")
+	return tb.sendTelegramMessage(ctx, "Mensagem adicionada ao banco de dados!")
 }
 
-func handleStartRequest(b *gotgbot.Bot, ctx *ext.Context) error {
-	return sendTelegramMessage(ctx, "Olá! Me encaminhe uma mensagem para guardar.")
+func (tb *TelegramBot) handleStartRequest(b *gotgbot.Bot, ctx *ext.Context) error {
+	return tb.sendTelegramMessage(ctx, "Olá! Me encaminhe uma mensagem para guardar.")
 }
 
-func handlePiuRequest(b *gotgbot.Bot, ctx *ext.Context) error {
+func (tb *TelegramBot) handlePiuRequest(b *gotgbot.Bot, ctx *ext.Context) error {
 	logger.Info("Received PIU request", zap.Int64("user_id", ctx.EffectiveMessage.From.Id), zap.String("username", ctx.EffectiveMessage.From.Username), zap.Int64("update_id", ctx.Update.UpdateId))
 
-	user, err := getUserOrCreate(ctx)
+	user, err := db.GetOrCreateUser(ctx)
 	if err != nil {
 		return err
 	}
@@ -92,19 +97,19 @@ func handlePiuRequest(b *gotgbot.Bot, ctx *ext.Context) error {
 		return nil
 	}
 
-	if err := updateUserLastUsed(user); err != nil {
+	if err := db.UpdateUserLastUsed(user); err != nil {
 		return err
 	}
 
-	msgRef, err := getRandomMessageRef()
+	msgRef, err := db.GetRandomMessageRef()
 	if err != nil {
 		return err
 	}
 
-	return forwardTelegramMessage(ctx, msgRef.ChatID, msgRef.MessageID)
+	return tb.forwardTelegramMessage(ctx, msgRef.ChatID, msgRef.MessageID)
 }
 
-func handleMrlRequest(b *gotgbot.Bot, ctx *ext.Context) error {
+func (tb *TelegramBot) handleMrlRequest(b *gotgbot.Bot, ctx *ext.Context) error {
 	logger.Info("Received MRL request", zap.Int64("user_id", ctx.EffectiveMessage.From.Id), zap.String("username", ctx.EffectiveMessage.From.Username), zap.Int64("update_id", ctx.Update.UpdateId))
 
 	if ctx.EffectiveMessage == nil {
@@ -113,7 +118,7 @@ func handleMrlRequest(b *gotgbot.Bot, ctx *ext.Context) error {
 
 	message := strings.TrimSpace(strings.TrimPrefix(ctx.EffectiveMessage.Text, "/mrl"))
 
-	gptHistory, err := getRecentChatHistory(30)
+	gptHistory, err := db.GetRecentChatHistory(30)
 	if err != nil {
 		return err
 	}
@@ -145,24 +150,24 @@ func handleMrlRequest(b *gotgbot.Bot, ctx *ext.Context) error {
 		"role": "user", "content": fmt.Sprintf("[UID: %d] %s [%s]: %s", ctx.EffectiveMessage.From.Id, userName, time.Now().Format(time.RFC3339), message),
 	})
 
-	content, err := callOpenAI(messages, "gpt-4o", 1)
+	content, err := oai.Call(messages, 1)
 	if err != nil {
 		return err
 	}
 
-	if err := sendTelegramMessage(ctx, content); err != nil {
+	if err := tb.sendTelegramMessage(ctx, content); err != nil {
 		return err
 	}
 
 	historyRecord := ChatHistory{UserID: ctx.EffectiveMessage.From.Id, UserName: ctx.EffectiveMessage.From.Username, UserMsg: message, BotMsg: content, LastUsed: time.Now()}
-	if err := insertChatHistory(&historyRecord); err != nil {
+	if err := db.AddChatHistory(&historyRecord); err != nil {
 		return err
 	}
 
 	return nil
 }
 
-func handleMrlResetRequest(b *gotgbot.Bot, ctx *ext.Context) error {
+func (tb *TelegramBot) handleMrlResetRequest(b *gotgbot.Bot, ctx *ext.Context) error {
 	logger.Info("Received MRL_RESET request", zap.Int64("user_id", ctx.EffectiveMessage.From.Id), zap.String("username", ctx.EffectiveMessage.From.Username), zap.Int64("update_id", ctx.Update.UpdateId))
 
 	if ctx.EffectiveMessage == nil {
@@ -174,7 +179,7 @@ func handleMrlResetRequest(b *gotgbot.Bot, ctx *ext.Context) error {
 		return nil
 	}
 
-	if err := resetChatHistory(); err != nil {
+	if err := db.ClearChatHistory(); err != nil {
 		return err
 	}
 
@@ -182,22 +187,22 @@ func handleMrlResetRequest(b *gotgbot.Bot, ctx *ext.Context) error {
 	return err
 }
 
-func sendTelegramMessage(ctx *ext.Context, text string) error {
+func (tb *TelegramBot) sendTelegramMessage(ctx *ext.Context, text string) error {
 	if ctx.EffectiveMessage == nil {
 		return fmt.Errorf("ctx.EffectiveMessage is nil")
 	}
-	_, err := ctx.EffectiveMessage.Reply(bot, text, nil)
+	_, err := ctx.EffectiveMessage.Reply(tb.bot, text, nil)
 	if err != nil {
 		return err
 	}
 	return nil
 }
 
-func forwardTelegramMessage(ctx *ext.Context, forwardChatID int64, forwardMessageID int64) error {
+func (tb *TelegramBot) forwardTelegramMessage(ctx *ext.Context, forwardChatID int64, forwardMessageID int64) error {
 	if ctx.EffectiveMessage == nil {
 		return fmt.Errorf("ctx.EffectiveMessage is nil")
 	}
-	_, err := bot.ForwardMessage(ctx.EffectiveChat.Id, forwardChatID, forwardMessageID, nil)
+	_, err := tb.bot.ForwardMessage(ctx.EffectiveChat.Id, forwardChatID, forwardMessageID, nil)
 	if err != nil {
 		return err
 	}

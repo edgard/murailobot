@@ -9,13 +9,13 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 )
 
-// User represents a user in the database
+// User represents a user in the database.
 type User struct {
 	UserID   int64     `db:"user_id"`
 	LastUsed time.Time `db:"last_used"`
 }
 
-// MessageRef represents a message reference in the database
+// MessageRef represents a message reference in the database.
 type MessageRef struct {
 	ID        uint      `db:"id"`
 	MessageID int64     `db:"message_id"`
@@ -23,7 +23,7 @@ type MessageRef struct {
 	LastUsed  time.Time `db:"last_used"`
 }
 
-// ChatHistory represents chat history in the database
+// ChatHistory represents chat history in the database.
 type ChatHistory struct {
 	ID       uint      `db:"id"`
 	UserID   int64     `db:"user_id"`
@@ -33,14 +33,18 @@ type ChatHistory struct {
 	LastUsed time.Time `db:"last_used"`
 }
 
-var db *sqlx.DB
+// DB implements the DB interface using SQLite.
+type DB struct {
+	conn *sqlx.DB
+}
 
-func initDatabase() error {
-	var err error
-	db, err = sqlx.Connect("sqlite3", "storage.db")
+// Init initializes the database connection and schema.
+func (db *DB) Init(dataSourceName string) error {
+	conn, err := sqlx.Connect("sqlite3", dataSourceName)
 	if err != nil {
 		return err
 	}
+	db.conn = conn
 
 	schema := `
 	CREATE TABLE IF NOT EXISTS message_ref (
@@ -61,23 +65,21 @@ func initDatabase() error {
 		bot_msg TEXT,
 		last_used DATETIME
 	);`
-	if _, err := db.Exec(schema); err != nil {
-		return err
-	}
-	return nil
+	_, err = db.conn.Exec(schema)
+	return err
 }
 
-// User-related functions
-func getUserOrCreate(ctx *ext.Context) (User, error) {
+// GetOrCreateUser fetches a user from the database or creates one if not found.
+func (db *DB) GetOrCreateUser(ctx *ext.Context) (User, error) {
 	var user User
-	err := db.Get(&user, "SELECT * FROM user WHERE user_id = ?", ctx.EffectiveMessage.From.Id)
+	err := db.conn.Get(&user, "SELECT * FROM user WHERE user_id = ?", ctx.EffectiveMessage.From.Id)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			user = User{
 				UserID:   ctx.EffectiveMessage.From.Id,
 				LastUsed: time.Now().Add(-time.Minute * time.Duration(config.TelegramUserTimeout+1)),
 			}
-			_, err = db.NamedExec("INSERT INTO user (user_id, last_used) VALUES (:user_id, :last_used)", &user)
+			_, err = db.conn.NamedExec("INSERT INTO user (user_id, last_used) VALUES (:user_id, :last_used)", &user)
 			if err != nil {
 				return user, err
 			}
@@ -88,48 +90,52 @@ func getUserOrCreate(ctx *ext.Context) (User, error) {
 	return user, nil
 }
 
-func updateUserLastUsed(user User) error {
+// UpdateUserLastUsed updates the last used timestamp for a user.
+func (db *DB) UpdateUserLastUsed(user User) error {
 	user.LastUsed = time.Now()
-	_, err := db.NamedExec("UPDATE user SET last_used = :last_used WHERE user_id = :user_id", &user)
+	_, err := db.conn.NamedExec("UPDATE user SET last_used = :last_used WHERE user_id = :user_id", &user)
 	return err
 }
 
-// Message reference-related functions
-func getRandomMessageRef() (MessageRef, error) {
+// GetRandomMessageRef retrieves a random message reference from the database.
+func (db *DB) GetRandomMessageRef() (MessageRef, error) {
 	var msgRef MessageRef
-	err := db.Get(&msgRef, "SELECT * FROM message_ref WHERE id IN (SELECT id FROM message_ref ORDER BY last_used ASC LIMIT 5) ORDER BY RANDOM() LIMIT 1")
+	err := db.conn.Get(&msgRef, "SELECT * FROM message_ref WHERE id IN (SELECT id FROM message_ref ORDER BY last_used ASC LIMIT 5) ORDER BY RANDOM() LIMIT 1")
 	if err != nil {
 		return msgRef, err
 	}
 	msgRef.LastUsed = time.Now()
-	_, err = db.NamedExec("UPDATE message_ref SET last_used = :last_used WHERE id = :id", &msgRef)
+	_, err = db.conn.NamedExec("UPDATE message_ref SET last_used = :last_used WHERE id = :id", &msgRef)
 	if err != nil {
 		return msgRef, err
 	}
 	return msgRef, nil
 }
 
-func insertMessageRef(msgRef *MessageRef) error {
-	_, err := db.NamedExec("INSERT INTO message_ref (message_id, chat_id, last_used) VALUES (:message_id, :chat_id, :last_used)", msgRef)
+// AddMessageRef inserts a new message reference into the database.
+func (db *DB) AddMessageRef(msgRef *MessageRef) error {
+	_, err := db.conn.NamedExec("INSERT INTO message_ref (message_id, chat_id, last_used) VALUES (:message_id, :chat_id, :last_used)", msgRef)
 	return err
 }
 
-// Chat history-related functions
-func getRecentChatHistory(limit int) ([]ChatHistory, error) {
+// GetRecentChatHistory retrieves recent chat history from the database.
+func (db *DB) GetRecentChatHistory(limit int) ([]ChatHistory, error) {
 	var history []ChatHistory
-	err := db.Select(&history, "SELECT * FROM chat_history ORDER BY last_used DESC LIMIT ?", limit)
+	err := db.conn.Select(&history, "SELECT * FROM chat_history ORDER BY last_used DESC LIMIT ?", limit)
 	if err != nil {
 		return nil, err
 	}
 	return history, nil
 }
 
-func insertChatHistory(history *ChatHistory) error {
-	_, err := db.NamedExec("INSERT INTO chat_history (user_id, user_name, user_msg, bot_msg, last_used) VALUES (:user_id, :user_name, :user_msg, :bot_msg, :last_used)", history)
+// AddChatHistory inserts new chat history into the database.
+func (db *DB) AddChatHistory(history *ChatHistory) error {
+	_, err := db.conn.NamedExec("INSERT INTO chat_history (user_id, user_name, user_msg, bot_msg, last_used) VALUES (:user_id, :user_name, :user_msg, :bot_msg, :last_used)", history)
 	return err
 }
 
-func resetChatHistory() error {
-	_, err := db.Exec("DELETE FROM chat_history")
+// ClearChatHistory deletes all chat history from the database.
+func (db *DB) ClearChatHistory() error {
+	_, err := db.conn.Exec("DELETE FROM chat_history")
 	return err
 }
