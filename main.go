@@ -9,51 +9,63 @@ import (
 	"go.uber.org/zap"
 )
 
-var (
-	logger *zap.Logger
-	config *Config
-	db     *DB
-	oai    *OpenAI
-	tb     *TelegramBot
-)
+// App encapsulates the entire application.
+type App struct {
+	Logger *zap.Logger
+	Config *Config
+	DB     *DB
+	OAI    *OpenAI
+	TB     *Telegram
+}
 
-func main() {
+// NewApp creates and initializes a new App instance.
+func NewApp() (*App, error) {
 	var err error
+	app := &App{}
 
-	logger, err = initLogger()
+	app.Logger, err = initLogger()
 	if err != nil {
-		panic(fmt.Sprintf("Failed to initialize logger: %v", err))
+		return nil, fmt.Errorf("failed to initialize logger: %v", err)
 	}
 
-	config, err = initConfig()
+	app.Config, err = NewConfig()
 	if err != nil {
-		logger.Fatal("Failed to load config", zap.Error(err))
+		app.Logger.Error("Failed to load config", zap.Error(err))
+		return nil, err
 	}
 
-	db, err = initDB("storage.db")
+	app.DB, err = NewDB("storage.db")
 	if err != nil {
-		logger.Fatal("Failed to init database", zap.Error(err))
+		app.Logger.Error("Failed to init database", zap.Error(err))
+		return nil, err
 	}
 
-	oai, err = initOpenAI()
-	if err != nil {
-		logger.Fatal("Failed to connect to OpenAI", zap.Error(err))
+	app.OAI = NewOpenAI(app.Config.OpenAIToken, app.Config.OpenAIInstruction)
+	if err := app.OAI.Ping(); err != nil {
+		app.Logger.Error("Failed to connect to OpenAI", zap.Error(err))
+		return nil, err
 	}
 
-	tb, err = initTelegramBot()
+	app.TB, err = NewTelegram(app.Config.TelegramToken, app.DB, app.OAI, app.Config, app.Logger)
 	if err != nil {
-		logger.Fatal("Failed to init telegram bot", zap.Error(err))
+		app.Logger.Error("Failed to init telegram bot", zap.Error(err))
+		return nil, err
 	}
 
+	return app, nil
+}
+
+// Run starts the App and handles graceful shutdown.
+func (app *App) Run() {
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
 
-	go tb.Start()
+	go app.TB.Start()
 
 	<-stop
-	logger.Info("Shutting down")
-	logger.Sync()
-	db.conn.Close()
+	app.Logger.Info("Shutting down")
+	app.Logger.Sync()
+	app.DB.conn.Close()
 }
 
 func initLogger() (*zap.Logger, error) {
@@ -64,34 +76,10 @@ func initLogger() (*zap.Logger, error) {
 	return logger, nil
 }
 
-func initConfig() (*Config, error) {
-	config := &Config{}
-	if err := config.Init(); err != nil {
-		return nil, err
+func main() {
+	app, err := NewApp()
+	if err != nil {
+		panic(err)
 	}
-	return config, nil
-}
-
-func initDB(databasePath string) (*DB, error) {
-	db := &DB{}
-	if err := db.Init(databasePath); err != nil {
-		return nil, err
-	}
-	return db, nil
-}
-
-func initOpenAI() (*OpenAI, error) {
-	oai := &OpenAI{}
-	if err := oai.Init(); err != nil {
-		return nil, err
-	}
-	return oai, nil
-}
-
-func initTelegramBot() (*TelegramBot, error) {
-	tb := &TelegramBot{}
-	if err := tb.Init(); err != nil {
-		return nil, err
-	}
-	return tb, nil
+	app.Run()
 }

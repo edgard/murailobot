@@ -13,10 +13,11 @@ type Config struct {
 	OpenAIInstruction   string  `envconfig:"openai_instruction" required:"true"`
 }
 
-// Init initializes the configuration by processing environment variables.
-func (c *Config) Init() error {
-	if err := envconfig.Process("murailobot", c); err != nil {
-		return err
+// NewConfig initializes the configuration by processing environment variables.
+func NewConfig() (*Config, error) {
+	var config Config
+	if err := envconfig.Process("murailobot", &config); err != nil {
+		return nil, err
 	}
-	return nil
+	return &config, nil
 }

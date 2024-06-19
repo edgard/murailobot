@@ -4,7 +4,6 @@ import (
 	"database/sql"
 	"time"
 
-	"github.com/PaulSonOfLars/gotgbot/v2/ext"
 	"github.com/jmoiron/sqlx"
 	_ "github.com/mattn/go-sqlite3"
 )
@@ -33,19 +32,26 @@ type ChatHistory struct {
 	LastUsed time.Time `db:"last_used"`
 }
 
-// DB implements the DB interface using SQLite.
+// Database implements the database interactions using SQLite.
 type DB struct {
 	conn *sqlx.DB
 }
 
-// Init initializes the database connection and schema.
-func (db *DB) Init(dataSourceName string) error {
+// NewDB initializes the database connection and schema.
+func NewDB(dataSourceName string) (*DB, error) {
 	conn, err := sqlx.Connect("sqlite3", dataSourceName)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	db.conn = conn
 
+	db := &DB{conn: conn}
+	if err := db.setupSchema(); err != nil {
+		return nil, err
+	}
+	return db, nil
+}
+
+func (db *DB) setupSchema() error {
 	schema := `
 	CREATE TABLE IF NOT EXISTS message_ref (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -65,19 +71,19 @@ func (db *DB) Init(dataSourceName string) error {
 		bot_msg TEXT,
 		last_used DATETIME
 	);`
-	_, err = db.conn.Exec(schema)
+	_, err := db.conn.Exec(schema)
 	return err
 }
 
 // GetOrCreateUser fetches a user from the database or creates one if not found.
-func (db *DB) GetOrCreateUser(ctx *ext.Context) (User, error) {
+func (db *DB) GetOrCreateUser(userID int64, timeout float64) (User, error) {
 	var user User
-	err := db.conn.Get(&user, "SELECT * FROM user WHERE user_id = ?", ctx.EffectiveMessage.From.Id)
+	err := db.conn.Get(&user, "SELECT * FROM user WHERE user_id = ?", userID)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			user = User{
-				UserID:   ctx.EffectiveMessage.From.Id,
-				LastUsed: time.Now().Add(-time.Minute * time.Duration(config.TelegramUserTimeout+1)),
+				UserID:   userID,
+				LastUsed: time.Now().Add(-time.Minute * time.Duration(timeout+1)),
 			}
 			_, err = db.conn.NamedExec("INSERT INTO user (user_id, last_used) VALUES (:user_id, :last_used)", &user)
 			if err != nil {

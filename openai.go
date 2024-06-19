@@ -9,7 +9,15 @@ import (
 )
 
 // OpenAI encapsulates the logic for interacting with the OpenAI API.
-type OpenAI struct{}
+type OpenAI struct {
+	Token       string
+	Instruction string
+}
+
+// NewOpenAI creates a new OpenAI client.
+func NewOpenAI(token, instruction string) *OpenAI {
+	return &OpenAI{Token: token, Instruction: instruction}
+}
 
 // sendRequest sends a request to the OpenAI API and returns the response body and status code.
 func (client *OpenAI) sendRequest(body map[string]interface{}) ([]byte, int, error) {
@@ -23,7 +31,7 @@ func (client *OpenAI) sendRequest(body map[string]interface{}) ([]byte, int, err
 		return nil, 0, fmt.Errorf("failed to create request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", config.OpenAIToken))
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", client.Token))
 
 	httpClient := &http.Client{}
 	resp, err := httpClient.Do(req)
@@ -40,8 +48,8 @@ func (client *OpenAI) sendRequest(body map[string]interface{}) ([]byte, int, err
 	return respBody, resp.StatusCode, nil
 }
 
-// Init checks if the provided OpenAI token can connect to the OpenAI API.
-func (client *OpenAI) Init() error {
+// Ping checks if the provided OpenAI token can connect to the OpenAI API.
+func (client *OpenAI) Ping() error {
 	pingMessage := map[string]interface{}{
 		"model":       "gpt-4o",
 		"messages":    []map[string]string{{"role": "system", "content": "ping"}},

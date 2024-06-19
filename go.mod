@@ -1,4 +1,4 @@
-module github.com/edgard/murailobot
+module murailobot
 
 go 1.22.4
 
