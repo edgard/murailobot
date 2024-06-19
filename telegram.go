@@ -129,6 +129,11 @@ func (tg *Telegram) handleMrlRequest(b *gotgbot.Bot, ctx *ext.Context) error {
 		return fmt.Errorf("ctx.EffectiveMessage is nil")
 	}
 
+	_, err := tg.bot.SendChatAction(ctx.EffectiveChat.Id, "typing", nil)
+	if err != nil {
+		return err
+	}
+
 	message := strings.TrimSpace(strings.TrimPrefix(ctx.EffectiveMessage.Text, "/mrl"))
 
 	gptHistory, err := tg.db.GetRecentChatHistory(30)
