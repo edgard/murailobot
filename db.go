@@ -2,6 +2,7 @@ package main
 
 import (
 	"database/sql"
+	"fmt"
 	"time"
 
 	"github.com/jmoiron/sqlx"
@@ -38,15 +39,15 @@ type DB struct {
 }
 
 // NewDB initializes the database connection and schema.
-func NewDB(dataSourceName string) (*DB, error) {
-	conn, err := sqlx.Connect("sqlite3", dataSourceName)
+func NewDB(config *Config) (*DB, error) {
+	conn, err := sqlx.Connect("sqlite3", config.DBName)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to connect to database: %w", err)
 	}
 
 	db := &DB{conn: conn}
 	if err := db.setupSchema(); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to set up database schema: %w", err)
 	}
 	return db, nil
 }
@@ -72,7 +73,10 @@ func (db *DB) setupSchema() error {
 		last_used DATETIME
 	);`
 	_, err := db.conn.Exec(schema)
-	return err
+	if err != nil {
+		return fmt.Errorf("failed to execute schema setup: %w", err)
+	}
+	return nil
 }
 
 // GetOrCreateUser fetches a user from the database or creates one if not found.
@@ -87,10 +91,10 @@ func (db *DB) GetOrCreateUser(userID int64, timeout float64) (User, error) {
 			}
 			_, err = db.conn.NamedExec("INSERT INTO user (user_id, last_used) VALUES (:user_id, :last_used)", &user)
 			if err != nil {
-				return user, err
+				return user, fmt.Errorf("failed to insert new user: %w", err)
 			}
 		} else {
-			return user, err
+			return user, fmt.Errorf("failed to fetch user: %w", err)
 		}
 	}
 	return user, nil
@@ -100,7 +104,10 @@ func (db *DB) GetOrCreateUser(userID int64, timeout float64) (User, error) {
 func (db *DB) UpdateUserLastUsed(user User) error {
 	user.LastUsed = time.Now()
 	_, err := db.conn.NamedExec("UPDATE user SET last_used = :last_used WHERE user_id = :user_id", &user)
-	return err
+	if err != nil {
+		return fmt.Errorf("failed to update user last used time: %w", err)
+	}
+	return nil
 }
 
 // GetRandomMessageRef retrieves a random message reference from the database.
@@ -108,12 +115,12 @@ func (db *DB) GetRandomMessageRef() (MessageRef, error) {
 	var msgRef MessageRef
 	err := db.conn.Get(&msgRef, "SELECT * FROM message_ref WHERE id IN (SELECT id FROM message_ref ORDER BY last_used ASC LIMIT 5) ORDER BY RANDOM() LIMIT 1")
 	if err != nil {
-		return msgRef, err
+		return msgRef, fmt.Errorf("failed to retrieve random message reference: %w", err)
 	}
 	msgRef.LastUsed = time.Now()
 	_, err = db.conn.NamedExec("UPDATE message_ref SET last_used = :last_used WHERE id = :id", &msgRef)
 	if err != nil {
-		return msgRef, err
+		return msgRef, fmt.Errorf("failed to update message reference last used time: %w", err)
 	}
 	return msgRef, nil
 }
@@ -121,7 +128,10 @@ func (db *DB) GetRandomMessageRef() (MessageRef, error) {
 // AddMessageRef inserts a new message reference into the database.
 func (db *DB) AddMessageRef(msgRef *MessageRef) error {
 	_, err := db.conn.NamedExec("INSERT INTO message_ref (message_id, chat_id, last_used) VALUES (:message_id, :chat_id, :last_used)", msgRef)
-	return err
+	if err != nil {
+		return fmt.Errorf("failed to add message reference: %w", err)
+	}
+	return nil
 }
 
 // GetRecentChatHistory retrieves recent chat history from the database.
@@ -129,7 +139,7 @@ func (db *DB) GetRecentChatHistory(limit int) ([]ChatHistory, error) {
 	var history []ChatHistory
 	err := db.conn.Select(&history, "SELECT * FROM chat_history ORDER BY last_used DESC LIMIT ?", limit)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to retrieve recent chat history: %w", err)
 	}
 	return history, nil
 }
@@ -137,11 +147,17 @@ func (db *DB) GetRecentChatHistory(limit int) ([]ChatHistory, error) {
 // AddChatHistory inserts new chat history into the database.
 func (db *DB) AddChatHistory(history *ChatHistory) error {
 	_, err := db.conn.NamedExec("INSERT INTO chat_history (user_id, user_name, user_msg, bot_msg, last_used) VALUES (:user_id, :user_name, :user_msg, :bot_msg, :last_used)", history)
-	return err
+	if err != nil {
+		return fmt.Errorf("failed to add chat history: %w", err)
+	}
+	return nil
 }
 
 // ClearChatHistory deletes all chat history from the database.
 func (db *DB) ClearChatHistory() error {
 	_, err := db.conn.Exec("DELETE FROM chat_history")
-	return err
+	if err != nil {
+		return fmt.Errorf("failed to clear chat history: %w", err)
+	}
+	return nil
 }

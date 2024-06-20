@@ -23,8 +23,8 @@ type Telegram struct {
 }
 
 // NewTelegram creates a new Telegram bot instance.
-func NewTelegram(token string, db *DB, oai *OpenAI, config *Config) (*Telegram, error) {
-	bot, err := gotgbot.NewBot(token, nil)
+func NewTelegram(config *Config, db *DB, oai *OpenAI) (*Telegram, error) {
+	bot, err := gotgbot.NewBot(config.TelegramToken, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create new bot: %w", err)
 	}
@@ -174,7 +174,7 @@ func (tg *Telegram) handleMrlRequest(b *gotgbot.Bot, ctx *ext.Context) error {
 		"role": "user", "content": fmt.Sprintf("[UID: %d] %s [%s]: %s", ctx.EffectiveMessage.From.Id, userName, time.Now().Format(time.RFC3339), message),
 	})
 
-	content, err := tg.oai.Call(messages, 1)
+	content, err := tg.oai.Call(messages, 1.0)
 	if err != nil {
 		return fmt.Errorf("failed to call OpenAI: %w", err)
 	}

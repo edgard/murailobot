@@ -15,8 +15,8 @@ type OpenAI struct {
 }
 
 // NewOpenAI creates a new OpenAI client.
-func NewOpenAI(token, instruction string) *OpenAI {
-	return &OpenAI{Token: token, Instruction: instruction}
+func NewOpenAI(config *Config) *OpenAI {
+	return &OpenAI{Token: config.OpenAIToken, Instruction: config.OpenAIInstruction}
 }
 
 // sendRequest sends a request to the OpenAI API and returns the response body and status code.
@@ -58,7 +58,7 @@ func (client *OpenAI) Ping() error {
 
 	_, statusCode, err := client.sendRequest(pingMessage)
 	if err != nil {
-		return err
+		return fmt.Errorf("ping failed: %w", err)
 	}
 
 	if statusCode != http.StatusOK {
@@ -78,7 +78,7 @@ func (client *OpenAI) Call(messages []map[string]string, temperature float32) (s
 
 	respBody, _, err := client.sendRequest(requestBody)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("call to OpenAI API failed: %w", err)
 	}
 
 	var response struct {
@@ -96,5 +96,5 @@ func (client *OpenAI) Call(messages []map[string]string, temperature float32) (s
 		return response.Choices[0].Message.Content, nil
 	}
 
-	return "", fmt.Errorf("unexpected message format")
+	return "", fmt.Errorf("unexpected message format: no choices in response")
 }

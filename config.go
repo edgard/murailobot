@@ -1,6 +1,8 @@
 package main
 
 import (
+	"fmt"
+
 	"github.com/kelseyhightower/envconfig"
 )
 
@@ -11,13 +13,14 @@ type Config struct {
 	TelegramUserTimeout float64 `envconfig:"telegram_user_timeout" default:"5"`
 	OpenAIToken         string  `envconfig:"openai_token" required:"true"`
 	OpenAIInstruction   string  `envconfig:"openai_instruction" required:"true"`
+	DBName              string  `envconfig:"db_name" default:"storage.db"`
 }
 
 // NewConfig initializes the configuration by processing environment variables.
 func NewConfig() (*Config, error) {
 	var config Config
 	if err := envconfig.Process("murailobot", &config); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to process environment variables: %w", err)
 	}
 	return &config, nil
 }

@@ -27,19 +27,19 @@ func NewApp() (*App, error) {
 		return nil, err
 	}
 
-	app.DB, err = NewDB("storage.db")
+	app.DB, err = NewDB(app.Config)
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to init database")
 		return nil, err
 	}
 
-	app.OAI = NewOpenAI(app.Config.OpenAIToken, app.Config.OpenAIInstruction)
+	app.OAI = NewOpenAI(app.Config)
 	if err := app.OAI.Ping(); err != nil {
 		log.Error().Err(err).Msg("Failed to connect to OpenAI")
 		return nil, err
 	}
 
-	app.TB, err = NewTelegram(app.Config.TelegramToken, app.DB, app.OAI, app.Config)
+	app.TB, err = NewTelegram(app.Config, app.DB, app.OAI)
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to init telegram bot")
 		return nil, err
