@@ -1,17 +1,15 @@
 package main
 
 import (
-	"fmt"
 	"os"
 	"os/signal"
 	"syscall"
 
-	"go.uber.org/zap"
+	"github.com/rs/zerolog/log"
 )
 
 // App encapsulates the entire application.
 type App struct {
-	Logger *zap.Logger
 	Config *Config
 	DB     *DB
 	OAI    *OpenAI
@@ -23,32 +21,27 @@ func NewApp() (*App, error) {
 	var err error
 	app := &App{}
 
-	app.Logger, err = initLogger()
-	if err != nil {
-		return nil, fmt.Errorf("failed to initialize logger: %v", err)
-	}
-
 	app.Config, err = NewConfig()
 	if err != nil {
-		app.Logger.Error("Failed to load config", zap.Error(err))
+		log.Error().Err(err).Msg("Failed to load config")
 		return nil, err
 	}
 
 	app.DB, err = NewDB("storage.db")
 	if err != nil {
-		app.Logger.Error("Failed to init database", zap.Error(err))
+		log.Error().Err(err).Msg("Failed to init database")
 		return nil, err
 	}
 
 	app.OAI = NewOpenAI(app.Config.OpenAIToken, app.Config.OpenAIInstruction)
 	if err := app.OAI.Ping(); err != nil {
-		app.Logger.Error("Failed to connect to OpenAI", zap.Error(err))
+		log.Error().Err(err).Msg("Failed to connect to OpenAI")
 		return nil, err
 	}
 
-	app.TB, err = NewTelegram(app.Config.TelegramToken, app.DB, app.OAI, app.Config, app.Logger)
+	app.TB, err = NewTelegram(app.Config.TelegramToken, app.DB, app.OAI, app.Config)
 	if err != nil {
-		app.Logger.Error("Failed to init telegram bot", zap.Error(err))
+		log.Error().Err(err).Msg("Failed to init telegram bot")
 		return nil, err
 	}
 
@@ -63,23 +56,14 @@ func (app *App) Run() {
 	go app.TB.Start()
 
 	<-stop
-	app.Logger.Info("Shutting down")
-	app.Logger.Sync()
+	log.Info().Msg("Shutting down")
 	app.DB.conn.Close()
-}
-
-func initLogger() (*zap.Logger, error) {
-	logger, err := zap.NewProduction()
-	if err != nil {
-		return nil, err
-	}
-	return logger, nil
 }
 
 func main() {
 	app, err := NewApp()
 	if err != nil {
-		panic(err)
+		log.Fatal().Err(err).Msg("Failed to initialize app")
 	}
 	app.Run()
 }
