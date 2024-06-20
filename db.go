@@ -55,8 +55,8 @@ func (db *DB) setupSchema() error {
 	schema := `
 	CREATE TABLE IF NOT EXISTS message_ref (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		message_id INTEGER,
-		chat_id INTEGER,
+		message_id INTEGER NOT NULL,
+		chat_id INTEGER NOT NULL,
 		last_used DATETIME
 	);
 	CREATE TABLE IF NOT EXISTS user (
@@ -65,10 +65,10 @@ func (db *DB) setupSchema() error {
 	);
 	CREATE TABLE IF NOT EXISTS chat_history (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		user_id INTEGER,
-		user_name TEXT,
-		user_msg TEXT,
-		bot_msg TEXT,
+		user_id INTEGER NOT NULL,
+		user_name TEXT NOT NULL,
+		user_msg TEXT NOT NULL,
+		bot_msg TEXT NOT NULL,
 		last_used DATETIME
 	);`
 	_, err := db.conn.Exec(schema)
