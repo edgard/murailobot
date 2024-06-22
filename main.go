@@ -1,9 +1,7 @@
 package main
 
 import (
-	"os"
-	"os/signal"
-	"syscall"
+	"fmt"
 
 	"github.com/rs/zerolog/log"
 )
@@ -18,46 +16,34 @@ type App struct {
 
 // NewApp creates and initializes a new App instance.
 func NewApp() (*App, error) {
-	var err error
 	app := &App{}
+	var err error
 
-	app.Config, err = NewConfig()
-	if err != nil {
-		log.Error().Err(err).Msg("Failed to load config")
-		return nil, err
+	if app.Config, err = NewConfig(); err != nil {
+		return nil, WrapError(fmt.Errorf("failed to load config: %w", err))
 	}
 
-	app.DB, err = NewDB(app.Config)
-	if err != nil {
-		log.Error().Err(err).Msg("Failed to init database")
-		return nil, err
+	if app.DB, err = NewDB(app.Config); err != nil {
+		return nil, WrapError(fmt.Errorf("failed to init database: %w", err))
 	}
 
-	app.OAI = NewOpenAI(app.Config)
-	if err := app.OAI.Ping(); err != nil {
-		log.Error().Err(err).Msg("Failed to connect to OpenAI")
-		return nil, err
+	if app.OAI, err = NewOpenAI(app.Config); err != nil {
+		return nil, WrapError(fmt.Errorf("failed to init OpenAI: %w", err))
 	}
 
-	app.TB, err = NewTelegram(app.Config, app.DB, app.OAI)
-	if err != nil {
-		log.Error().Err(err).Msg("Failed to init telegram bot")
-		return nil, err
+	if app.TB, err = NewTelegram(app.Config, app.DB, app.OAI); err != nil {
+		return nil, WrapError(fmt.Errorf("failed to init Telegram bot: %w", err))
 	}
 
 	return app, nil
 }
 
 // Run starts the App and handles graceful shutdown.
-func (app *App) Run() {
-	stop := make(chan os.Signal, 1)
-	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
-
-	go app.TB.Start()
-
-	<-stop
-	log.Info().Msg("Shutting down")
-	app.DB.conn.Close()
+func (app *App) Run() error {
+	if err := app.TB.Start(); err != nil {
+		return WrapError(fmt.Errorf("failed to start Telegram bot: %w", err))
+	}
+	return nil
 }
 
 func main() {
@@ -65,5 +51,7 @@ func main() {
 	if err != nil {
 		log.Fatal().Err(err).Msg("Failed to initialize app")
 	}
-	app.Run()
+	if err := app.Run(); err != nil {
+		log.Fatal().Err(err).Msg("Failed to start app")
+	}
 }

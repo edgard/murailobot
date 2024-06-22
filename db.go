@@ -41,12 +41,12 @@ type DB struct {
 func NewDB(config *Config) (*DB, error) {
 	conn, err := sql.Open("sqlite3", config.DBName)
 	if err != nil {
-		return nil, fmt.Errorf("failed to connect to database: %w", err)
+		return nil, WrapError(fmt.Errorf("failed to connect to database: %w", err))
 	}
 
 	db := &DB{conn: conn}
 	if err := db.setupSchema(); err != nil {
-		return nil, fmt.Errorf("failed to set up database schema: %w", err)
+		return nil, WrapError(fmt.Errorf("failed to set up database schema: %w", err))
 	}
 	return db, nil
 }
@@ -73,7 +73,7 @@ func (db *DB) setupSchema() error {
 	);`
 	_, err := db.conn.Exec(schema)
 	if err != nil {
-		return fmt.Errorf("failed to execute schema setup: %w", err)
+		return WrapError(fmt.Errorf("failed to execute schema setup: %w", err))
 	}
 	return nil
 }
@@ -93,10 +93,10 @@ func (db *DB) GetOrCreateUser(userID int64, timeout float64) (User, error) {
 			}
 			_, err = db.conn.Exec(insertQuery, user.UserID, user.LastUsed)
 			if err != nil {
-				return user, fmt.Errorf("failed to insert new user: %w", err)
+				return user, WrapError(fmt.Errorf("failed to insert new user: %w", err))
 			}
 		} else {
-			return user, fmt.Errorf("failed to fetch user: %w", err)
+			return user, WrapError(fmt.Errorf("failed to fetch user: %w", err))
 		}
 	}
 	return user, nil
@@ -108,7 +108,7 @@ func (db *DB) UpdateUserLastUsed(user User) error {
 	query := "UPDATE user SET last_used = ? WHERE user_id = ?"
 	_, err := db.conn.Exec(query, user.LastUsed, user.UserID)
 	if err != nil {
-		return fmt.Errorf("failed to update user last used time: %w", err)
+		return WrapError(fmt.Errorf("failed to update user last used time: %w", err))
 	}
 	return nil
 }
@@ -121,13 +121,13 @@ func (db *DB) GetRandomMessageRef() (MessageRef, error) {
 
 	err := db.conn.QueryRow(selectQuery).Scan(&msgRef.ID, &msgRef.MessageID, &msgRef.ChatID, &msgRef.LastUsed)
 	if err != nil {
-		return msgRef, fmt.Errorf("failed to retrieve random message reference: %w", err)
+		return msgRef, WrapError(fmt.Errorf("failed to retrieve random message reference: %w", err))
 	}
 
 	msgRef.LastUsed = time.Now()
 	_, err = db.conn.Exec(updateQuery, msgRef.LastUsed, msgRef.ID)
 	if err != nil {
-		return msgRef, fmt.Errorf("failed to update message reference last used time: %w", err)
+		return msgRef, WrapError(fmt.Errorf("failed to update message reference last used time: %w", err))
 	}
 	return msgRef, nil
 }
@@ -137,7 +137,7 @@ func (db *DB) AddMessageRef(msgRef *MessageRef) error {
 	query := "INSERT INTO message_ref (message_id, chat_id, last_used) VALUES (?, ?, ?)"
 	_, err := db.conn.Exec(query, msgRef.MessageID, msgRef.ChatID, msgRef.LastUsed)
 	if err != nil {
-		return fmt.Errorf("failed to add message reference: %w", err)
+		return WrapError(fmt.Errorf("failed to add message reference: %w", err))
 	}
 	return nil
 }
@@ -147,7 +147,7 @@ func (db *DB) GetRecentChatHistory(limit int) ([]ChatHistory, error) {
 	query := "SELECT id, user_id, user_name, user_msg, bot_msg, last_used FROM chat_history ORDER BY last_used DESC LIMIT ?"
 	rows, err := db.conn.Query(query, limit)
 	if err != nil {
-		return nil, fmt.Errorf("failed to retrieve recent chat history: %w", err)
+		return nil, WrapError(fmt.Errorf("failed to retrieve recent chat history: %w", err))
 	}
 	defer rows.Close()
 
@@ -155,13 +155,13 @@ func (db *DB) GetRecentChatHistory(limit int) ([]ChatHistory, error) {
 	for rows.Next() {
 		var entry ChatHistory
 		if err := rows.Scan(&entry.ID, &entry.UserID, &entry.UserName, &entry.UserMsg, &entry.BotMsg, &entry.LastUsed); err != nil {
-			return nil, fmt.Errorf("failed to scan chat history: %w", err)
+			return nil, WrapError(fmt.Errorf("failed to scan chat history: %w", err))
 		}
 		history = append(history, entry)
 	}
 
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("rows iteration error: %w", err)
+		return nil, WrapError(fmt.Errorf("rows iteration error: %w", err))
 	}
 	return history, nil
 }
@@ -171,7 +171,7 @@ func (db *DB) AddChatHistory(history *ChatHistory) error {
 	query := "INSERT INTO chat_history (user_id, user_name, user_msg, bot_msg, last_used) VALUES (?, ?, ?, ?, ?)"
 	_, err := db.conn.Exec(query, history.UserID, history.UserName, history.UserMsg, history.BotMsg, history.LastUsed)
 	if err != nil {
-		return fmt.Errorf("failed to add chat history: %w", err)
+		return WrapError(fmt.Errorf("failed to add chat history: %w", err))
 	}
 	return nil
 }
@@ -181,7 +181,7 @@ func (db *DB) ClearChatHistory() error {
 	query := "DELETE FROM chat_history"
 	_, err := db.conn.Exec(query)
 	if err != nil {
-		return fmt.Errorf("failed to clear chat history: %w", err)
+		return WrapError(fmt.Errorf("failed to clear chat history: %w", err))
 	}
 	return nil
 }

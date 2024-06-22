@@ -20,7 +20,7 @@ type Config struct {
 func NewConfig() (*Config, error) {
 	var config Config
 	if err := envconfig.Process("murailobot", &config); err != nil {
-		return nil, fmt.Errorf("failed to process environment variables: %w", err)
+		return nil, WrapError(fmt.Errorf("failed to process environment variables: %w", err))
 	}
 	return &config, nil
 }
