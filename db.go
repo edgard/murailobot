@@ -10,31 +10,31 @@ import (
 
 // User represents a user in the database.
 type User struct {
-	UserID   int64
-	LastUsed time.Time
+	UserID   int64     // Unique identifier for the user
+	LastUsed time.Time // Timestamp of the last time the user was active
 }
 
 // MessageRef represents a message reference in the database.
 type MessageRef struct {
-	ID        uint
-	MessageID int64
-	ChatID    int64
-	LastUsed  time.Time
+	ID        uint      // Unique identifier for the message reference
+	MessageID int64     // ID of the message
+	ChatID    int64     // ID of the chat
+	LastUsed  time.Time // Timestamp of the last time the message reference was used
 }
 
 // ChatHistory represents chat history in the database.
 type ChatHistory struct {
-	ID       uint
-	UserID   int64
-	UserName string
-	UserMsg  string
-	BotMsg   string
-	LastUsed time.Time
+	ID       uint      // Unique identifier for the chat history entry
+	UserID   int64     // ID of the user
+	UserName string    // Name of the user
+	UserMsg  string    // Message sent by the user
+	BotMsg   string    // Message sent by the bot
+	LastUsed time.Time // Timestamp of the last time the chat history entry was used
 }
 
 // DB implements the database interactions using SQLite.
 type DB struct {
-	conn *sql.DB
+	conn *sql.DB // Database connection
 }
 
 // NewDB initializes the database connection and schema.
@@ -51,6 +51,7 @@ func NewDB(config *Config) (*DB, error) {
 	return db, nil
 }
 
+// setupSchema creates the necessary tables if they don't already exist.
 func (db *DB) setupSchema() error {
 	schema := `
 	CREATE TABLE IF NOT EXISTS message_ref (
@@ -71,6 +72,7 @@ func (db *DB) setupSchema() error {
 		bot_msg TEXT NOT NULL,
 		last_used DATETIME
 	);`
+
 	_, err := db.conn.Exec(schema)
 	if err != nil {
 		return fmt.Errorf("failed to execute schema setup: %w", err)
@@ -116,7 +118,12 @@ func (db *DB) UpdateUserLastUsed(user User) error {
 // GetRandomMessageRef retrieves a random message reference from the database.
 func (db *DB) GetRandomMessageRef() (MessageRef, error) {
 	var msgRef MessageRef
-	selectQuery := "SELECT id, message_id, chat_id, last_used FROM message_ref WHERE id IN (SELECT id FROM message_ref ORDER BY last_used ASC LIMIT 5) ORDER BY RANDOM() LIMIT 1"
+	selectQuery := `
+		SELECT id, message_id, chat_id, last_used
+		FROM message_ref
+		WHERE id IN (SELECT id FROM message_ref ORDER BY last_used ASC LIMIT 5)
+		ORDER BY RANDOM()
+		LIMIT 1`
 	updateQuery := "UPDATE message_ref SET last_used = ? WHERE id = ?"
 
 	err := db.conn.QueryRow(selectQuery).Scan(&msgRef.ID, &msgRef.MessageID, &msgRef.ChatID, &msgRef.LastUsed)
@@ -144,7 +151,11 @@ func (db *DB) AddMessageRef(msgRef *MessageRef) error {
 
 // GetRecentChatHistory retrieves recent chat history from the database.
 func (db *DB) GetRecentChatHistory(limit int) ([]ChatHistory, error) {
-	query := "SELECT id, user_id, user_name, user_msg, bot_msg, last_used FROM chat_history ORDER BY last_used DESC LIMIT ?"
+	query := `
+		SELECT id, user_id, user_name, user_msg, bot_msg, last_used
+		FROM chat_history
+		ORDER BY last_used DESC
+		LIMIT ?`
 	rows, err := db.conn.Query(query, limit)
 	if err != nil {
 		return nil, fmt.Errorf("failed to retrieve recent chat history: %w", err)
