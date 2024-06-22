@@ -56,12 +56,13 @@ func (client *OpenAI) sendRequest(body map[string]interface{}) ([]byte, int, err
 }
 
 // Call sends a request to the OpenAI API and returns the response.
-func (client *OpenAI) Call(messages []map[string]string, temperature float32) (string, error) {
+func (client *OpenAI) Call(messages []map[string]string, temperature float32, topp float32) (string, error) {
 	// Prepare the request body
 	requestBody := map[string]interface{}{
 		"model":       "gpt-4o",
 		"messages":    messages,
 		"temperature": temperature,
+		"top_p":       topp,
 	}
 
 	// Send the request

@@ -180,7 +180,7 @@ func (tg *Telegram) handleMrlRequest(b *gotgbot.Bot, ctx *ext.Context) error {
 		"role": "user", "content": fmt.Sprintf("[UID: %d] %s [%s]: %s", ctx.EffectiveMessage.From.Id, userName, time.Now().Format(time.RFC3339), message),
 	})
 
-	content, err := tg.oai.Call(messages, 1.0)
+	content, err := tg.oai.Call(messages, 0.5, 0.5)
 	if err != nil {
 		return WrapError("failed to call OpenAI", err)
 	}
