@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"path/filepath"
 	"runtime"
@@ -18,15 +19,11 @@ func (fle *FileLineError) Error() string {
 	return fmt.Sprintf("[%s:%d] %v", fle.File, fle.Line, fle.Err)
 }
 
-// Unwrap returns the original error.
-func (fle *FileLineError) Unwrap() error {
-	return fle.Err
-}
-
-// WrapError wraps an error with the file name and line number where it occurred.
-func WrapError(err error) error {
-	if err == nil {
-		return nil
+// WrapError wraps an error with the file name and line number where it occurred, and a custom message.
+func WrapError(message string, err ...error) error {
+	var originalErr error
+	if len(err) > 0 {
+		originalErr = err[0]
 	}
 
 	_, file, line, ok := runtime.Caller(1)
@@ -37,9 +34,17 @@ func WrapError(err error) error {
 		file = filepath.Base(file)
 	}
 
+	if originalErr != nil {
+		return &FileLineError{
+			File: file,
+			Line: line,
+			Err:  fmt.Errorf("%s: %w", message, originalErr),
+		}
+	}
+
 	return &FileLineError{
 		File: file,
 		Line: line,
-		Err:  err,
+		Err:  errors.New(message),
 	}
 }

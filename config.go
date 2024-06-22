@@ -1,8 +1,6 @@
 package main
 
 import (
-	"fmt"
-
 	"github.com/kelseyhightower/envconfig"
 )
 
@@ -22,7 +20,7 @@ func NewConfig() (*Config, error) {
 
 	// Process the environment variables and populate the config struct
 	if err := envconfig.Process("murailobot", &config); err != nil {
-		return nil, WrapError(fmt.Errorf("failed to process environment variables: %w", err))
+		return nil, WrapError("failed to process environment variables: %w", err)
 	}
 
 	return &config, nil

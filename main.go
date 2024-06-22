@@ -1,8 +1,6 @@
 package main
 
 import (
-	"fmt"
-
 	"github.com/rs/zerolog/log"
 )
 
@@ -21,22 +19,22 @@ func NewApp() (*App, error) {
 
 	// Initialize configuration
 	if app.Config, err = NewConfig(); err != nil {
-		return nil, WrapError(fmt.Errorf("failed to load config: %w", err))
+		return nil, WrapError("failed to load config: %w", err)
 	}
 
 	// Initialize database
 	if app.DB, err = NewDB(app.Config); err != nil {
-		return nil, WrapError(fmt.Errorf("failed to init database: %w", err))
+		return nil, WrapError("failed to init database: %w", err)
 	}
 
 	// Initialize OpenAI
 	if app.OAI, err = NewOpenAI(app.Config); err != nil {
-		return nil, WrapError(fmt.Errorf("failed to init OpenAI: %w", err))
+		return nil, WrapError("failed to init OpenAI: %w", err)
 	}
 
 	// Initialize Telegram bot
 	if app.TB, err = NewTelegram(app.Config, app.DB, app.OAI); err != nil {
-		return nil, WrapError(fmt.Errorf("failed to init Telegram bot: %w", err))
+		return nil, WrapError("failed to init Telegram bot: %w", err)
 	}
 
 	return app, nil
@@ -46,7 +44,7 @@ func NewApp() (*App, error) {
 func (app *App) Run() error {
 	// Start the Telegram bot
 	if err := app.TB.Start(); err != nil {
-		return WrapError(fmt.Errorf("failed to start Telegram bot: %w", err))
+		return WrapError("failed to start Telegram bot: %w", err)
 	}
 	return nil
 }
