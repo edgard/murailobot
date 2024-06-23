@@ -31,18 +31,18 @@ func NewOpenAI(config *Config) (*OpenAI, error) {
 	}, nil
 }
 
-// sendRequest sends a request to the OpenAI API and returns the response body and status code.
-func (client *OpenAI) sendRequest(body map[string]interface{}) ([]byte, int, error) {
+// sendRequest sends a request to the OpenAI API and returns the response body.
+func (client *OpenAI) sendRequest(body map[string]interface{}) ([]byte, error) {
 	// Marshal the request body to JSON
 	reqBody, err := json.Marshal(body)
 	if err != nil {
-		return nil, 0, WrapError("failed to marshal request body", err)
+		return nil, WrapError("failed to marshal request body", err)
 	}
 
 	// Create a new HTTP request
 	req, err := http.NewRequest("POST", "https://api.openai.com/v1/chat/completions", bytes.NewBuffer(reqBody))
 	if err != nil {
-		return nil, 0, WrapError("failed to create request", err)
+		return nil, WrapError("failed to create request", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", client.Token))
@@ -51,17 +51,17 @@ func (client *OpenAI) sendRequest(body map[string]interface{}) ([]byte, int, err
 	httpClient := &http.Client{}
 	resp, err := httpClient.Do(req)
 	if err != nil {
-		return nil, 0, WrapError("failed to send request", err)
+		return nil, WrapError("failed to send request", err)
 	}
 	defer resp.Body.Close()
 
 	// Read the response body
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, 0, WrapError("failed to read response body", err)
+		return nil, WrapError("failed to read response body", err)
 	}
 
-	return respBody, resp.StatusCode, nil
+	return respBody, nil
 }
 
 // Call sends a request to the OpenAI API and returns the response.
@@ -75,7 +75,7 @@ func (client *OpenAI) Call(messages []map[string]string) (string, error) {
 	}
 
 	// Send the request
-	respBody, _, err := client.sendRequest(requestBody)
+	respBody, err := client.sendRequest(requestBody)
 	if err != nil {
 		return "", WrapError("call to OpenAI API failed", err)
 	}
