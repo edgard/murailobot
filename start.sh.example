@@ -4,6 +4,8 @@ export MURAILOBOT_TELEGRAM_TOKEN=xyz
 export MURAILOBOT_TELEGRAM_ADMIN_UID=12345
 #export MURAILOBOT_TELEGRAM_USER_TIMEOUT=5
 export MURAILOBOT_OPENAI_TOKEN=zyx
+#export MURAILOBOT_OPENAI_TEMPERATURE=0.5
+#export MURAILOBOT_OPENAI_TOP_P=0.5
 export MURAILOBOT_OPENAI_INSTRUCTION="You are MurailoBOT, a Telegram AI assistant bot that provides short and direct responses."
 #export MURAILOBOT_DB_NAME="storage.db"
 

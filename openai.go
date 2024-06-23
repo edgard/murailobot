@@ -10,8 +10,11 @@ import (
 
 // OpenAI encapsulates the logic for interacting with the OpenAI API.
 type OpenAI struct {
-	Token       string // OpenAI API token
-	Instruction string // Instruction for OpenAI
+	Token       string  // OpenAI API token
+	Instruction string  // Instruction for OpenAI
+	Model       string  // Model name for OpenAI
+	Temperature float32 // Temperature setting for OpenAI
+	TopP        float32 // TopP setting for OpenAI
 }
 
 // NewOpenAI creates a new OpenAI client.
@@ -19,7 +22,13 @@ func NewOpenAI(config *Config) (*OpenAI, error) {
 	if config.OpenAIToken == "" || config.OpenAIInstruction == "" {
 		return nil, WrapError("invalid OpenAI configuration")
 	}
-	return &OpenAI{Token: config.OpenAIToken, Instruction: config.OpenAIInstruction}, nil
+	return &OpenAI{
+		Token:       config.OpenAIToken,
+		Instruction: config.OpenAIInstruction,
+		Model:       config.OpenAIModel,
+		Temperature: config.OpenAITemperature,
+		TopP:        config.OpenAITopP,
+	}, nil
 }
 
 // sendRequest sends a request to the OpenAI API and returns the response body and status code.
@@ -56,13 +65,13 @@ func (client *OpenAI) sendRequest(body map[string]interface{}) ([]byte, int, err
 }
 
 // Call sends a request to the OpenAI API and returns the response.
-func (client *OpenAI) Call(messages []map[string]string, temperature float32, topp float32) (string, error) {
+func (client *OpenAI) Call(messages []map[string]string) (string, error) {
 	// Prepare the request body
 	requestBody := map[string]interface{}{
-		"model":       "gpt-4o",
+		"model":       client.Model,
+		"temperature": client.Temperature,
+		"top_p":       client.TopP,
 		"messages":    messages,
-		"temperature": temperature,
-		"top_p":       topp,
 	}
 
 	// Send the request
