@@ -1,4 +1,4 @@
 murailobot
-start.sh
+.envrc
 storage.db
 dist/
