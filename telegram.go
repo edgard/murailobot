@@ -40,6 +40,19 @@ func NewTelegram(config *Config, db *DB, oai *OpenAI) (*Telegram, error) {
 		config: config,
 	}
 	tg.updater = ext.NewUpdater(tg.setupDispatcher(), nil)
+
+	// Set the bot commands
+	commands := []gotgbot.BotCommand{
+		{Command: "start", Description: "Iniciar conversa o bot"},
+		{Command: "piu", Description: "Enviar forward de uma mensagem antiga"},
+		{Command: "mrl", Description: "Gerar uma resposta usando OpenAI"},
+		{Command: "mrl_reset", Description: "Limpar histórico de mensagens (apenas admin)"},
+	}
+	_, err = bot.SetMyCommands(commands, nil)
+	if err != nil {
+		return nil, WrapError("failed to set bot commands", err)
+	}
+
 	return tg, nil
 }
 
