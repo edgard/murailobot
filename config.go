@@ -4,28 +4,28 @@ import (
 	"github.com/kelseyhightower/envconfig"
 )
 
-// Config holds the configuration variables for the application
+// Config holds the configuration variables for the application.
+// All environment variables use the prefix "murailobot".
 type Config struct {
-	TelegramToken       string  `envconfig:"telegram_token" required:"true"`     // Token for accessing the Telegram API
-	TelegramAdminUID    int64   `envconfig:"telegram_admin_uid" required:"true"` // Telegram Admin User ID
-	TelegramUserTimeout float64 `envconfig:"telegram_user_timeout" default:"5"`  // Timeout duration for Telegram users
-	OpenAIToken         string  `envconfig:"openai_token" required:"true"`       // Token for accessing the OpenAI API
-	OpenAIInstruction   string  `envconfig:"openai_instruction" required:"true"` // Instruction string for OpenAI
-	OpenAIModel         string  `envconfig:"openai_model" default:"gpt-4o"`      // Model name for OpenAI
-	OpenAITemperature   float32 `envconfig:"openai_temperature" default:"0.5"`   // Temperature setting for OpenAI
-	OpenAITopP          float32 `envconfig:"openai_top_p" default:"0.5"`         // TopP setting for OpenAI
-	DBName              string  `envconfig:"db_name" default:"storage.db"`       // Database name
+	TelegramToken       string  `envconfig:"telegram_token" required:"true"`     // Telegram API token.
+	TelegramAdminUID    int64   `envconfig:"telegram_admin_uid" required:"true"` // Admin user ID.
+	TelegramUserTimeout float64 `envconfig:"telegram_user_timeout" default:"5"`  // Timeout (in minutes) for Telegram users.
+	OpenAIToken         string  `envconfig:"openai_token" required:"true"`       // OpenAI API token.
+	OpenAIInstruction   string  `envconfig:"openai_instruction" required:"true"` // Instruction for OpenAI.
+	OpenAIModel         string  `envconfig:"openai_model" default:"gpt-4o"`      // OpenAI model name.
+	OpenAITemperature   float32 `envconfig:"openai_temperature" default:"0.5"`   // OpenAI temperature.
+	OpenAITopP          float32 `envconfig:"openai_top_p" default:"0.5"`         // OpenAI TopP.
+	DBName              string  `envconfig:"db_name" default:"storage.db"`       // SQLite database name.
 }
 
-// NewConfig initializes the configuration by processing environment variables.
+// NewConfig initializes configuration by reading environment variables.
 func NewConfig() (*Config, error) {
 	var config Config
-
-	// Process the environment variables and populate the config struct
-	err := envconfig.Process("murailobot", &config)
-	if err != nil {
+	if err := envconfig.Process("murailobot", &config); err != nil {
 		return nil, WrapError("failed to process environment variables", err)
 	}
-
+	if config.TelegramUserTimeout <= 0 {
+		return nil, WrapError("telegram_user_timeout must be greater than 0")
+	}
 	return &config, nil
 }

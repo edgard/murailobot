@@ -15,14 +15,14 @@ import (
 
 // Telegram encapsulates the bot's logic and dependencies.
 type Telegram struct {
-	bot     *gotgbot.Bot
-	updater *ext.Updater
-	db      *DB
-	oai     *OpenAI
-	config  *Config
+	bot     *gotgbot.Bot // Telegram bot instance.
+	updater *ext.Updater // Updater for handling updates.
+	db      *DB          // Database interface.
+	oai     *OpenAI      // OpenAI interface.
+	config  *Config      // Application configuration.
 }
 
-// NewTelegram creates a new Telegram bot instance.
+// NewTelegram creates and initializes a new Telegram bot instance.
 func NewTelegram(config *Config, db *DB, oai *OpenAI) (*Telegram, error) {
 	if config.TelegramToken == "" || config.TelegramAdminUID == 0 {
 		return nil, WrapError("invalid Telegram configuration")
@@ -41,33 +41,30 @@ func NewTelegram(config *Config, db *DB, oai *OpenAI) (*Telegram, error) {
 	}
 	tg.updater = ext.NewUpdater(tg.setupDispatcher(), nil)
 
-	// Set the bot commands
 	commands := []gotgbot.BotCommand{
 		{Command: "start", Description: "Iniciar conversa o bot"},
 		{Command: "piu", Description: "Enviar forward de uma mensagem antiga"},
 		{Command: "mrl", Description: "Gerar uma resposta usando OpenAI"},
 		{Command: "mrl_reset", Description: "Limpar histórico de mensagens (apenas admin)"},
 	}
-	_, err = bot.SetMyCommands(commands, nil)
-	if err != nil {
+	if _, err = bot.SetMyCommands(commands, nil); err != nil {
 		return nil, WrapError("failed to set bot commands", err)
 	}
 
 	return tg, nil
 }
 
-// Start starts the Telegram bot.
+// Start begins polling for updates.
 func (tg *Telegram) Start() error {
-	err := tg.updater.StartPolling(tg.bot, &ext.PollingOpts{
+	if err := tg.updater.StartPolling(tg.bot, &ext.PollingOpts{
 		DropPendingUpdates: false,
 		GetUpdatesOpts: &gotgbot.GetUpdatesOpts{
 			Timeout: 9,
 			RequestOpts: &gotgbot.RequestOpts{
-				Timeout: time.Second * 10,
+				Timeout: 10 * time.Second,
 			},
 		},
-	})
-	if err != nil {
+	}); err != nil {
 		return WrapError("failed to start polling", err)
 	}
 
@@ -76,7 +73,18 @@ func (tg *Telegram) Start() error {
 	return nil
 }
 
-// setupDispatcher sets up the dispatcher with command and message handlers.
+// validateContext ensures EffectiveMessage and EffectiveChat are present.
+func validateContext(ctx *ext.Context) error {
+	if ctx.EffectiveMessage == nil {
+		return WrapError("effective message is nil")
+	}
+	if ctx.EffectiveChat == nil {
+		return WrapError("effective chat is nil")
+	}
+	return nil
+}
+
+// setupDispatcher configures the update dispatcher.
 func (tg *Telegram) setupDispatcher() *ext.Dispatcher {
 	dispatcher := ext.NewDispatcher(&ext.DispatcherOpts{
 		Error: func(bot *gotgbot.Bot, ctx *ext.Context, err error) ext.DispatcherAction {
@@ -93,191 +101,185 @@ func (tg *Telegram) setupDispatcher() *ext.Dispatcher {
 	return dispatcher
 }
 
-// handleIncomingMessage processes incoming messages.
+// handleIncomingMessage processes forwarded messages.
 func (tg *Telegram) handleIncomingMessage(b *gotgbot.Bot, ctx *ext.Context) error {
-	if ctx.EffectiveMessage == nil {
-		return WrapError("effective message is nil")
+	if err := validateContext(ctx); err != nil {
+		return err
 	}
+
 	if ctx.EffectiveMessage.ForwardOrigin == nil {
-		log.Info().Int64("user_id", ctx.EffectiveMessage.From.Id).Str("username", ctx.EffectiveMessage.From.Username).Int64("update_id", ctx.Update.UpdateId).Msg("Received non-forward message, ignoring")
+		log.Info().
+			Int64("user_id", ctx.EffectiveMessage.From.Id).
+			Str("username", ctx.EffectiveMessage.From.Username).
+			Int64("update_id", ctx.Update.UpdateId).
+			Msg("Received non-forward message, ignoring")
 		return nil
 	}
-	log.Info().Int64("user_id", ctx.EffectiveMessage.From.Id).Str("username", ctx.EffectiveMessage.From.Username).Int64("update_id", ctx.Update.UpdateId).Msg("Received forward message")
 
-	msgRef := MessageRef{MessageID: ctx.EffectiveMessage.MessageId, ChatID: ctx.EffectiveMessage.Chat.Id, LastUsed: time.Now()}
-	err := tg.db.AddMessageRef(&msgRef)
-	if err != nil {
+	log.Info().
+		Int64("user_id", ctx.EffectiveMessage.From.Id).
+		Str("username", ctx.EffectiveMessage.From.Username).
+		Int64("update_id", ctx.Update.UpdateId).
+		Msg("Received forward message")
+
+	msgRef := MessageRef{
+		MessageID: ctx.EffectiveMessage.MessageId,
+		ChatID:    ctx.EffectiveMessage.Chat.Id,
+		LastUsed:  time.Now(),
+	}
+	if err := tg.db.AddMessageRef(&msgRef); err != nil {
 		return WrapError("failed to add message reference to database", err)
 	}
 
-	err = tg.sendTelegramMessage(ctx, "Mensagem adicionada ao banco de dados!")
-	if err != nil {
-		return WrapError("failed to send telegram message", err)
-	}
-
-	return nil
+	return tg.sendTelegramMessage(ctx, "Mensagem adicionada ao banco de dados!")
 }
 
 // handleStartRequest processes the /start command.
 func (tg *Telegram) handleStartRequest(b *gotgbot.Bot, ctx *ext.Context) error {
-	if ctx.EffectiveMessage == nil {
-		return WrapError("effective message is nil")
+	if err := validateContext(ctx); err != nil {
+		return err
 	}
-	log.Info().Int64("user_id", ctx.EffectiveMessage.From.Id).Str("username", ctx.EffectiveMessage.From.Username).Int64("update_id", ctx.Update.UpdateId).Msg("Received START request")
-	err := tg.sendTelegramMessage(ctx, "Olá! Me encaminhe uma mensagem para guardar.")
-	if err != nil {
-		return WrapError("failed to send start message", err)
-	}
-	return nil
+	log.Info().
+		Int64("user_id", ctx.EffectiveMessage.From.Id).
+		Str("username", ctx.EffectiveMessage.From.Username).
+		Int64("update_id", ctx.Update.UpdateId).
+		Msg("Received START request")
+	return tg.sendTelegramMessage(ctx, "Olá! Me encaminhe uma mensagem para guardar.")
 }
 
 // handlePiuRequest processes the /piu command.
 func (tg *Telegram) handlePiuRequest(b *gotgbot.Bot, ctx *ext.Context) error {
-	if ctx.EffectiveMessage == nil {
-		return WrapError("effective message is nil")
+	if err := validateContext(ctx); err != nil {
+		return err
 	}
-	log.Info().Int64("user_id", ctx.EffectiveMessage.From.Id).Str("username", ctx.EffectiveMessage.From.Username).Int64("update_id", ctx.Update.UpdateId).Msg("Received PIU request")
+	log.Info().
+		Int64("user_id", ctx.EffectiveMessage.From.Id).
+		Str("username", ctx.EffectiveMessage.From.Username).
+		Int64("update_id", ctx.Update.UpdateId).
+		Msg("Received PIU request")
 
 	user, err := tg.db.GetOrCreateUser(ctx.EffectiveMessage.From.Id, tg.config.TelegramUserTimeout)
 	if err != nil {
 		return WrapError("failed to get or create user", err)
 	}
-
 	if time.Since(user.LastUsed).Minutes() <= tg.config.TelegramUserTimeout {
-		log.Info().Int64("user_id", user.UserID).Str("username", ctx.EffectiveMessage.From.Username).Time("last_used", user.LastUsed).Msg("User on timeout")
+		log.Info().
+			Int64("user_id", user.UserID).
+			Str("username", ctx.EffectiveMessage.From.Username).
+			Time("last_used", user.LastUsed).
+			Msg("User on timeout")
 		return nil
 	}
-
-	err = tg.db.UpdateUserLastUsed(user)
-	if err != nil {
+	if err := tg.db.UpdateUserLastUsed(user); err != nil {
 		return WrapError("failed to update user's last used time", err)
 	}
-
 	msgRef, err := tg.db.GetRandomMessageRef()
 	if err != nil {
 		return WrapError("failed to get random message reference", err)
 	}
-
-	err = tg.forwardTelegramMessage(ctx, msgRef.ChatID, msgRef.MessageID)
-	if err != nil {
-		return WrapError("failed to forward telegram message", err)
-	}
-
-	return nil
+	return tg.forwardTelegramMessage(ctx, msgRef.ChatID, msgRef.MessageID)
 }
 
-// handleMrlRequest processes the /mrl command.
+// handleMrlRequest processes the /mrl command for generating a response using OpenAI.
 func (tg *Telegram) handleMrlRequest(b *gotgbot.Bot, ctx *ext.Context) error {
-	if ctx.EffectiveMessage == nil {
-		return WrapError("effective message is nil")
+	if err := validateContext(ctx); err != nil {
+		return err
 	}
-	log.Info().Int64("user_id", ctx.EffectiveMessage.From.Id).Str("username", ctx.EffectiveMessage.From.Username).Int64("update_id", ctx.Update.UpdateId).Msg("Received MRL request")
-
-	_, err := tg.bot.SendChatAction(ctx.EffectiveChat.Id, "typing", nil)
-	if err != nil {
+	log.Info().
+		Int64("user_id", ctx.EffectiveMessage.From.Id).
+		Str("username", ctx.EffectiveMessage.From.Username).
+		Int64("update_id", ctx.Update.UpdateId).
+		Msg("Received MRL request")
+	if _, err := tg.bot.SendChatAction(ctx.EffectiveChat.Id, "typing", nil); err != nil {
 		return WrapError("failed to send chat action", err)
 	}
-
-	message := strings.TrimSpace(strings.TrimPrefix(ctx.EffectiveMessage.Text, "/mrl"))
-
+	messageText := strings.TrimSpace(strings.TrimPrefix(ctx.EffectiveMessage.Text, "/mrl"))
 	gptHistory, err := tg.db.GetRecentChatHistory(30)
 	if err != nil {
 		return WrapError("failed to get recent chat history", err)
 	}
-
-	messages := []map[string]string{{"role": "system", "content": tg.config.OpenAIInstruction}}
-
+	messages := []map[string]string{
+		{"role": "system", "content": tg.config.OpenAIInstruction},
+	}
 	sort.Slice(gptHistory, func(i, j int) bool {
 		return gptHistory[i].LastUsed.Before(gptHistory[j].LastUsed)
 	})
-
 	for _, history := range gptHistory {
 		userName := history.UserName
 		if userName == "" {
 			userName = "Unknown User"
 		}
 		messages = append(messages, map[string]string{
-			"role": "user", "content": fmt.Sprintf("[UID: %d] %s [%s]: %s", history.UserID, userName, history.LastUsed.Format(time.RFC3339), history.UserMsg),
+			"role":    "user",
+			"content": fmt.Sprintf("[UID: %d] %s [%s]: %s", history.UserID, userName, history.LastUsed.Format(time.RFC3339), history.UserMsg),
 		})
 		messages = append(messages, map[string]string{
-			"role": "assistant", "content": history.BotMsg,
+			"role":    "assistant",
+			"content": history.BotMsg,
 		})
 	}
-
-	userName := ctx.EffectiveMessage.From.Username
-	if userName == "" {
-		userName = "Unknown User"
+	currentUserName := ctx.EffectiveMessage.From.Username
+	if currentUserName == "" {
+		currentUserName = "Unknown User"
 	}
 	messages = append(messages, map[string]string{
-		"role": "user", "content": fmt.Sprintf("[UID: %d] %s [%s]: %s", ctx.EffectiveMessage.From.Id, userName, time.Now().Format(time.RFC3339), message),
+		"role":    "user",
+		"content": fmt.Sprintf("[UID: %d] %s [%s]: %s", ctx.EffectiveMessage.From.Id, currentUserName, time.Now().Format(time.RFC3339), messageText),
 	})
-
 	content, err := tg.oai.Call(messages)
 	if err != nil {
 		return WrapError("failed to call OpenAI", err)
 	}
-
-	err = tg.sendTelegramMessage(ctx, content)
-	if err != nil {
+	if err := tg.sendTelegramMessage(ctx, content); err != nil {
 		return WrapError("failed to send OpenAI response", err)
 	}
-
-	historyRecord := ChatHistory{UserID: ctx.EffectiveMessage.From.Id, UserName: ctx.EffectiveMessage.From.Username, UserMsg: message, BotMsg: content, LastUsed: time.Now()}
-	err = tg.db.AddChatHistory(&historyRecord)
-	if err != nil {
-		return WrapError("failed to add chat history to database", err)
+	historyRecord := ChatHistory{
+		UserID:   ctx.EffectiveMessage.From.Id,
+		UserName: ctx.EffectiveMessage.From.Username,
+		UserMsg:  messageText,
+		BotMsg:   content,
+		LastUsed: time.Now(),
 	}
-
-	return nil
+	return tg.db.AddChatHistory(&historyRecord)
 }
 
-// handleMrlResetRequest processes the /mrl_reset command.
+// handleMrlResetRequest processes the /mrl_reset command to clear chat history (admin only).
 func (tg *Telegram) handleMrlResetRequest(b *gotgbot.Bot, ctx *ext.Context) error {
-	if ctx.EffectiveMessage == nil {
-		return WrapError("effective message is nil")
+	if err := validateContext(ctx); err != nil {
+		return err
 	}
-	log.Info().Int64("user_id", ctx.EffectiveMessage.From.Id).Str("username", ctx.EffectiveMessage.From.Username).Int64("update_id", ctx.Update.UpdateId).Msg("Received MRL_RESET request")
-
+	log.Info().
+		Int64("user_id", ctx.EffectiveMessage.From.Id).
+		Str("username", ctx.EffectiveMessage.From.Username).
+		Int64("update_id", ctx.Update.UpdateId).
+		Msg("Received MRL_RESET request")
 	if ctx.EffectiveMessage.From.Id != tg.config.TelegramAdminUID {
-		_, err := ctx.EffectiveMessage.Reply(b, "You are not authorized to use this command.", nil)
-		if err != nil {
+		if _, err := ctx.EffectiveMessage.Reply(b, "You are not authorized to use this command.", nil); err != nil {
 			return WrapError("failed to send unauthorized message", err)
 		}
 		return nil
 	}
-
-	err := tg.db.ClearChatHistory()
-	if err != nil {
+	if err := tg.db.ClearChatHistory(); err != nil {
 		return WrapError("failed to clear chat history", err)
 	}
-
-	_, err = ctx.EffectiveMessage.Reply(b, "History has been reset.", nil)
-	if err != nil {
-		return WrapError("failed to send reset confirmation message", err)
-	}
-	return nil
+	_, err := ctx.EffectiveMessage.Reply(b, "History has been reset.", nil)
+	return WrapError("failed to send reset confirmation message", err)
 }
 
-// sendTelegramMessage sends a message to a Telegram chat.
+// sendTelegramMessage replies with a text message in the current chat.
 func (tg *Telegram) sendTelegramMessage(ctx *ext.Context, text string) error {
-	if ctx.EffectiveMessage == nil {
-		return WrapError("effective message is nil")
+	if err := validateContext(ctx); err != nil {
+		return err
 	}
 	_, err := ctx.EffectiveMessage.Reply(tg.bot, text, nil)
-	if err != nil {
-		return WrapError("failed to send telegram message", err)
-	}
-	return nil
+	return WrapError("failed to send telegram message", err)
 }
 
-// forwardTelegramMessage forwards a message to a Telegram chat.
-func (tg *Telegram) forwardTelegramMessage(ctx *ext.Context, forwardChatID int64, forwardMessageID int64) error {
-	if ctx.EffectiveMessage == nil {
-		return WrapError("effective message is nil")
+// forwardTelegramMessage forwards a message from a different chat.
+func (tg *Telegram) forwardTelegramMessage(ctx *ext.Context, forwardChatID, forwardMessageID int64) error {
+	if err := validateContext(ctx); err != nil {
+		return err
 	}
 	_, err := tg.bot.ForwardMessage(ctx.EffectiveChat.Id, forwardChatID, forwardMessageID, nil)
-	if err != nil {
-		return WrapError("failed to forward telegram message", err)
-	}
-	return nil
+	return WrapError("failed to forward telegram message", err)
 }
