@@ -1,3 +1,4 @@
+version: 2
 project_name: murailobot
 
 before:
@@ -54,6 +55,3 @@ changelog:
       - "^test:"
       - Merge pull request
       - Merge branch
-
-snapshot:
-  name_template: "{{ incpatch .Version }}-SNAPSHOT"
