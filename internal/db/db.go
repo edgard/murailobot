@@ -14,10 +14,11 @@ type DB struct {
 	Conn *sqlx.DB
 }
 
+// NewDB opens a connection to the SQLite database and sets up the schema.
 func NewDB(dbName string) (*DB, error) {
 	conn, err := sqlx.Connect("sqlite3", dbName)
 	if err != nil {
-		return nil, fmt.Errorf("db: failed to connect: %w", err)
+		return nil, fmt.Errorf("failed to connect to database: %w", err)
 	}
 	if err := setupSchema(conn); err != nil {
 		return nil, err
@@ -47,7 +48,7 @@ func setupSchema(db *sqlx.DB) error {
 	);
 	`
 	if _, err := db.Exec(schema); err != nil {
-		return fmt.Errorf("db: failed to setup schema: %w", err)
+		return fmt.Errorf("failed to setup schema: %w", err)
 	}
 	return nil
 }
@@ -76,39 +77,37 @@ type ChatHistory struct {
 	LastUsed time.Time `db:"last_used"`
 }
 
-// GetOrCreateUser retrieves or creates a user record.
+// GetOrCreateUser retrieves a user record or creates one if not found.
 func (d *DB) GetOrCreateUser(ctx context.Context, userID int64, timeout float64) (User, error) {
 	var user User
 	query := `SELECT user_id, last_used FROM "user" WHERE user_id = ?`
 	err := d.Conn.GetContext(ctx, &user, query, userID)
 	if err != nil {
-		// If no record, create one.
 		if err.Error() == "sql: no rows in result set" {
 			pastTime := time.Now().Add(-time.Minute * time.Duration(int(timeout)+1))
 			user = User{UserID: userID, LastUsed: pastTime}
 			insertQuery := `INSERT INTO "user" (user_id, last_used) VALUES (?, ?)`
 			if _, err := d.Conn.ExecContext(ctx, insertQuery, user.UserID, user.LastUsed); err != nil {
-				return user, fmt.Errorf("db: failed to insert user: %w", err)
+				return user, fmt.Errorf("failed to insert new user: %w", err)
 			}
 		} else {
-			return user, fmt.Errorf("db: failed to fetch user: %w", err)
+			return user, fmt.Errorf("failed to fetch user: %w", err)
 		}
 	}
 	return user, nil
 }
 
-// UpdateUserLastUsed updates the last used time for a user.
+// UpdateUserLastUsed updates the last used timestamp for a user.
 func (d *DB) UpdateUserLastUsed(ctx context.Context, user User) error {
 	user.LastUsed = time.Now()
 	query := `UPDATE "user" SET last_used = ? WHERE user_id = ?`
-	_, err := d.Conn.ExecContext(ctx, query, user.LastUsed, user.UserID)
-	if err != nil {
-		return fmt.Errorf("db: failed to update user last_used: %w", err)
+	if _, err := d.Conn.ExecContext(ctx, query, user.LastUsed, user.UserID); err != nil {
+		return fmt.Errorf("failed to update user last used: %w", err)
 	}
 	return nil
 }
 
-// GetRandomMessageRef retrieves a random message reference from the least‑used ones.
+// GetRandomMessageRef retrieves a random message reference from the least-used ones.
 func (d *DB) GetRandomMessageRef(ctx context.Context) (MessageRef, error) {
 	var msgRef MessageRef
 	selectQuery := `
@@ -118,12 +117,12 @@ func (d *DB) GetRandomMessageRef(ctx context.Context) (MessageRef, error) {
 		ORDER BY RANDOM()
 		LIMIT 1`
 	if err := d.Conn.GetContext(ctx, &msgRef, selectQuery); err != nil {
-		return msgRef, fmt.Errorf("db: failed to get random message_ref: %w", err)
+		return msgRef, fmt.Errorf("failed to get random message_ref: %w", err)
 	}
 	msgRef.LastUsed = time.Now()
 	updateQuery := `UPDATE message_ref SET last_used = ? WHERE id = ?`
 	if _, err := d.Conn.ExecContext(ctx, updateQuery, msgRef.LastUsed, msgRef.ID); err != nil {
-		return msgRef, fmt.Errorf("db: failed to update message_ref: %w", err)
+		return msgRef, fmt.Errorf("failed to update message_ref: %w", err)
 	}
 	return msgRef, nil
 }
@@ -132,7 +131,7 @@ func (d *DB) GetRandomMessageRef(ctx context.Context) (MessageRef, error) {
 func (d *DB) AddMessageRef(ctx context.Context, msgRef MessageRef) error {
 	query := `INSERT INTO message_ref (message_id, chat_id, last_used) VALUES (?, ?, ?)`
 	if _, err := d.Conn.ExecContext(ctx, query, msgRef.MessageID, msgRef.ChatID, msgRef.LastUsed); err != nil {
-		return fmt.Errorf("db: failed to add message_ref: %w", err)
+		return fmt.Errorf("failed to add message_ref: %w", err)
 	}
 	return nil
 }
@@ -146,7 +145,7 @@ func (d *DB) GetRecentChatHistory(ctx context.Context, limit int) ([]ChatHistory
 		ORDER BY last_used DESC
 		LIMIT ?`
 	if err := d.Conn.SelectContext(ctx, &histories, query, limit); err != nil {
-		return nil, fmt.Errorf("db: failed to get chat_history: %w", err)
+		return nil, fmt.Errorf("failed to get chat_history: %w", err)
 	}
 	return histories, nil
 }
@@ -155,7 +154,7 @@ func (d *DB) GetRecentChatHistory(ctx context.Context, limit int) ([]ChatHistory
 func (d *DB) AddChatHistory(ctx context.Context, history ChatHistory) error {
 	query := `INSERT INTO chat_history (user_id, user_name, user_msg, bot_msg, last_used) VALUES (?, ?, ?, ?, ?)`
 	if _, err := d.Conn.ExecContext(ctx, query, history.UserID, history.UserName, history.UserMsg, history.BotMsg, history.LastUsed); err != nil {
-		return fmt.Errorf("db: failed to add chat_history: %w", err)
+		return fmt.Errorf("failed to add chat_history: %w", err)
 	}
 	return nil
 }
@@ -164,7 +163,7 @@ func (d *DB) AddChatHistory(ctx context.Context, history ChatHistory) error {
 func (d *DB) ClearChatHistory(ctx context.Context) error {
 	query := `DELETE FROM chat_history`
 	if _, err := d.Conn.ExecContext(ctx, query); err != nil {
-		return fmt.Errorf("db: failed to clear chat_history: %w", err)
+		return fmt.Errorf("failed to clear chat_history: %w", err)
 	}
 	return nil
 }

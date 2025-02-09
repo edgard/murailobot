@@ -18,7 +18,7 @@ import (
 	"github.com/edgard/murailobot/internal/openai"
 )
 
-// Bot encapsulates the Telegram bot logic and its dependencies.
+// Bot encapsulates the Telegram bot logic and dependencies.
 type Bot struct {
 	bot     *gotgbot.Bot
 	updater *ext.Updater
@@ -27,14 +27,14 @@ type Bot struct {
 	cfg     *config.Config
 }
 
-// NewBot creates a new instance of Bot.
+// NewBot creates and initializes a new Bot instance.
 func NewBot(cfg *config.Config, database *db.DB, oaiClient *openai.Client) (*Bot, error) {
 	if cfg.TelegramToken == "" || cfg.TelegramAdminUID == 0 {
-		return nil, fmt.Errorf("telegram: invalid configuration")
+		return nil, fmt.Errorf("invalid Telegram configuration")
 	}
 	b, err := gotgbot.NewBot(cfg.TelegramToken, nil)
 	if err != nil {
-		return nil, fmt.Errorf("telegram: failed to create bot: %w", err)
+		return nil, fmt.Errorf("failed to create bot: %w", err)
 	}
 
 	tg := &Bot{
@@ -53,7 +53,7 @@ func NewBot(cfg *config.Config, database *db.DB, oaiClient *openai.Client) (*Bot
 		{Command: "mrl_reset", Description: "Reset chat history (admin only)"},
 	}
 	if _, err = b.SetMyCommands(commands, nil); err != nil {
-		return nil, fmt.Errorf("telegram: failed to set commands: %w", err)
+		return nil, fmt.Errorf("failed to set commands: %w", err)
 	}
 	return tg, nil
 }
@@ -74,36 +74,29 @@ func (t *Bot) Start(ctx context.Context) error {
 			},
 		},
 	}); err != nil {
-		return fmt.Errorf("telegram: polling error: %w", err)
+		return fmt.Errorf("polling error: %w", err)
 	}
-	log.Info().
-		Str("component", "telegram").
-		Str("username", t.bot.User.Username).
-		Msg("Started Telegram Bot")
-	t.updater.Idle() // Blocks until Stop() is called.
+	log.Info().Str("username", t.bot.User.Username).Msg("Started Telegram Bot")
+	t.updater.Idle()
 	return nil
 }
 
-// validateContext ensures that the update context contains the required fields.
+// validateContext checks that the update context contains the required fields.
 func validateContext(ctx *ext.Context) error {
 	if ctx.EffectiveMessage == nil {
-		return fmt.Errorf("telegram: effective message is nil")
+		return fmt.Errorf("effective message is nil")
 	}
 	if ctx.EffectiveChat == nil {
-		return fmt.Errorf("telegram: effective chat is nil")
+		return fmt.Errorf("effective chat is nil")
 	}
 	return nil
 }
 
-// setupDispatcher registers handlers for various commands and message events.
+// setupDispatcher registers command and message handlers.
 func (t *Bot) setupDispatcher() *ext.Dispatcher {
 	dispatcher := ext.NewDispatcher(&ext.DispatcherOpts{
 		Error: func(bot *gotgbot.Bot, ctx *ext.Context, err error) ext.DispatcherAction {
-			log.Error().
-				Err(err).
-				Str("component", "telegram").
-				Interface("update", ctx.Update).
-				Msg("Handler error")
+			log.Error().Err(err).Interface("update", ctx.Update).Msg("Handler error")
 			return ext.DispatcherActionNoop
 		},
 		MaxRoutines: ext.DefaultMaxRoutines,
@@ -116,44 +109,28 @@ func (t *Bot) setupDispatcher() *ext.Dispatcher {
 	return dispatcher
 }
 
-// /start command handler.
+// handleStart processes the /start command.
 func (t *Bot) handleStart(b *gotgbot.Bot, ctx *ext.Context) error {
 	if err := validateContext(ctx); err != nil {
 		return err
 	}
-	log.Info().
-		Str("component", "telegram").
-		Str("command", "start").
-		Int64("user_id", ctx.EffectiveMessage.From.Id).
-		Int64("update_id", ctx.Update.UpdateId).
-		Msg("Processing /start")
+	log.Info().Int64("user_id", ctx.EffectiveMessage.From.Id).Msg("Processing /start")
 	return t.sendMessage(ctx, "Olá! Me encaminhe uma mensagem para guardar.")
 }
 
-// /piu command handler.
+// handlePiu processes the /piu command.
 func (t *Bot) handlePiu(b *gotgbot.Bot, ctx *ext.Context) error {
 	if err := validateContext(ctx); err != nil {
 		return err
 	}
-	log.Info().
-		Str("component", "telegram").
-		Str("command", "piu").
-		Int64("user_id", ctx.EffectiveMessage.From.Id).
-		Int64("update_id", ctx.Update.UpdateId).
-		Msg("Processing /piu")
-
-	// Use a background context since ext.Context no longer provides one.
+	log.Info().Int64("user_id", ctx.EffectiveMessage.From.Id).Msg("Processing /piu")
 	cctx := context.Background()
 	user, err := t.db.GetOrCreateUser(cctx, ctx.EffectiveMessage.From.Id, t.cfg.TelegramUserTimeout)
 	if err != nil {
 		return err
 	}
 	if time.Since(user.LastUsed).Minutes() <= t.cfg.TelegramUserTimeout {
-		log.Info().
-			Str("component", "telegram").
-			Str("command", "piu").
-			Int64("user_id", user.UserID).
-			Msg("User is within timeout period")
+		log.Info().Int64("user_id", user.UserID).Msg("User within timeout")
 		return nil
 	}
 	if err := t.db.UpdateUserLastUsed(cctx, user); err != nil {
@@ -166,24 +143,17 @@ func (t *Bot) handlePiu(b *gotgbot.Bot, ctx *ext.Context) error {
 	return t.forwardMessage(ctx, msgRef.ChatID, msgRef.MessageID)
 }
 
-// /mrl command handler.
+// handleMrl processes the /mrl command.
 func (t *Bot) handleMrl(b *gotgbot.Bot, ctx *ext.Context) error {
 	if err := validateContext(ctx); err != nil {
 		return err
 	}
-	log.Info().
-		Str("component", "telegram").
-		Str("command", "mrl").
-		Int64("user_id", ctx.EffectiveMessage.From.Id).
-		Int64("update_id", ctx.Update.UpdateId).
-		Msg("Processing /mrl")
+	log.Info().Int64("user_id", ctx.EffectiveMessage.From.Id).Msg("Processing /mrl")
 	if _, err := t.bot.SendChatAction(ctx.EffectiveChat.Id, "typing", nil); err != nil {
 		return err
 	}
 	messageText := strings.TrimSpace(strings.TrimPrefix(ctx.EffectiveMessage.Text, "/mrl"))
-	// Use a background context.
 	cctx := context.Background()
-
 	history, err := t.db.GetRecentChatHistory(cctx, 30)
 	if err != nil {
 		return err
@@ -191,7 +161,6 @@ func (t *Bot) handleMrl(b *gotgbot.Bot, ctx *ext.Context) error {
 	messages := []map[string]string{
 		{"role": "system", "content": t.cfg.OpenAIInstruction},
 	}
-	// Order history chronologically.
 	sort.Slice(history, func(i, j int) bool {
 		return history[i].LastUsed.Before(history[j].LastUsed)
 	})
@@ -235,59 +204,43 @@ func (t *Bot) handleMrl(b *gotgbot.Bot, ctx *ext.Context) error {
 	return t.db.AddChatHistory(cctx, historyRecord)
 }
 
-// /mrl_reset command handler.
+// handleMrlReset processes the /mrl_reset command.
 func (t *Bot) handleMrlReset(b *gotgbot.Bot, ctx *ext.Context) error {
 	if err := validateContext(ctx); err != nil {
 		return err
 	}
-	log.Info().
-		Str("component", "telegram").
-		Str("command", "mrl_reset").
-		Int64("user_id", ctx.EffectiveMessage.From.Id).
-		Int64("update_id", ctx.Update.UpdateId).
-		Msg("Processing /mrl_reset")
+	log.Info().Int64("user_id", ctx.EffectiveMessage.From.Id).Msg("Processing /mrl_reset")
 	if ctx.EffectiveMessage.From.Id != t.cfg.TelegramAdminUID {
-		_, err := ctx.EffectiveMessage.Reply(b, "You are not authorized to use this command.", nil)
+		_, err := ctx.EffectiveMessage.Reply(b, "Not authorized.", nil)
 		return err
 	}
-	// Use a background context.
 	cctx := context.Background()
 	if err := t.db.ClearChatHistory(cctx); err != nil {
 		return err
 	}
-	_, err := ctx.EffectiveMessage.Reply(b, "History has been reset.", nil)
+	_, err := ctx.EffectiveMessage.Reply(b, "History reset.", nil)
 	return err
 }
 
-// Handler for forwarded messages.
+// handleIncomingMessage processes forwarded messages.
 func (t *Bot) handleIncomingMessage(b *gotgbot.Bot, ctx *ext.Context) error {
 	if err := validateContext(ctx); err != nil {
 		return err
 	}
-	// Only process forwarded messages.
 	if ctx.EffectiveMessage.ForwardOrigin == nil {
-		log.Info().
-			Str("component", "telegram").
-			Str("handler", "incoming_message").
-			Int64("user_id", ctx.EffectiveMessage.From.Id).
-			Msg("Non-forward message ignored")
+		log.Info().Int64("user_id", ctx.EffectiveMessage.From.Id).Msg("Non-forward message ignored")
 		return nil
 	}
-	log.Info().
-		Str("component", "telegram").
-		Str("handler", "incoming_message").
-		Int64("user_id", ctx.EffectiveMessage.From.Id).
-		Msg("Forwarded message received")
+	log.Info().Int64("user_id", ctx.EffectiveMessage.From.Id).Msg("Forwarded message received")
 	msgRef := db.MessageRef{
 		MessageID: ctx.EffectiveMessage.MessageId,
 		ChatID:    ctx.EffectiveMessage.Chat.Id,
 		LastUsed:  time.Now(),
 	}
-	// Use a background context.
 	return t.db.AddMessageRef(context.Background(), msgRef)
 }
 
-// sendMessage sends a text message as a reply.
+// sendMessage sends a text reply to the current chat.
 func (t *Bot) sendMessage(ctx *ext.Context, text string) error {
 	_, err := ctx.EffectiveMessage.Reply(t.bot, text, nil)
 	return err
