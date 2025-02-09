@@ -8,7 +8,7 @@ all: build
 
 build:
 	@$(GO) mod tidy && $(GO) mod download
-	@$(GO) build -o $(BINARY_NAME) ./...
+	@$(GO) build -o $(BINARY_NAME) ./cmd/murailobot
 
 release: build
 	@$(GORELEASER) release --clean
