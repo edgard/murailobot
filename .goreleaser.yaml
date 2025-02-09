@@ -38,10 +38,18 @@ dockers:
       - --pull
       - --label=org.opencontainers.image.created={{ .Date }}
       - --label=org.opencontainers.image.title={{ .ProjectName }}
+      - --label=org.opencontainers.image.description={{ .ProjectName }} {{ .Version }} {{ .Date }}
       - --label=org.opencontainers.image.revision={{ .FullCommit }}
       - --label=org.opencontainers.image.version={{ .Version }}
       - --label=org.opencontainers.image.source=https://github.com/edgard/{{ .ProjectName }}
       - --label=org.opencontainers.image.url=https://github.com/edgard/{{ .ProjectName }}
+      - --annotation=index:org.opencontainers.image.created="{{ .Date }}"
+      - --annotation=index:org.opencontainers.image.title="{{ .ProjectName }}"
+      - --annotation=index:org.opencontainers.image.description="{{ .ProjectName }} {{ .Version }} {{ .Date }}"
+      - --annotation=index:org.opencontainers.image.revision="{{ .FullCommit }}"
+      - --annotation=index:org.opencontainers.image.version="{{ .Version }}"
+      - --annotation=index:org.opencontainers.image.source="https://github.com/edgard/{{ .ProjectName }}"
+      - --annotation=index:org.opencontainers.image.url="https://github.com/edgard/{{ .ProjectName }}"
 
 checksum:
   name_template: "sha256sums.txt"
