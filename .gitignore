@@ -1,4 +1,4 @@
-murailobot
-.envrc
-storage.db
-dist/
+/murailobot
+/.envrc
+/storage.db
+/dist/
