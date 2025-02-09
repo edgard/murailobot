@@ -6,7 +6,9 @@ before:
     - go mod download
 
 builds:
-  - env:
+  - main: ./cmd/murailobot
+    binary: murailobot
+    env:
       - GO111MODULE=on
     goos:
       - linux
