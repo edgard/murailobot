@@ -143,36 +143,15 @@ func (t *Bot) handlePiu(b *gotgbot.Bot, ctx *ext.Context) error {
 	return t.forwardMessage(ctx, msgRef.ChatID, msgRef.MessageID)
 }
 
+// handleMrl processes the /mrl command.
 func (t *Bot) handleMrl(b *gotgbot.Bot, ctx *ext.Context) error {
 	if err := validateContext(ctx); err != nil {
 		return err
 	}
 	log.Info().Int64("user_id", ctx.EffectiveMessage.From.Id).Msg("Processing /mrl")
-
-	// Immediately send a typing action
 	if _, err := t.bot.SendChatAction(ctx.EffectiveChat.Id, "typing", nil); err != nil {
-		log.Error().Err(err).Msg("Failed to send initial typing action")
+		return err
 	}
-
-	typingCtx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	// Start a goroutine to refresh the typing action every 4 seconds.
-	go func() {
-		ticker := time.NewTicker(4 * time.Second)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-typingCtx.Done():
-				return
-			case <-ticker.C:
-				if _, err := t.bot.SendChatAction(ctx.EffectiveChat.Id, "typing", nil); err != nil {
-					log.Error().Err(err).Msg("Failed to send typing action")
-				}
-			}
-		}
-	}()
-
 	messageText := strings.TrimSpace(strings.TrimPrefix(ctx.EffectiveMessage.Text, "/mrl"))
 	cctx := context.Background()
 	history, err := t.db.GetRecentChatHistory(cctx, 30)
@@ -208,9 +187,7 @@ func (t *Bot) handleMrl(b *gotgbot.Bot, ctx *ext.Context) error {
 		"role":    "user",
 		"content": fmt.Sprintf("[UID: %d] %s [%s]: %s", currentUser.Id, currentUserName, time.Now().Format(time.RFC3339), messageText),
 	})
-
 	reply, err := t.oai.Call(cctx, messages)
-	cancel()
 	if err != nil {
 		return err
 	}

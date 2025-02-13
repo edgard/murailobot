@@ -31,25 +31,24 @@ func NewClient(token, instruction, model string, temperature, topP float32) (*Cl
 		Model:       model,
 		Temperature: temperature,
 		TopP:        topP,
-		HTTPClient:  &http.Client{Timeout: 60 * time.Second},
+		HTTPClient:  &http.Client{Timeout: 15 * time.Second},
 	}, nil
 }
 
 // Call sends messages to the OpenAI API and returns the generated response.
 func (c *Client) Call(ctx context.Context, messages []map[string]string) (string, error) {
 	reqBody := map[string]interface{}{
-		"model":             c.Model,
-		"temperature":       c.Temperature,
-		"top_p":             c.TopP,
-		"messages":          messages,
-		"include_reasoning": true,
+		"model":       c.Model,
+		"temperature": c.Temperature,
+		"top_p":       c.TopP,
+		"messages":    messages,
 	}
 	body, err := json.Marshal(reqBody)
 	if err != nil {
 		return "", fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "POST", "https://openrouter.ai/api/v1/chat/completions", bytes.NewBuffer(body))
+	req, err := http.NewRequestWithContext(ctx, "POST", "https://api.openai.com/v1/chat/completions", bytes.NewBuffer(body))
 	if err != nil {
 		return "", fmt.Errorf("failed to create request: %w", err)
 	}
@@ -72,7 +71,6 @@ func (c *Client) Call(ctx context.Context, messages []map[string]string) (string
 		return "", fmt.Errorf("failed to read response: %w", err)
 	}
 
-	fmt.Println(string(respBody))
 	var result struct {
 		Choices []struct {
 			Message struct {
