@@ -17,11 +17,12 @@ type Client struct {
 	Model       string
 	Temperature float32
 	TopP        float32
+	URL         string
 	HTTPClient  *http.Client
 }
 
 // NewClient creates a new OpenAI client instance.
-func NewClient(token, instruction, model string, temperature, topP float32) (*Client, error) {
+func NewClient(token, instruction, model string, temperature, topP float32, url string) (*Client, error) {
 	if token == "" || instruction == "" {
 		return nil, fmt.Errorf("invalid OpenAI configuration")
 	}
@@ -31,6 +32,7 @@ func NewClient(token, instruction, model string, temperature, topP float32) (*Cl
 		Model:       model,
 		Temperature: temperature,
 		TopP:        topP,
+		URL:         url,
 		HTTPClient:  &http.Client{Timeout: 15 * time.Second},
 	}, nil
 }
@@ -48,7 +50,7 @@ func (c *Client) Call(ctx context.Context, messages []map[string]string) (string
 		return "", fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "POST", "https://api.openai.com/v1/chat/completions", bytes.NewBuffer(body))
+	req, err := http.NewRequestWithContext(ctx, "POST", c.URL, bytes.NewBuffer(body))
 	if err != nil {
 		return "", fmt.Errorf("failed to create request: %w", err)
 	}

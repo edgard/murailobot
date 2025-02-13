@@ -34,7 +34,7 @@ func main() {
 	}
 
 	// Initialize the OpenAI client.
-	oaiClient, err := openai.NewClient(cfg.OpenAIToken, cfg.OpenAIInstruction, cfg.OpenAIModel, cfg.OpenAITemperature, cfg.OpenAITopP)
+	oaiClient, err := openai.NewClient(cfg.OpenAIToken, cfg.OpenAIInstruction, cfg.OpenAIModel, cfg.OpenAITemperature, cfg.OpenAITopP, cfg.OpenAIURL)
 	if err != nil {
 		log.Fatal().Err(err).Msg("failed to initialize OpenAI client")
 	}

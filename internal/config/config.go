@@ -16,6 +16,7 @@ type Config struct {
 	OpenAIModel         string
 	OpenAITemperature   float32
 	OpenAITopP          float32
+	OpenAIURL           string
 	DBName              string
 }
 
@@ -28,6 +29,7 @@ func LoadConfig() (*Config, error) {
 	viper.SetDefault("openai_model", "gpt-4o")
 	viper.SetDefault("openai_temperature", 0.5)
 	viper.SetDefault("openai_top_p", 0.5)
+	viper.SetDefault("openai_url", "https://api.openai.com/v1/chat/completions")
 	viper.SetDefault("db_name", "storage.db")
 
 	required := []string{"telegram_token", "telegram_admin_uid", "openai_token", "openai_instruction"}
@@ -46,6 +48,7 @@ func LoadConfig() (*Config, error) {
 		OpenAIModel:         viper.GetString("openai_model"),
 		OpenAITemperature:   float32(viper.GetFloat64("openai_temperature")),
 		OpenAITopP:          float32(viper.GetFloat64("openai_top_p")),
+		OpenAIURL:           viper.GetString("openai_url"),
 		DBName:              viper.GetString("db_name"),
 	}
 
