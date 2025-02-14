@@ -33,17 +33,18 @@ func NewClient(token, instruction, model string, temperature, topP float32, url 
 		Temperature: temperature,
 		TopP:        topP,
 		URL:         url,
-		HTTPClient:  &http.Client{Timeout: 15 * time.Second},
+		HTTPClient:  &http.Client{Timeout: 120 * time.Second},
 	}, nil
 }
 
 // Call sends messages to the OpenAI API and returns the generated response.
 func (c *Client) Call(ctx context.Context, messages []map[string]string) (string, error) {
 	reqBody := map[string]interface{}{
-		"model":       c.Model,
-		"temperature": c.Temperature,
-		"top_p":       c.TopP,
-		"messages":    messages,
+		"model":             c.Model,
+		"temperature":       c.Temperature,
+		"top_p":             c.TopP,
+		"messages":          messages,
+		"include_reasoning": true,
 	}
 	body, err := json.Marshal(reqBody)
 	if err != nil {
@@ -54,8 +55,8 @@ func (c *Client) Call(ctx context.Context, messages []map[string]string) (string
 	if err != nil {
 		return "", fmt.Errorf("failed to create request: %w", err)
 	}
-	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", c.Token))
+	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := c.HTTPClient.Do(req)
 	if err != nil {
