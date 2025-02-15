@@ -40,12 +40,10 @@ func NewClient(token, instruction, model string, temperature, topP float32, url 
 // Call sends messages to the OpenAI API and returns the generated response.
 func (c *Client) Call(ctx context.Context, messages []map[string]string) (string, error) {
 	reqBody := map[string]interface{}{
-		"model":             c.Model,
-		"temperature":       c.Temperature,
-		"top_p":             c.TopP,
-		"messages":          messages,
-		"include_reasoning": true,
-		"provider":          map[string]bool{"require_parameters": true},
+		"model":       c.Model,
+		"temperature": c.Temperature,
+		"top_p":       c.TopP,
+		"messages":    messages,
 	}
 	body, err := json.Marshal(reqBody)
 	if err != nil {
