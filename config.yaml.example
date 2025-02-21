@@ -1,0 +1,82 @@
+################################################################################
+# MurailoBot Configuration File
+################################################################################
+
+#------------------------------------------------------------------------------
+# OpenAI Configuration
+#------------------------------------------------------------------------------
+openai:
+  # Required Settings
+  token: "your-openai-token"            # Get from platform.openai.com/api-keys
+
+  # Optional Settings
+  base_url: "https://api.openai.com/v1" # OpenAI API endpoint
+  model: "gpt-4-turbo-preview"          # Model to use for responses
+  temperature: 0.5                      # Controls randomness (0-2)
+  top_p: 0.9                            # Nucleus sampling (0-1)
+  timeout: "2m"                         # API request timeout (1s-10m)
+  instruction: "You are a helpful assistant focused on providing clear and accurate responses."
+
+#------------------------------------------------------------------------------
+# Telegram Bot Configuration
+#------------------------------------------------------------------------------
+bot:
+  # Required Settings
+  token: "your-telegram-bot-token"      # Get from @BotFather
+  admin_uid: 123456789                  # Your Telegram user ID (get from @userinfobot)
+
+  # Optional Settings
+  # Access Control
+  allowed_user_ids: []                  # Empty array allows all users
+  blocked_user_ids: []                  # Users to block (cannot include admin_uid)
+  max_message_length: 4096              # Maximum message length (1-4096)
+
+  # Performance
+  max_routines: 50                      # Maximum concurrent routines (min: 1)
+  drop_pending_updates: true            # Skip pending updates on startup
+
+  # Timeouts
+  typing_interval: "3s"                 # Typing indicator interval (min: 100ms)
+  poll_timeout: "5s"                    # Update polling timeout (min: 1s)
+  request_timeout: "30s"                # API request timeout (min: 1s)
+  typing_action_timeout: "3s"           # Typing action duration (1s-10s)
+  db_operation_timeout: "15s"           # Database operation timeout (5s-60s)
+  ai_request_timeout: "2m"              # AI request timeout (1s-10m)
+
+  # Commands
+  commands:
+    - command: "start"
+      description: "Start conversation with the bot"
+    - command: "mrl"
+      description: "Generate response using OpenAI"
+    - command: "mrl_reset"
+      description: "Reset chat history (admin only)"
+
+  # Messages
+  messages:
+    welcome: "👋 Welcome! I'm ready to assist you. Use /mrl followed by your message to start a conversation."
+    not_authorized: "🚫 Access denied. Please contact the administrator."
+    provide_message: "ℹ️ Please provide a message with your command."
+    message_too_long: "📝 Message exceeds maximum length of %d characters."
+    ai_error: "🤖 Unable to process request. Please try again."
+    general_error: "❌ An error occurred. Please try again later."
+    history_reset: "🔄 Chat history has been cleared."
+
+#------------------------------------------------------------------------------
+# Database Configuration
+#------------------------------------------------------------------------------
+database:
+  # Optional Settings
+  name: "storage.db"                    # SQLite database filename (default: storage.db)
+  max_open_conns: 50                    # Maximum open connections (1-100)
+  max_idle_conns: 10                    # Maximum idle connections (≤ max_open_conns)
+  conn_max_lifetime: "1h"               # Connection lifetime (1s-24h)
+  max_message_size: 4096                # Maximum message size for storage
+
+#------------------------------------------------------------------------------
+# Logging Configuration
+#------------------------------------------------------------------------------
+log:
+  # Optional Settings
+  level: "info"                         # Log level (debug, info, warn, error)
+  format: "json"                        # Log format (json, text)
