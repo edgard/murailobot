@@ -132,7 +132,11 @@ func (b *Bot) handleChatMessage(bot *gotgbot.Bot, ctx *ext.Context) error {
 	defer aiCancel()
 
 	// Generate AI response with dedicated context
-	response, err := b.ai.GenerateResponse(aiCtx, userID, text)
+	username := strings.TrimSpace(msg.From.Username)
+	if username == "" {
+		username = "Unknown"
+	}
+	response, err := b.ai.GenerateResponse(aiCtx, userID, username, text)
 	if err != nil {
 		var errMsg string
 		if errors.Is(err, ai.ErrAI) {
@@ -191,7 +195,7 @@ func (b *Bot) handleChatMessage(bot *gotgbot.Bot, ctx *ext.Context) error {
 	dbCtx, cancel := context.WithTimeout(opCtx, b.cfg.DBOperationTimeout)
 	defer cancel()
 
-	if err := b.db.SaveChatInteraction(dbCtx, msg.From.Id, msg.From.FirstName, text, response); err != nil {
+	if err := b.db.SaveChatInteraction(dbCtx, msg.From.Id, username, text, response); err != nil {
 		slog.Error("failed to save chat history",
 			"error", err,
 			"user_id", msg.From.Id,

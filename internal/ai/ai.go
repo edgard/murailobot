@@ -106,14 +106,14 @@ func (ai *AI) convertHistoryToCompletionMessages(history []db.ChatHistory) []ope
 
 		// Validate message integrity
 		if msg.ID <= 0 || msg.UserID <= 0 ||
-			msg.UserMsg == "" || msg.BotMsg == "" || msg.LastUsed.IsZero() {
+			msg.UserMsg == "" || msg.BotMsg == "" || msg.Timestamp.IsZero() {
 			slog.Warn("skipping invalid message in history",
 				"message_id", msg.ID,
 				"user_id", msg.UserID,
 				"reason", "missing required fields",
 				"has_user_msg", msg.UserMsg != "",
 				"has_bot_msg", msg.BotMsg != "",
-				"has_timestamp", !msg.LastUsed.IsZero(),
+				"has_timestamp", !msg.Timestamp.IsZero(),
 			)
 			continue
 		}
@@ -135,10 +135,18 @@ func (ai *AI) convertHistoryToCompletionMessages(history []db.ChatHistory) []ope
 		userMsg := strings.TrimSpace(msg.UserMsg)
 		botMsg := strings.TrimSpace(msg.BotMsg)
 
+		// Format user message with timestamp and user info
+		formattedUserMsg := fmt.Sprintf("[%s] UID %d (%s): %s",
+			msg.Timestamp.Format(time.RFC3339),
+			msg.UserID,
+			msg.UserName,
+			userMsg,
+		)
+
 		messages = append(messages,
 			openai.ChatCompletionMessage{
 				Role:    "user",
-				Content: userMsg,
+				Content: formattedUserMsg,
 			},
 			openai.ChatCompletionMessage{
 				Role:    "assistant",
@@ -156,7 +164,7 @@ func (ai *AI) convertHistoryToCompletionMessages(history []db.ChatHistory) []ope
 	return messages
 }
 
-func (ai *AI) GenerateResponse(ctx context.Context, userID int64, userMsg string) (string, error) {
+func (ai *AI) GenerateResponse(ctx context.Context, userID int64, userName string, userMsg string) (string, error) {
 	if ai.instruction == "" {
 		return "", fmt.Errorf("%w: system instruction is empty", ErrAI)
 	}
@@ -213,10 +221,16 @@ func (ai *AI) GenerateResponse(ctx context.Context, userID int64, userMsg string
 		}
 	}
 
-	// Add current user message
+	// Add current user message with timestamp
+	currentMsg := fmt.Sprintf("[%s] UID %d (%s): %s",
+		time.Now().Format(time.RFC3339),
+		userID,
+		userName,
+		userMsg,
+	)
 	messages = append(messages, openai.ChatCompletionMessage{
 		Role:    "user",
-		Content: userMsg,
+		Content: currentMsg,
 	})
 
 	// Execute request through circuit breaker with retry

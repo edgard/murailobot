@@ -159,10 +159,8 @@ func (db *DB) setupSchema() error {
 	}()
 
 	schemas := []string{
-		createUserTable,
-		createUserLastUsedIndex,
 		getChatHistoryTableSchema(db.config.MaxMessageSize),
-		createChatHistoryLastUsedIndex,
+		createChatHistoryTimestampIndex,
 		createChatHistoryUserIDIndex,
 	}
 
@@ -221,10 +219,10 @@ func (db *DB) GetRecentChatHistory(ctx context.Context, limit int) ([]ChatHistor
 	var history []ChatHistory
 	err := db.breaker.Execute(ctx, func(ctx context.Context) error {
 		return resilience.WithRetry(ctx, func(ctx context.Context) error {
-			query := `SELECT id, user_id, user_name, user_msg, bot_msg, last_used
+			query := `SELECT id, user_id, user_name, user_msg, bot_msg, timestamp
 				FROM chat_history
 				WHERE user_msg != '' AND bot_msg != ''
-				ORDER BY last_used DESC
+				ORDER BY timestamp DESC
 				LIMIT ?`
 
 			rows, err := db.QueryxContext(ctx, query, limit)
@@ -305,17 +303,8 @@ func (db *DB) SaveChatInteraction(ctx context.Context, userID int64, userName, u
 
 			now := time.Now()
 
-			_, err = tx.ExecContext(ctx,
-				`INSERT INTO "user" (user_id, last_used) VALUES (?, ?)
-				ON CONFLICT(user_id) DO UPDATE SET last_used = excluded.last_used`,
-				userID, now,
-			)
-			if err != nil {
-				return fmt.Errorf("failed to update user: %v", err)
-			}
-
 			result, err := tx.ExecContext(ctx,
-				`INSERT INTO chat_history (user_id, user_name, user_msg, bot_msg, last_used)
+				`INSERT INTO chat_history (user_id, user_name, user_msg, bot_msg, timestamp)
 				VALUES (?, ?, ?, ?, ?)`,
 				userID, userName, userMsg, botMsg, now,
 			)
@@ -370,11 +359,6 @@ func (db *DB) DeleteAllChatHistory(ctx context.Context) error {
 
 			if _, err := tx.ExecContext(ctx, "DELETE FROM chat_history"); err != nil {
 				return fmt.Errorf("failed to clear chat history: %v", err)
-			}
-
-			now := time.Now() // Reset timestamps after clearing history
-			if _, err := tx.ExecContext(ctx, `UPDATE "user" SET last_used = ?`, now); err != nil {
-				return fmt.Errorf("failed to reset user timestamps: %v", err)
 			}
 
 			if err := tx.Commit(); err != nil {

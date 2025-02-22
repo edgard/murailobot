@@ -27,17 +27,8 @@ var (
 		"PRAGMA cache_size=-2000", // Use up to 2MB of memory for cache
 	}
 
-	createUserTable = `
-		CREATE TABLE IF NOT EXISTS "user" (
-			user_id INTEGER PRIMARY KEY,
-			last_used DATETIME NOT NULL
-		)`
-
-	createUserLastUsedIndex = `
-		CREATE INDEX IF NOT EXISTS idx_user_last_used ON "user"(last_used)`
-
-	createChatHistoryLastUsedIndex = `
-		CREATE INDEX IF NOT EXISTS idx_chat_history_last_used ON chat_history(last_used)`
+	createChatHistoryTimestampIndex = `
+		CREATE INDEX IF NOT EXISTS idx_chat_history_timestamp ON chat_history(timestamp)`
 
 	createChatHistoryUserIDIndex = `
 		CREATE INDEX IF NOT EXISTS idx_chat_history_user_id ON chat_history(user_id)`
@@ -54,12 +45,12 @@ type Config struct {
 
 // ChatHistory represents a chat interaction record
 type ChatHistory struct {
-	ID       int64     `db:"id"`
-	UserID   int64     `db:"user_id"`
-	UserName string    `db:"user_name"`
-	UserMsg  string    `db:"user_msg"`
-	BotMsg   string    `db:"bot_msg"`
-	LastUsed time.Time `db:"last_used"`
+	ID        int64     `db:"id"`
+	UserID    int64     `db:"user_id"`
+	UserName  string    `db:"user_name"`
+	UserMsg   string    `db:"user_msg"`
+	BotMsg    string    `db:"bot_msg"`
+	Timestamp time.Time `db:"timestamp"`
 }
 
 // Database interface defines the required database operations
@@ -86,7 +77,6 @@ func getChatHistoryTableSchema(maxMessageSize int) string {
 			user_name TEXT NOT NULL,
 			user_msg TEXT NOT NULL CHECK(length(user_msg) <= ` + strconv.Itoa(maxMessageSize) + `),
 			bot_msg TEXT NOT NULL CHECK(length(bot_msg) <= ` + strconv.Itoa(maxMessageSize) + `),
-			last_used DATETIME NOT NULL,
-			FOREIGN KEY(user_id) REFERENCES "user"(user_id) ON DELETE CASCADE
+			timestamp DATETIME NOT NULL
 		)`
 }
