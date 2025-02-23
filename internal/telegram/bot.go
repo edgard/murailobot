@@ -160,6 +160,19 @@ func (b *bot) SendTypingAction(chatID int64) error {
 
 // SendContinuousTyping sends continuous typing indicators
 func (b *bot) SendContinuousTyping(ctx context.Context, bot *gotgbot.Bot, chatID int64) {
+	// Send initial typing action immediately
+	_, err := bot.SendChatAction(chatID, "typing", &gotgbot.SendChatActionOpts{
+		RequestOpts: &gotgbot.RequestOpts{
+			Timeout: b.cfg.Telegram.TypingActionTimeout,
+		},
+	})
+	if err != nil {
+		utils.WriteErrorLog(componentName, "failed to send initial typing action", err,
+			utils.KeyAction, "send_initial_typing",
+			utils.KeyType, "telegram_api",
+			utils.KeyRequestID, chatID)
+	}
+
 	ticker := time.NewTicker(b.cfg.Telegram.TypingInterval)
 	done := make(chan struct{})
 

@@ -60,6 +60,19 @@ func (h *botCommandHandler) validateMessage(msg *gotgbot.Message) (string, error
 
 // HandleUpdate implements ext.Handler interface
 func (h *botCommandHandler) HandleUpdate(b *gotgbot.Bot, ctx *ext.Context) error {
+	// Start typing indicator immediately for any command
+	if ctx.EffectiveMessage != nil && ctx.EffectiveMessage.Text != "" && strings.HasPrefix(ctx.EffectiveMessage.Text, "/") {
+		opCtx, cancel := context.WithTimeout(context.Background(), h.bot.cfg.Telegram.AIRequestTimeout)
+		typingCtx, cancelTyping := context.WithCancel(opCtx)
+		go h.bot.SendContinuousTyping(typingCtx, b, ctx.EffectiveChat.Id)
+
+		// Ensure we clean up the typing indicator when we're done
+		defer func() {
+			cancelTyping()
+			cancel()
+		}()
+	}
+
 	cmd, err := h.validateMessage(ctx.EffectiveMessage)
 	if err != nil {
 		return err
@@ -124,6 +137,9 @@ func (h *botCommandHandler) handleChatMessage(bot *gotgbot.Bot, ctx *ext.Context
 		return h.sendUnauthorizedMessage(bot, ctx, userID)
 	}
 
+	opCtx, cancel := context.WithTimeout(context.Background(), h.bot.cfg.Telegram.AIRequestTimeout)
+	defer cancel()
+
 	utils.WriteInfoLog(componentName, "received /mrl command",
 		utils.KeyUserID, userID,
 		utils.KeyRequestID, ctx.EffectiveChat.Id,
@@ -131,15 +147,6 @@ func (h *botCommandHandler) handleChatMessage(bot *gotgbot.Bot, ctx *ext.Context
 		utils.KeyType, "message",
 		utils.KeyAction, "chat_command",
 		utils.KeySize, len(msg.Text))
-
-	// Create a parent context for the entire operation
-	opCtx, cancel := context.WithTimeout(context.Background(), h.bot.cfg.Telegram.AIRequestTimeout)
-	defer cancel()
-
-	// Start typing indicator
-	typingCtx, cancelTyping := context.WithCancel(opCtx)
-	go h.bot.SendContinuousTyping(typingCtx, bot, ctx.EffectiveChat.Id)
-	defer cancelTyping()
 
 	// Validate and sanitize input
 	text := strings.TrimSpace(msg.Text)
@@ -258,21 +265,15 @@ func (h *botCommandHandler) handleChatHistoryReset(bot *gotgbot.Bot, ctx *ext.Co
 		return h.sendUnauthorizedMessage(bot, ctx, userID)
 	}
 
+	opCtx, cancel := context.WithTimeout(context.Background(), h.bot.cfg.Telegram.DBOperationTimeout)
+	defer cancel()
+
 	utils.WriteInfoLog(componentName, "received /mrl_reset command",
 		utils.KeyUserID, userID,
 		utils.KeyRequestID, ctx.EffectiveChat.Id,
 		utils.KeyName, msg.From.Username,
 		utils.KeyType, "admin",
 		utils.KeyAction, "reset_command")
-
-	// Create a parent context for the operation
-	opCtx, cancel := context.WithTimeout(context.Background(), h.bot.cfg.Telegram.DBOperationTimeout)
-	defer cancel()
-
-	// Start typing indicator
-	typingCtx, cancelTyping := context.WithCancel(opCtx)
-	go h.bot.SendContinuousTyping(typingCtx, bot, ctx.EffectiveChat.Id)
-	defer cancelTyping()
 
 	// Clear chat history
 	if err := h.bot.db.DeleteAllChatHistory(opCtx); err != nil {
