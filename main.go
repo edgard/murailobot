@@ -13,11 +13,13 @@ import (
 	"github.com/edgard/murailobot/internal/utils"
 )
 
+const componentName = "main"
+
 func main() {
 	// Load configuration using the config package
 	config, err := config.Load()
 	if err != nil {
-		utils.WriteErrorLog("main", "failed to load configuration", err,
+		utils.WriteErrorLog(componentName, "failed to load configuration", err,
 			utils.KeyAction, "load_config")
 		os.Exit(1)
 	}
@@ -28,7 +30,7 @@ func main() {
 		Format: config.Log.Format,
 	}
 	if err := utils.Setup(logCfg); err != nil {
-		utils.WriteErrorLog("main", "failed to initialize logger", err,
+		utils.WriteErrorLog(componentName, "failed to initialize logger", err,
 			utils.KeyAction, "init_logger")
 		os.Exit(1)
 	}
@@ -36,7 +38,7 @@ func main() {
 	// Initialize database
 	database, err := db.New(config)
 	if err != nil {
-		utils.WriteErrorLog("main", "failed to initialize database", err,
+		utils.WriteErrorLog(componentName, "failed to initialize database", err,
 			utils.KeyAction, "init_database")
 		os.Exit(1)
 	}
@@ -45,7 +47,7 @@ func main() {
 	// Initialize AI client
 	aiClient, err := ai.New(&config.AI, database)
 	if err != nil {
-		utils.WriteErrorLog("main", "failed to initialize AI client", err,
+		utils.WriteErrorLog(componentName, "failed to initialize AI client", err,
 			utils.KeyAction, "init_ai")
 		os.Exit(1)
 	}
@@ -54,7 +56,7 @@ func main() {
 	var bot telegram.BotService
 	bot, err = telegram.New(config, database, aiClient)
 	if err != nil {
-		utils.WriteErrorLog("main", "failed to initialize bot", err,
+		utils.WriteErrorLog(componentName, "failed to initialize bot", err,
 			utils.KeyAction, "init_bot")
 		os.Exit(1)
 	}
@@ -78,7 +80,7 @@ func main() {
 				if !ok {
 					return
 				}
-				utils.WriteInfoLog("main", "received shutdown signal",
+				utils.WriteInfoLog(componentName, "received shutdown signal",
 					utils.KeyAction, "shutdown",
 					utils.KeyReason, sig.String())
 				cancel()
@@ -92,12 +94,12 @@ func main() {
 
 	// Start bot
 	if err := bot.Start(ctx); err != nil {
-		utils.WriteErrorLog("main", "bot error", err,
+		utils.WriteErrorLog(componentName, "bot error", err,
 			utils.KeyAction, "run_bot")
 		os.Exit(1)
 	}
 
-	utils.WriteInfoLog("main", "bot stopped",
+	utils.WriteInfoLog(componentName, "bot stopped",
 		utils.KeyAction, "shutdown",
 		utils.KeyResult, "shutdown_complete")
 }

@@ -9,6 +9,8 @@ import (
 	"github.com/sony/gobreaker"
 )
 
+const resilienceComponent = "resilience"
+
 // CircuitState represents the state of a circuit breaker
 type CircuitState int
 
@@ -94,7 +96,7 @@ func NewCircuitBreaker(cfg CircuitBreakerConfig) *CircuitBreaker {
 			fromState := mapState(from)
 			toState := mapState(to)
 			cfg.OnStateChange(name, fromState, toState)
-			WriteInfoLog("resilience", "Circuit breaker state changed",
+			WriteInfoLog(resilienceComponent, "Circuit breaker state changed",
 				KeyName, name,
 				KeyFrom, fromState.String(),
 				KeyTo, toState.String(),
@@ -119,7 +121,7 @@ func (cb *CircuitBreaker) Execute(ctx context.Context, operation func(context.Co
 		defer cancel()
 	}
 
-	WriteDebugLog("resilience", "executing operation through circuit breaker",
+	WriteDebugLog(resilienceComponent, "executing operation through circuit breaker",
 		KeyName, cb.name,
 		KeyAction, "circuit_breaker_execute",
 		KeyType, "circuit_breaker")
@@ -128,11 +130,11 @@ func (cb *CircuitBreaker) Execute(ctx context.Context, operation func(context.Co
 		err := operation(ctx)
 		if err != nil {
 			if ctx.Err() == context.DeadlineExceeded {
-				return nil, NewError("resilience", ErrTimeout, "operation timed out", CategoryOperation, err)
+				return nil, NewError(resilienceComponent, ErrTimeout, "operation timed out", CategoryOperation, err)
 			}
 			return nil, err
 		}
-		WriteDebugLog("resilience", "operation completed successfully",
+		WriteDebugLog(resilienceComponent, "operation completed successfully",
 			KeyName, cb.name,
 			KeyAction, "circuit_breaker_success",
 			KeyType, "circuit_breaker")
@@ -140,7 +142,7 @@ func (cb *CircuitBreaker) Execute(ctx context.Context, operation func(context.Co
 	})
 
 	if err != nil {
-		WriteDebugLog("resilience", "operation failed",
+		WriteDebugLog(resilienceComponent, "operation failed",
 			KeyName, cb.name,
 			KeyAction, "circuit_breaker_failure",
 			KeyType, "circuit_breaker",
@@ -185,7 +187,7 @@ func WithRetry(ctx context.Context, operation func(context.Context) error, cfg R
 
 		// Don't retry if context is done
 		if ctx.Err() != nil {
-			return NewError("resilience", ErrTimeout, "retry abandoned: context done", CategoryOperation, ctx.Err())
+			return NewError(resilienceComponent, ErrTimeout, "retry abandoned: context done", CategoryOperation, ctx.Err())
 		}
 
 		// Don't retry on certain errors
@@ -201,7 +203,7 @@ func WithRetry(ctx context.Context, operation func(context.Context) error, cfg R
 				interval = cfg.MaxInterval
 			}
 
-			WriteDebugLog("resilience", "Operation failed, retrying",
+			WriteDebugLog(resilienceComponent, "Operation failed, retrying",
 				KeyType, "retry",
 				KeyAction, "retry_operation",
 				KeyCount, attempt,
@@ -219,13 +221,13 @@ func WithRetry(ctx context.Context, operation func(context.Context) error, cfg R
 			select {
 			case <-ctx.Done():
 				timer.Stop()
-				return NewError("resilience", ErrTimeout, "retry abandoned: context done", CategoryOperation, ctx.Err())
+				return NewError(resilienceComponent, ErrTimeout, "retry abandoned: context done", CategoryOperation, ctx.Err())
 			case <-timer.C:
 				timer.Stop()
 			}
 		}
 	}
 
-	return Errorf("resilience", ErrOperation, CategoryOperation,
+	return Errorf(resilienceComponent, ErrOperation, CategoryOperation,
 		"retry attempts exhausted after %d tries: %v", cfg.MaxAttempts, lastErr)
 }

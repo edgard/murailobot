@@ -9,6 +9,8 @@ import (
 	"github.com/yuin/goldmark"
 )
 
+const sanitizeComponent = "sanitize"
+
 // TextPolicy represents a sanitization policy for text content
 type TextPolicy struct {
 	policy   *bluemonday.Policy
@@ -33,7 +35,7 @@ func (p *TextPolicy) SanitizeText(text string) string {
 	// Convert markdown to HTML
 	var buf bytes.Buffer
 	if err := p.markdown.Convert([]byte(text), &buf); err != nil {
-		WriteWarnLog("sanitize", "failed to convert markdown",
+		WriteWarnLog(sanitizeComponent, "failed to convert markdown",
 			KeyError, err.Error(),
 			KeySize, len(text),
 			KeyAction, "markdown_convert",
@@ -54,7 +56,7 @@ func (p *TextPolicy) SanitizeText(text string) string {
 	// Convert HTML entities back to characters
 	sanitized = html.UnescapeString(sanitized)
 
-	WriteDebugLog("sanitize", "text sanitized successfully",
+	WriteDebugLog(sanitizeComponent, "text sanitized successfully",
 		KeyAction, "sanitize_text",
 		KeyType, "sanitize",
 		KeySize, map[string]int{
