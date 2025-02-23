@@ -1,0 +1,371 @@
+package config
+
+import (
+	"net/url"
+	"os"
+	"path/filepath"
+	"strings"
+	"time"
+
+	"github.com/edgard/murailobot/internal/utils"
+	"github.com/go-playground/validator/v10"
+	"github.com/spf13/viper"
+)
+
+const componentName = "config"
+
+// Config represents the complete application configuration
+type Config struct {
+	Log            LogConfig      `mapstructure:"log" validate:"required"`
+	AI             AIConfig       `mapstructure:"ai" validate:"required"`
+	Database       DatabaseConfig `mapstructure:"database" validate:"required"`
+	Telegram       TelegramConfig `mapstructure:"telegram" validate:"required"`
+	MaxMessageSize int            `mapstructure:"max_message_size" validate:"required,min=1,max=4096"` // Global message size limit
+}
+
+// TelegramConfig holds all Telegram-related configuration
+type TelegramConfig struct {
+	// Core settings
+	Token    string          `mapstructure:"token" validate:"required"`
+	AdminID  int64           `mapstructure:"admin_id" validate:"required,gt=0,required_with=AllowedUserIDs"`
+	Commands []CommandConfig `mapstructure:"commands" validate:"required,dive"`
+
+	// Security settings
+	AllowedUserIDs []int64 `mapstructure:"allowed_user_ids" validate:"dive,gt=0,excluded_with=BlockedUserIDs"`
+	BlockedUserIDs []int64 `mapstructure:"blocked_user_ids" validate:"dive,gt=0,nefield=AdminID"`
+
+	// Message templates
+	Messages BotMessages `mapstructure:"messages" validate:"required"`
+
+	// Polling configuration
+	Polling PollingConfig `mapstructure:"polling" validate:"required"`
+
+	// Typing settings
+	TypingInterval      time.Duration `mapstructure:"typing_interval" validate:"required,min=100ms,ltfield=TypingActionTimeout"`
+	TypingActionTimeout time.Duration `mapstructure:"typing_action_timeout" validate:"required,min=1s,max=10s,ltfield=Polling.RequestTimeout"`
+
+	// Operation timeouts
+	DBOperationTimeout time.Duration `mapstructure:"db_operation_timeout" validate:"required,min=5s,max=60s"`
+	AIRequestTimeout   time.Duration `mapstructure:"ai_request_timeout" validate:"required,min=1s,max=10m"`
+}
+
+// BotMessages holds message templates
+type BotMessages struct {
+	Welcome        string `mapstructure:"welcome" validate:"required"`
+	NotAuthorized  string `mapstructure:"not_authorized" validate:"required"`
+	ProvideMessage string `mapstructure:"provide_message" validate:"required"`
+	MessageTooLong string `mapstructure:"message_too_long" validate:"required"`
+	AIError        string `mapstructure:"ai_error" validate:"required"`
+	GeneralError   string `mapstructure:"general_error" validate:"required"`
+	HistoryReset   string `mapstructure:"history_reset" validate:"required"`
+}
+
+// PollingConfig holds polling-related settings
+type PollingConfig struct {
+	Timeout            time.Duration `mapstructure:"timeout" validate:"required,min=1s,ltfield=RequestTimeout"`
+	RequestTimeout     time.Duration `mapstructure:"request_timeout" validate:"required,min=1s"`
+	DropPendingUpdates bool          `mapstructure:"drop_pending_updates"`
+}
+
+// LogConfig defines logging-related configuration
+type LogConfig struct {
+	Level  string `mapstructure:"level" validate:"required,oneof=debug info warn error"`
+	Format string `mapstructure:"format" validate:"required,oneof=json text"`
+}
+
+// AIConfig defines AI API configuration (using OpenAI-compatible API)
+type AIConfig struct {
+	Token       string        `mapstructure:"token" validate:"required,ai_token"`
+	BaseURL     string        `mapstructure:"base_url" validate:"required,url,startswith=https://,hostname_required"`
+	Model       string        `mapstructure:"model" validate:"required,ai_model"`
+	Temperature float32       `mapstructure:"temperature" validate:"required,min=0,max=2"`
+	TopP        float32       `mapstructure:"top_p" validate:"required,min=0,max=1"`
+	Instruction string        `mapstructure:"instruction" validate:"required,min=1"`
+	Timeout     time.Duration `mapstructure:"timeout" validate:"required,min=1s,max=10m"`
+}
+
+// CommandConfig defines a bot command
+type CommandConfig struct {
+	Command     string `mapstructure:"command" validate:"required"`
+	Description string `mapstructure:"description" validate:"required"`
+}
+
+// DatabaseConfig defines database connection configuration
+type DatabaseConfig struct {
+	Name            string        `mapstructure:"name" validate:"required,db_dir_perms"`
+	MaxOpenConns    int           `mapstructure:"max_open_conns" validate:"required,min=1,max=100"`
+	MaxIdleConns    int           `mapstructure:"max_idle_conns" validate:"required,min=0,ltefield=MaxOpenConns"`
+	ConnMaxLifetime time.Duration `mapstructure:"conn_max_lifetime" validate:"required,min=1s,max=24h"`
+	MaxUsernameLen  int           `mapstructure:"max_username_len" validate:"required,min=1,max=256"`
+	MaxHistoryLimit int           `mapstructure:"max_history_limit" validate:"required,min=1,max=100"`
+
+	// SQLite specific settings
+	OperationTimeout     time.Duration `mapstructure:"operation_timeout" validate:"required,min=1s,max=30s"`
+	LongOperationTimeout time.Duration `mapstructure:"long_operation_timeout" validate:"required,min=1s,max=60s"`
+
+	// SQLite pragmas
+	JournalMode string `mapstructure:"journal_mode" validate:"required,oneof=DELETE TRUNCATE PERSIST MEMORY WAL OFF"`
+	Synchronous string `mapstructure:"synchronous" validate:"required,oneof=OFF NORMAL FULL EXTRA"`
+	ForeignKeys bool   `mapstructure:"foreign_keys" validate:"required"`
+	TempStore   string `mapstructure:"temp_store" validate:"required,oneof=DEFAULT FILE MEMORY"`
+	CacheSizeKB int    `mapstructure:"cache_size_kb" validate:"required,min=1,max=10000"`
+}
+
+// Default configuration values
+const (
+	// Log defaults
+	DefaultLogLevel  = "info"
+	DefaultLogFormat = "json"
+
+	// Database defaults
+	DefaultDBName            = "storage.db"
+	DefaultDBMaxOpenConns    = 50
+	DefaultDBMaxIdleConns    = 10
+	DefaultDBMaxMessageSize  = 4096
+	DefaultDBMaxUsernameLen  = 64
+	DefaultDBMaxHistoryLimit = 50
+	DefaultDBConnMaxLifetime = time.Hour
+
+	// SQLite defaults
+	DefaultDBOperationTimeout     = 5 * time.Second
+	DefaultDBLongOperationTimeout = 30 * time.Second
+	DefaultDBJournalMode          = "WAL"
+	DefaultDBSynchronous          = "NORMAL"
+	DefaultDBForeignKeys          = true
+	DefaultDBTempStore            = "MEMORY"
+	DefaultDBCacheSizeKB          = 2000
+
+	// AI defaults
+	DefaultAIBaseURL     = "https://api.openai.com/v1"
+	DefaultAIModel       = "gpt-4-turbo-preview"
+	DefaultAITemperature = 0.5
+	DefaultAITopP        = 0.9
+	DefaultAITimeout     = 2 * time.Minute
+	DefaultAIInstruction = "You are a helpful assistant focused on providing clear and accurate responses."
+	DefaultAIMaxResponse = 4096
+
+	// Telegram defaults
+	DefaultTelegramMaxMessageLength    = 4096
+	DefaultTelegramTypingInterval      = 3 * time.Second
+	DefaultTelegramTypingActionTimeout = 5 * time.Second
+	DefaultTelegramDBOperationTimeout  = 15 * time.Second
+	DefaultTelegramAIRequestTimeout    = 2 * time.Minute
+	DefaultTelegramPollingTimeout      = 10 * time.Second
+	DefaultTelegramRequestTimeout      = 30 * time.Second
+	DefaultTelegramMaxRoutines         = 50 // Will be capped by CPU count + 2
+	DefaultTelegramDropPendingUpdates  = true
+)
+
+// Default bot messages
+var DefaultBotMessages = BotMessages{
+	Welcome:        "👋 Welcome! I'm ready to assist you. Use /mrl followed by your message to start a conversation.",
+	NotAuthorized:  "🚫 Access denied. Please contact the administrator.",
+	HistoryReset:   "🔄 Chat history has been cleared.",
+	ProvideMessage: "ℹ️ Please provide a message with your command.",
+	GeneralError:   "❌ An error occurred. Please try again later.",
+	AIError:        "🤖 Unable to process request. Please try again.",
+	MessageTooLong: "📝 Message exceeds maximum length of %d characters.",
+}
+
+// Default bot commands
+var DefaultBotCommands = []CommandConfig{
+	{Command: "start", Description: "Start conversation with the bot"},
+	{Command: "mrl", Description: "Generate AI response"},
+	{Command: "mrl_reset", Description: "Reset chat history (admin only)"},
+}
+
+// Load loads and validates configuration from:
+// 1. Default values
+// 2. config.yaml file
+// 3. BOT_* environment variables
+func Load() (*Config, error) {
+	// Set defaults
+	setDefaults()
+
+	utils.WriteDebugLog(componentName, "default configuration set",
+		utils.KeyAction, "set_defaults")
+
+	// Create empty config that will be populated with defaults and overrides
+	cfg := &Config{}
+
+	// Try to load config file (optional)
+	if err := loadConfig(); err != nil {
+		return nil, utils.NewError(componentName, utils.ErrInvalidConfig, "failed to load config file", utils.CategoryConfig, err)
+	}
+
+	// Unmarshal config file over defaults
+	if err := viper.Unmarshal(cfg); err != nil {
+		return nil, utils.NewError(componentName, utils.ErrInvalidConfig, "failed to parse config", utils.CategoryConfig, err)
+	}
+
+	// Validate the complete config
+	if err := cfg.Validate(); err != nil {
+		return nil, utils.NewError(componentName, utils.ErrInvalidConfig, "validation failed", utils.CategoryConfig, err)
+	}
+
+	utils.WriteInfoLog(componentName, "configuration loaded successfully",
+		utils.KeyAction, "load_config",
+		"config_summary", map[string]interface{}{
+			"log_level":        cfg.Log.Level,
+			"log_format":       cfg.Log.Format,
+			"max_message_size": cfg.MaxMessageSize,
+			"ai_model":         cfg.AI.Model,
+			"db_name":          cfg.Database.Name,
+		})
+
+	return cfg, nil
+}
+
+// loadConfig initializes and loads the configuration using viper
+func loadConfig() error {
+	viper.SetConfigName("config")
+	viper.SetConfigType("yaml")
+	viper.AddConfigPath(".")
+
+	// Setup environment variables
+	viper.SetEnvPrefix("BOT")
+	viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
+	viper.AutomaticEnv()
+
+	// Bind specific environment variables
+	if err := viper.BindEnv("telegram.token", "BOT_TELEGRAM_TOKEN"); err != nil {
+		return utils.NewError(componentName, utils.ErrInvalidConfig, "failed to bind telegram token env var", utils.CategoryConfig, err)
+	}
+	if err := viper.BindEnv("telegram.admin_id", "BOT_TELEGRAM_ADMIN_ID"); err != nil {
+		return utils.NewError(componentName, utils.ErrInvalidConfig, "failed to bind telegram admin ID env var", utils.CategoryConfig, err)
+	}
+	if err := viper.BindEnv("ai.token", "BOT_AI_TOKEN"); err != nil {
+		return utils.NewError(componentName, utils.ErrInvalidConfig, "failed to bind AI token env var", utils.CategoryConfig, err)
+	}
+
+	// Allow missing config file
+	if err := viper.ReadInConfig(); err != nil {
+		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
+			return utils.NewError(componentName, utils.ErrInvalidConfig, "failed to read config file", utils.CategoryConfig, err)
+		}
+		// Config file not found is okay, we'll use defaults
+	}
+
+	return nil
+}
+
+// setDefaults sets default values for optional configuration parameters
+func setDefaults() {
+	defaults := map[string]interface{}{
+		"max_message_size": DefaultTelegramMaxMessageLength, // Use Telegram's default as the global limit
+
+		"log": map[string]interface{}{
+			"level":  DefaultLogLevel,
+			"format": DefaultLogFormat,
+		},
+		"database": map[string]interface{}{
+			"name":                   DefaultDBName,
+			"max_open_conns":         DefaultDBMaxOpenConns,
+			"max_idle_conns":         DefaultDBMaxIdleConns,
+			"conn_max_lifetime":      DefaultDBConnMaxLifetime,
+			"max_username_len":       DefaultDBMaxUsernameLen,
+			"max_history_limit":      DefaultDBMaxHistoryLimit,
+			"operation_timeout":      DefaultDBOperationTimeout,
+			"long_operation_timeout": DefaultDBLongOperationTimeout,
+			"journal_mode":           DefaultDBJournalMode,
+			"synchronous":            DefaultDBSynchronous,
+			"foreign_keys":           DefaultDBForeignKeys,
+			"temp_store":             DefaultDBTempStore,
+			"cache_size_kb":          DefaultDBCacheSizeKB,
+		},
+		"ai": map[string]interface{}{
+			"base_url":    DefaultAIBaseURL,
+			"model":       DefaultAIModel,
+			"temperature": DefaultAITemperature,
+			"top_p":       DefaultAITopP,
+			"timeout":     DefaultAITimeout,
+			"instruction": DefaultAIInstruction,
+		},
+		"telegram": map[string]interface{}{
+			"allowed_user_ids":      []int64{},
+			"blocked_user_ids":      []int64{},
+			"typing_interval":       DefaultTelegramTypingInterval,
+			"typing_action_timeout": DefaultTelegramTypingActionTimeout,
+			"db_operation_timeout":  DefaultTelegramDBOperationTimeout,
+			"ai_request_timeout":    DefaultTelegramAIRequestTimeout,
+			"messages":              DefaultBotMessages,
+			"commands":              DefaultBotCommands,
+			"polling": map[string]interface{}{
+				"timeout":              DefaultTelegramPollingTimeout,
+				"request_timeout":      DefaultTelegramRequestTimeout,
+				"drop_pending_updates": DefaultTelegramDropPendingUpdates,
+			},
+		},
+	}
+
+	// Set all defaults at once
+	for key, value := range defaults {
+		viper.SetDefault(key, value)
+	}
+}
+
+// Validate performs validation of all configuration fields
+func (c *Config) Validate() error {
+	v := validator.New()
+
+	// Register custom validation for AI token format
+	if err := v.RegisterValidation("ai_token", func(fl validator.FieldLevel) bool {
+		return strings.HasPrefix(fl.Field().String(), "sk-")
+	}); err != nil {
+		return utils.NewError(componentName, utils.ErrValidation, "failed to register AI token validator", utils.CategoryValidation, err)
+	}
+
+	// Register custom validation for AI model format
+	if err := v.RegisterValidation("ai_model", func(fl validator.FieldLevel) bool {
+		model := fl.Field().String()
+		return len(model) > 0 // Just ensure it's not empty
+	}); err != nil {
+		return utils.NewError(componentName, utils.ErrValidation, "failed to register AI model validator", utils.CategoryValidation, err)
+	}
+
+	// Register custom validation for database directory permissions
+	if err := v.RegisterValidation("db_dir_perms", func(fl validator.FieldLevel) bool {
+		dbName := fl.Field().String()
+		dbDir := filepath.Dir(dbName)
+		if dbDir == "." {
+			return true
+		}
+		info, err := os.Stat(dbDir)
+		if err != nil {
+			return os.IsNotExist(err) // Directory will be created with correct permissions
+		}
+		return info.Mode().Perm()&0077 == 0
+	}); err != nil {
+		return utils.NewError(componentName, utils.ErrValidation, "failed to register DB permissions validator", utils.CategoryValidation, err)
+	}
+
+	// Register custom validation for hostname requirement in URLs
+	if err := v.RegisterValidation("hostname_required", func(fl validator.FieldLevel) bool {
+		urlStr := fl.Field().String()
+		parsedURL, err := url.Parse(urlStr)
+		if err != nil {
+			return false
+		}
+		return parsedURL.Hostname() != ""
+	}); err != nil {
+		return utils.NewError(componentName, utils.ErrValidation, "failed to register hostname validator", utils.CategoryValidation, err)
+	}
+
+	// Validate using struct tags
+	if err := v.Struct(c); err != nil {
+		if validationErrors, ok := err.(validator.ValidationErrors); ok {
+			var msg string
+			for i, e := range validationErrors {
+				if i > 0 {
+					msg += ", "
+				}
+				msg += e.Field() + ": " + e.Tag()
+			}
+			return utils.Errorf(componentName, utils.ErrValidation, utils.CategoryValidation,
+				"validation errors: %s", msg)
+		}
+		return utils.NewError(componentName, utils.ErrValidation, "validation failed", utils.CategoryValidation, err)
+	}
+
+	return nil
+}

@@ -2,47 +2,45 @@ package ai
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"log/slog"
 	"net/http"
-	"net/url"
 	"strings"
 	"time"
 
+	"github.com/edgard/murailobot/internal/config"
 	"github.com/edgard/murailobot/internal/db"
-	"github.com/edgard/murailobot/internal/resilience"
-	"github.com/edgard/murailobot/internal/sanitize"
+	"github.com/edgard/murailobot/internal/utils"
 	"github.com/sashabaranov/go-openai"
+	"github.com/sony/gobreaker"
 )
 
-type AI struct {
-	client      *openai.Client
-	model       string
-	temperature float32
-	topP        float32
-	instruction string
-	db          db.Database
-	policy      *sanitize.Policy
-	breaker     *resilience.CircuitBreaker
+const componentName = "ai"
+
+// List of non-retryable error messages from OpenAI API
+var invalidRequestErrors = []string{
+	"invalid_request_error",
+	"context_length_exceeded",
+	"rate_limit_exceeded",
+	"invalid_api_key",
+	"organization_not_found",
 }
 
-// New creates a new AI client instance
-func New(cfg *Config, db db.Database) (*AI, error) {
-	if cfg == nil {
-		return nil, fmt.Errorf("%w: configuration is nil", ErrAI)
-	}
+// client implements the Service interface
+type client struct {
+	completionSvc CompletionService
+	model         string
+	temperature   float32
+	topP          float32
+	instruction   string
+	db            db.Database
+	policy        *utils.TextPolicy
+	breaker       *utils.CircuitBreaker
+}
 
-	// Validate base URL
-	baseURL, err := url.Parse(cfg.BaseURL)
-	if err != nil {
-		return nil, fmt.Errorf("%w: invalid base URL: %v", ErrAI, err)
-	}
-	if baseURL.Scheme != "https" {
-		return nil, fmt.Errorf("%w: base URL must use HTTPS", ErrAI)
-	}
-	if baseURL.Host == "" {
-		return nil, fmt.Errorf("%w: base URL must include a host", ErrAI)
+// New creates a new AI service instance
+func New(cfg *config.AIConfig, db db.Database) (Service, error) {
+	if cfg == nil {
+		return nil, utils.NewError(componentName, utils.ErrInvalidConfig, "configuration is nil", utils.CategoryConfig, nil)
 	}
 
 	config := openai.DefaultConfig(cfg.Token)
@@ -52,48 +50,53 @@ func New(cfg *Config, db db.Database) (*AI, error) {
 		Timeout: cfg.Timeout,
 	}
 
-	breaker := resilience.NewCircuitBreaker(resilience.CircuitBreakerConfig{
-		Name:          "openai-api",
-		MaxFailures:   5,
-		Timeout:       cfg.Timeout,
-		HalfOpenLimit: 1,
-		ResetInterval: cfg.Timeout * 2,
-		OnStateChange: func(name string, from, to resilience.CircuitState) {
-			slog.Info("OpenAI API circuit breaker state changed",
-				"name", name,
-				"from", from.String(),
-				"to", to.String(),
-			)
+	breaker := utils.NewCircuitBreaker(utils.CircuitBreakerConfig{
+		Name: "ai-api",
+		// Using default values from utils.NewCircuitBreaker:
+		// MaxFailures: 5
+		// Timeout: 30s
+		// HalfOpenLimit: 1
+		// ResetInterval: 60s
+		OnStateChange: func(name string, from, to utils.CircuitState) {
+			utils.WriteInfoLog(componentName, "AI API circuit breaker state changed",
+				utils.KeyName, name,
+				utils.KeyFrom, from.String(),
+				utils.KeyTo, to.String(),
+				utils.KeyType, "circuit_breaker",
+				utils.KeyAction, "state_change")
 		},
 	})
 
-	ai := &AI{
-		client:      openai.NewClientWithConfig(config),
-		model:       cfg.Model,
-		temperature: cfg.Temperature,
-		topP:        cfg.TopP,
-		instruction: cfg.Instruction,
-		db:          db,
-		policy:      sanitize.NewTelegramPolicy(),
-		breaker:     breaker,
+	c := &client{
+		completionSvc: openai.NewClientWithConfig(config),
+		model:         cfg.Model,
+		temperature:   cfg.Temperature,
+		topP:          cfg.TopP,
+		instruction:   cfg.Instruction,
+		db:            db,
+		policy:        utils.NewTelegramTextPolicy(),
+		breaker:       breaker,
 	}
 
-	slog.Info("OpenAI client initialized",
-		"model", cfg.Model,
-		"base_url", cfg.BaseURL,
-		"temperature", cfg.Temperature,
-		"top_p", cfg.TopP,
-		"timeout", cfg.Timeout,
-	)
-	return ai, nil
+	utils.WriteInfoLog(componentName, "AI client initialized",
+		utils.KeyType, "openai",
+		utils.KeyAction, "initialize",
+		utils.KeyName, cfg.BaseURL,
+		"model_config", map[string]interface{}{
+			"model":       cfg.Model,
+			"temperature": cfg.Temperature,
+			"top_p":       cfg.TopP,
+			"timeout":     cfg.Timeout,
+		})
+	return c, nil
 }
 
 // SanitizeResponse sanitizes the response text for Telegram messages
-func (ai *AI) SanitizeResponse(response string) string {
-	return ai.policy.SanitizeText(response)
+func (c *client) SanitizeResponse(response string) string {
+	return c.policy.SanitizeText(response)
 }
 
-func (ai *AI) convertHistoryToCompletionMessages(history []db.ChatHistory) []openai.ChatCompletionMessage {
+func (c *client) formatChatHistory(history []db.ChatHistory) []openai.ChatCompletionMessage {
 	if len(history) == 0 {
 		return nil
 	}
@@ -107,14 +110,19 @@ func (ai *AI) convertHistoryToCompletionMessages(history []db.ChatHistory) []ope
 		// Validate message integrity
 		if msg.ID <= 0 || msg.UserID <= 0 ||
 			msg.UserMsg == "" || msg.BotMsg == "" || msg.Timestamp.IsZero() {
-			slog.Warn("skipping invalid message in history",
-				"message_id", msg.ID,
-				"user_id", msg.UserID,
-				"reason", "missing required fields",
-				"has_user_msg", msg.UserMsg != "",
-				"has_bot_msg", msg.BotMsg != "",
-				"has_timestamp", !msg.Timestamp.IsZero(),
-			)
+			utils.WriteWarnLog(componentName, "skipping invalid message in history",
+				utils.KeyRequestID, msg.ID,
+				utils.KeyUserID, msg.UserID,
+				utils.KeyType, "chat_history",
+				utils.KeyAction, "validate_message",
+				utils.KeyReason, "missing required fields",
+				"validation", map[string]bool{
+					"has_id":        msg.ID > 0,
+					"has_user_id":   msg.UserID > 0,
+					"has_user_msg":  msg.UserMsg != "",
+					"has_bot_msg":   msg.BotMsg != "",
+					"has_timestamp": !msg.Timestamp.IsZero(),
+				})
 			continue
 		}
 
@@ -122,7 +130,11 @@ func (ai *AI) convertHistoryToCompletionMessages(history []db.ChatHistory) []ope
 	}
 
 	if len(validMsgs) == 0 {
-		slog.Warn("no valid messages in history", "total_messages", len(history))
+		utils.WriteWarnLog(componentName, "no valid messages in history",
+			utils.KeyCount, len(history),
+			utils.KeyType, "chat_history",
+			utils.KeyAction, "validate_history",
+			utils.KeyReason, "all messages invalid")
 		return nil
 	}
 
@@ -155,54 +167,54 @@ func (ai *AI) convertHistoryToCompletionMessages(history []db.ChatHistory) []ope
 		)
 	}
 
-	slog.Debug("formatted chat history",
-		"total_messages", len(history),
-		"valid_messages", len(validMsgs),
-		"total_entries", len(messages),
-	)
+	utils.WriteDebugLog(componentName, "formatted chat history",
+		utils.KeyType, "chat_history",
+		utils.KeyAction, "format_history",
+		"stats", map[string]int{
+			"total_messages":  len(history),
+			"valid_messages":  len(validMsgs),
+			"message_entries": len(messages),
+		})
 
 	return messages
 }
 
-func (ai *AI) GenerateResponse(ctx context.Context, userID int64, userName string, userMsg string) (string, error) {
-	if ai.instruction == "" {
-		return "", fmt.Errorf("%w: system instruction is empty", ErrAI)
-	}
-
+func (c *client) GenerateResponse(ctx context.Context, userID int64, userName string, userMsg string) (string, error) {
 	userMsg = strings.TrimSpace(userMsg)
 	if userMsg == "" {
-		return "", fmt.Errorf("%w: user message is empty", ErrAI)
+		return "", utils.NewError(componentName, utils.ErrValidation, "user message is empty", utils.CategoryValidation, nil)
 	}
 
-	slog.Debug("generating AI response",
-		"model", ai.model,
-		"message_length", len(userMsg),
-		"temperature", ai.temperature,
-		"top_p", ai.topP,
-	)
+	utils.WriteDebugLog(componentName, "generating AI response",
+		utils.KeyType, "openai",
+		utils.KeyAction, "generate_response",
+		utils.KeyUserID, userID,
+		utils.KeyName, userName,
+		utils.KeySize, len(userMsg),
+		"model_params", map[string]interface{}{
+			"model":       c.model,
+			"temperature": c.temperature,
+			"top_p":       c.topP,
+		})
 
-	retryConfig := resilience.RetryConfig{
-		MaxAttempts:     5,
-		InitialInterval: 500 * time.Millisecond,
-		MaxInterval:     10 * time.Second,
-		Multiplier:      1.5,
-		RandomFactor:    0.1, // Add jitter for distributed systems
-	}
+	retryConfig := utils.DefaultRetryConfig()
 
 	// Get last 10 messages from chat history with retry
 	var history []db.ChatHistory
-	err := resilience.WithRetry(ctx, func(ctx context.Context) error {
+	err := utils.WithRetry(ctx, func(ctx context.Context) error {
 		var err error
-		history, err = ai.db.GetRecentChatHistory(ctx, 10)
+		history, err = c.db.GetRecentChatHistory(ctx, 10)
 		return err
-	}, retryConfig) // Use optimized retry config
+	}, retryConfig)
 
 	if err != nil {
 		// Log warning but continue without history
-		slog.Warn("failed to get chat history",
-			"error", err,
-			"user_id", userID,
-		)
+		utils.WriteWarnLog(componentName, "failed to get chat history",
+			utils.KeyError, err.Error(),
+			utils.KeyUserID, userID,
+			utils.KeyType, "chat_history",
+			utils.KeyAction, "get_history",
+			utils.KeyReason, "will continue without history")
 		// Initialize empty history to continue without past context
 		history = make([]db.ChatHistory, 0)
 	}
@@ -210,12 +222,12 @@ func (ai *AI) GenerateResponse(ctx context.Context, userID int64, userName strin
 	messages := make([]openai.ChatCompletionMessage, 0, 21) // Pre-allocate for system + history + user message
 	messages = append(messages, openai.ChatCompletionMessage{
 		Role:    "system",
-		Content: ai.instruction,
+		Content: c.instruction,
 	})
 
 	// Add history messages if available
 	if len(history) > 0 {
-		historyMsgs := ai.convertHistoryToCompletionMessages(history)
+		historyMsgs := c.formatChatHistory(history)
 		if len(historyMsgs) > 0 {
 			messages = append(messages, historyMsgs...)
 		}
@@ -235,13 +247,13 @@ func (ai *AI) GenerateResponse(ctx context.Context, userID int64, userName strin
 
 	// Execute request through circuit breaker with retry
 	var response string
-	err = ai.breaker.Execute(ctx, func(ctx context.Context) error {
-		return resilience.WithRetry(ctx, func(ctx context.Context) error {
-			resp, err := ai.client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
-				Model:       ai.model,
+	err = c.breaker.Execute(ctx, func(ctx context.Context) error {
+		return utils.WithRetry(ctx, func(ctx context.Context) error {
+			resp, err := c.completionSvc.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
+				Model:       c.model,
 				Messages:    messages,
-				Temperature: ai.temperature,
-				TopP:        ai.topP,
+				Temperature: c.temperature,
+				TopP:        c.topP,
 			})
 
 			if err != nil {
@@ -249,39 +261,29 @@ func (ai *AI) GenerateResponse(ctx context.Context, userID int64, userName strin
 				// Check for non-retryable errors
 				for _, errType := range invalidRequestErrors {
 					if strings.Contains(errStr, errType) {
-						return fmt.Errorf("permanent error: %v", err)
+						return utils.NewError(componentName, utils.ErrValidation, "permanent API error", utils.CategoryValidation, err)
 					}
 				}
 				return err // Retryable error
 			}
 
 			if len(resp.Choices) == 0 {
-				return fmt.Errorf("%w: no response choices available", ErrAI)
+				return utils.NewError(componentName, utils.ErrAPI, "no response choices available", utils.CategoryExternal, nil)
 			}
 
-			response = ai.SanitizeResponse(resp.Choices[0].Message.Content)
+			response = c.SanitizeResponse(resp.Choices[0].Message.Content)
 			if response == "" {
-				return fmt.Errorf("%w: empty response after sanitization", ErrAI)
+				return utils.NewError(componentName, utils.ErrAPI, "empty response after sanitization", utils.CategoryExternal, nil)
 			}
-
-			// Validate response length
-			if len(response) > 4096 {
-				slog.Warn("response exceeded maximum length, truncating",
-					"original_length", len(response),
-					"truncated_length", 4096,
-				)
-				response = response[:4093] + "..."
-			}
-
 			return nil
-		}, retryConfig) // Use optimized retry config
+		}, retryConfig)
 	})
 
 	if err != nil {
-		if errors.Is(err, resilience.ErrCircuitOpen) {
-			return "", fmt.Errorf("%w: circuit breaker is open", ErrAI)
+		if err == gobreaker.ErrOpenState {
+			return "", utils.NewError(componentName, utils.ErrAPI, "circuit breaker is open", utils.CategoryExternal, err)
 		}
-		return "", fmt.Errorf("%w: %v", ErrAI, err)
+		return "", utils.NewError(componentName, utils.ErrAPI, "AI operation failed", utils.CategoryExternal, err)
 	}
 
 	return response, nil

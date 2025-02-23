@@ -1,30 +1,12 @@
-// Package resilience provides standardized circuit breaker implementations with:
-//   - Timeout handling with context support
-//   - Retry mechanism with exponential backoff
-//   - Context cancellation handling
-//   - Structured logging
-//   - Type-safe state management
-//   - Sensible defaults
-package resilience
+// Package utils provides common utility functions and patterns
+package utils
 
 import (
 	"context"
-	"errors"
-	"fmt"
-	"log/slog"
 	"math/rand"
 	"time"
 
 	"github.com/sony/gobreaker"
-)
-
-var (
-	// ErrCircuitOpen indicates the circuit breaker is open
-	ErrCircuitOpen = gobreaker.ErrOpenState
-	// ErrTimeout indicates an operation timed out
-	ErrTimeout = errors.New("operation timed out")
-	// ErrExhaustedRetries indicates retry attempts were exhausted
-	ErrExhaustedRetries = errors.New("retry attempts exhausted")
 )
 
 // CircuitState represents the state of a circuit breaker
@@ -112,11 +94,12 @@ func NewCircuitBreaker(cfg CircuitBreakerConfig) *CircuitBreaker {
 			fromState := mapState(from)
 			toState := mapState(to)
 			cfg.OnStateChange(name, fromState, toState)
-			slog.Info("Circuit breaker state changed",
-				"name", name,
-				"from", fromState,
-				"to", toState,
-			)
+			WriteInfoLog("resilience", "Circuit breaker state changed",
+				KeyName, name,
+				KeyFrom, fromState.String(),
+				KeyTo, toState.String(),
+				KeyType, "circuit_breaker",
+				KeyAction, "state_change")
 		}
 	}
 
@@ -136,22 +119,34 @@ func (cb *CircuitBreaker) Execute(ctx context.Context, operation func(context.Co
 		defer cancel()
 	}
 
+	WriteDebugLog("resilience", "executing operation through circuit breaker",
+		KeyName, cb.name,
+		KeyAction, "circuit_breaker_execute",
+		KeyType, "circuit_breaker")
+
 	_, err := cb.cb.Execute(func() (interface{}, error) {
 		err := operation(ctx)
 		if err != nil {
-			if errors.Is(err, context.DeadlineExceeded) {
-				return nil, fmt.Errorf("%w: %v", ErrTimeout, err)
+			if ctx.Err() == context.DeadlineExceeded {
+				return nil, NewError("resilience", ErrTimeout, "operation timed out", CategoryOperation, err)
 			}
 			return nil, err
 		}
+		WriteDebugLog("resilience", "operation completed successfully",
+			KeyName, cb.name,
+			KeyAction, "circuit_breaker_success",
+			KeyType, "circuit_breaker")
 		return nil, nil
 	})
 
 	if err != nil {
-		return err
+		WriteDebugLog("resilience", "operation failed",
+			KeyName, cb.name,
+			KeyAction, "circuit_breaker_failure",
+			KeyType, "circuit_breaker",
+			KeyError, err.Error())
 	}
-
-	return nil
+	return err
 }
 
 // RetryConfig holds configuration for retry operations
@@ -190,11 +185,11 @@ func WithRetry(ctx context.Context, operation func(context.Context) error, cfg R
 
 		// Don't retry if context is done
 		if ctx.Err() != nil {
-			return fmt.Errorf("retry abandoned: %w", ctx.Err())
+			return NewError("resilience", ErrTimeout, "retry abandoned: context done", CategoryOperation, ctx.Err())
 		}
 
 		// Don't retry on certain errors
-		if errors.Is(err, ErrCircuitOpen) {
+		if err == gobreaker.ErrOpenState {
 			return err
 		}
 
@@ -206,26 +201,31 @@ func WithRetry(ctx context.Context, operation func(context.Context) error, cfg R
 				interval = cfg.MaxInterval
 			}
 
-			slog.Debug("Operation failed, retrying",
-				"attempt", attempt,
-				"max_attempts", cfg.MaxAttempts,
-				"next_interval", interval,
-				"error", err,
-			)
+			WriteDebugLog("resilience", "Operation failed, retrying",
+				KeyType, "retry",
+				KeyAction, "retry_operation",
+				KeyCount, attempt,
+				KeyLimit, cfg.MaxAttempts,
+				KeySize, interval,
+				KeyError, err.Error(),
+				"retry_config", map[string]interface{}{
+					"multiplier":    cfg.Multiplier,
+					"random_factor": cfg.RandomFactor,
+					"max_interval":  cfg.MaxInterval,
+					"next_interval": interval,
+				})
 
 			timer := time.NewTimer(interval)
 			select {
 			case <-ctx.Done():
 				timer.Stop()
-				return fmt.Errorf("retry abandoned: %w", ctx.Err())
+				return NewError("resilience", ErrTimeout, "retry abandoned: context done", CategoryOperation, ctx.Err())
 			case <-timer.C:
 				timer.Stop()
 			}
 		}
 	}
 
-	return fmt.Errorf("%w after %d attempts: %v",
-		ErrExhaustedRetries,
-		cfg.MaxAttempts,
-		lastErr)
+	return Errorf("resilience", ErrOperation, CategoryOperation,
+		"retry attempts exhausted after %d tries: %v", cfg.MaxAttempts, lastErr)
 }

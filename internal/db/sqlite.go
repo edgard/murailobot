@@ -3,121 +3,139 @@ package db
 import (
 	"context"
 	"database/sql"
-	"errors"
+	stderrors "errors"
 	"fmt"
-	"log/slog"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
-	"github.com/edgard/murailobot/internal/resilience"
+	"github.com/edgard/murailobot/internal/config"
+	"github.com/edgard/murailobot/internal/utils"
 	"github.com/jmoiron/sqlx"
 	_ "github.com/mattn/go-sqlite3"
+	"github.com/sony/gobreaker"
 )
 
+var (
+	createChatHistoryTimestampIndex = `
+		CREATE INDEX IF NOT EXISTS idx_chat_history_timestamp ON chat_history(timestamp)`
+
+	createChatHistoryUserIDIndex = `
+		CREATE INDEX IF NOT EXISTS idx_chat_history_user_id ON chat_history(user_id)`
+)
+
+// sqliteDB implements the Database interface
+type sqliteDB struct {
+	*sqlx.DB
+	config   *config.Config
+	dbConfig *config.DatabaseConfig
+	breaker  *utils.CircuitBreaker
+}
+
+const componentName = "db"
+
 // New creates a new SQLite database connection with the given configuration
-func New(cfg *Config) (*DB, error) {
+func New(cfg *config.Config) (Database, error) {
 	if cfg == nil {
-		return nil, fmt.Errorf("%w: configuration is nil", ErrDatabase)
+		return nil, utils.NewError(componentName, utils.ErrInvalidConfig, "configuration is nil", utils.CategoryConfig, nil)
 	}
 
-	// Validate database configuration
-	switch {
-	case cfg.Name == "":
-		return nil, fmt.Errorf("%w: database name is required", ErrDatabase)
-	case cfg.MaxOpenConns < 1:
-		return nil, fmt.Errorf("%w: max_open_conns must be at least 1, got %d", ErrDatabase, cfg.MaxOpenConns)
-	case cfg.MaxOpenConns > 100:
-		return nil, fmt.Errorf("%w: max_open_conns must not exceed 100, got %d", ErrDatabase, cfg.MaxOpenConns)
-	case cfg.MaxIdleConns < 0:
-		return nil, fmt.Errorf("%w: max_idle_conns must not be negative, got %d", ErrDatabase, cfg.MaxIdleConns)
-	case cfg.MaxIdleConns > cfg.MaxOpenConns:
-		return nil, fmt.Errorf("%w: max_idle_conns (%d) must not exceed max_open_conns (%d)",
-			ErrDatabase, cfg.MaxIdleConns, cfg.MaxOpenConns)
-	case cfg.ConnMaxLifetime < time.Second:
-		return nil, fmt.Errorf("%w: conn_max_lifetime must be at least 1 second, got %v",
-			ErrDatabase, cfg.ConnMaxLifetime)
-	case cfg.ConnMaxLifetime > 24*time.Hour:
-		return nil, fmt.Errorf("%w: conn_max_lifetime must not exceed 24 hours, got %v",
-			ErrDatabase, cfg.ConnMaxLifetime)
-	}
+	dbConfig := &cfg.Database
 
 	// Ensure database directory exists with proper permissions
-	dbDir := filepath.Dir(cfg.Name)
+	dbDir := filepath.Dir(dbConfig.Name)
 	if dbDir != "." {
 		// Create directory with secure permissions
 		if err := os.MkdirAll(dbDir, 0750); err != nil {
-			return nil, fmt.Errorf("%w: failed to create database directory: %v", ErrDatabase, err)
+			return nil, utils.NewError(componentName, utils.ErrOperation, "failed to create database directory", utils.CategoryOperation, err)
 		}
 
 		// Verify directory permissions
 		info, err := os.Stat(dbDir)
 		if err != nil {
-			return nil, fmt.Errorf("%w: failed to check directory permissions: %v", ErrDatabase, err)
+			return nil, utils.NewError(componentName, utils.ErrOperation, "failed to check directory permissions", utils.CategoryOperation, err)
 		}
 
 		// Ensure directory has secure permissions
 		if info.Mode().Perm()&0077 != 0 {
 			if err := os.Chmod(dbDir, 0750); err != nil {
-				return nil, fmt.Errorf("%w: failed to set secure directory permissions: %v", ErrDatabase, err)
+				return nil, utils.NewError(componentName, utils.ErrOperation, "failed to set secure directory permissions", utils.CategoryOperation, err)
 			}
 		}
 	}
 
 	// Check if database file exists and verify permissions
-	if info, err := os.Stat(cfg.Name); err == nil {
+	if info, err := os.Stat(dbConfig.Name); err == nil {
 		// Ensure database file has secure permissions (readable/writable only by owner)
 		if info.Mode().Perm()&0077 != 0 {
-			if err := os.Chmod(cfg.Name, 0600); err != nil {
-				return nil, fmt.Errorf("%w: failed to set secure database file permissions: %v", ErrDatabase, err)
+			if err := os.Chmod(dbConfig.Name, 0600); err != nil {
+				return nil, utils.NewError(componentName, utils.ErrOperation, "failed to set secure database file permissions", utils.CategoryOperation, err)
 			}
 		}
 	}
 
 	// Configure circuit breaker for database operations
-	breaker := resilience.NewCircuitBreaker(resilience.CircuitBreakerConfig{
+	breaker := utils.NewCircuitBreaker(utils.CircuitBreakerConfig{
 		Name:          "sqlite-db",
 		MaxFailures:   3,
 		Timeout:       5 * time.Second,
 		HalfOpenLimit: 1,
 		ResetInterval: 10 * time.Second,
-		OnStateChange: func(name string, from, to resilience.CircuitState) {
-			slog.Info("Database circuit breaker state changed",
-				"name", name,
-				"from", from.String(),
-				"to", to.String(),
-			)
+		OnStateChange: func(name string, from, to utils.CircuitState) {
+			utils.WriteInfoLog(componentName, "circuit breaker state changed",
+				utils.KeyName, name,
+				utils.KeyFrom, from.String(),
+				utils.KeyTo, to.String(),
+				utils.KeyType, "circuit_breaker",
+				utils.KeyAction, "state_change")
 		},
 	})
 
 	// Set up connection with retry
 	var conn *sqlx.DB
-	ctx, cancel := context.WithTimeout(context.Background(), defaultOperationTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), dbConfig.OperationTimeout)
 	defer cancel()
 
 	err := breaker.Execute(ctx, func(ctx context.Context) error {
-		return resilience.WithRetry(ctx, func(ctx context.Context) error {
-			dsn := fmt.Sprintf("%s?_journal=WAL&_foreign_keys=on&_busy_timeout=5000&_secure_delete=on", cfg.Name)
+		return utils.WithRetry(ctx, func(ctx context.Context) error {
+			dsn := fmt.Sprintf("%s?_journal=%s&_foreign_keys=%s&_busy_timeout=5000&_secure_delete=on",
+				dbConfig.Name,
+				dbConfig.JournalMode,
+				boolToOnOff(dbConfig.ForeignKeys))
 			var err error
 			conn, err = sqlx.ConnectContext(ctx, "sqlite3", dsn)
-			return err
-		}, resilience.DefaultRetryConfig())
+			if err != nil {
+				return utils.NewError(componentName, utils.ErrConnection, "failed to connect to database", utils.CategoryExternal, err)
+			}
+			return nil
+		}, utils.DefaultRetryConfig())
 	})
 
 	if err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrDatabase, err)
+		return nil, err
 	}
 
 	// Configure connection pool
-	conn.SetMaxOpenConns(cfg.MaxOpenConns)
-	conn.SetMaxIdleConns(cfg.MaxIdleConns)
-	conn.SetConnMaxLifetime(cfg.ConnMaxLifetime)
+	conn.SetMaxOpenConns(dbConfig.MaxOpenConns)
+	conn.SetMaxIdleConns(dbConfig.MaxIdleConns)
+	conn.SetConnMaxLifetime(dbConfig.ConnMaxLifetime)
 
-	db := &DB{
-		DB:      conn,
-		config:  cfg,
-		breaker: breaker,
+	utils.WriteDebugLog(componentName, "database connection pool configured",
+		utils.KeyAction, "configure_pool",
+		utils.KeyType, "sqlite",
+		"pool_config", map[string]interface{}{
+			"max_open_conns":    dbConfig.MaxOpenConns,
+			"max_idle_conns":    dbConfig.MaxIdleConns,
+			"conn_max_lifetime": dbConfig.ConnMaxLifetime,
+		})
+
+	db := &sqliteDB{
+		DB:       conn,
+		config:   cfg,
+		dbConfig: dbConfig,
+		breaker:  breaker,
 	}
 
 	if err := db.setupSchema(); err != nil {
@@ -125,179 +143,252 @@ func New(cfg *Config) (*DB, error) {
 		return nil, err
 	}
 
-	slog.Info("database initialized",
-		"name", cfg.Name,
-		"max_open_conns", cfg.MaxOpenConns,
-		"max_idle_conns", cfg.MaxIdleConns,
-		"conn_max_lifetime", cfg.ConnMaxLifetime,
-		"journal_mode", "WAL",
-		"busy_timeout", "5000ms",
-	)
 	return db, nil
 }
 
-func (db *DB) setupSchema() error {
+// getPragmas returns SQLite pragma statements based on configuration
+func getPragmas(cfg *config.DatabaseConfig) []string {
+	// Convert cache size from KB to pages (each page is 1KB)
+	cacheSize := -cfg.CacheSizeKB // Negative value means KB instead of number of pages
+
+	return []string{
+		"PRAGMA journal_mode=" + cfg.JournalMode,
+		"PRAGMA synchronous=" + cfg.Synchronous,
+		"PRAGMA foreign_keys=" + boolToOnOff(cfg.ForeignKeys),
+		"PRAGMA temp_store=" + cfg.TempStore,
+		"PRAGMA cache_size=" + strconv.Itoa(cacheSize),
+	}
+}
+
+// boolToOnOff converts a boolean to "ON" or "OFF" string
+func boolToOnOff(b bool) string {
+	if b {
+		return "ON"
+	}
+	return "OFF"
+}
+
+// getChatHistoryTableSchema returns the chat history table schema with configurable message size
+func getChatHistoryTableSchema(maxMessageSize int) string {
+	return `
+		CREATE TABLE IF NOT EXISTS chat_history (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			user_id INTEGER NOT NULL,
+			user_name TEXT NOT NULL,
+			user_msg TEXT NOT NULL CHECK(length(user_msg) <= ` + strconv.Itoa(maxMessageSize) + `),
+			bot_msg TEXT NOT NULL CHECK(length(bot_msg) <= ` + strconv.Itoa(maxMessageSize) + `),
+			timestamp DATETIME NOT NULL
+		)`
+}
+
+func (s *sqliteDB) setupSchema() error {
 	// Use context with timeout for schema setup
-	ctx, cancel := context.WithTimeout(context.Background(), defaultLongOperationTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), s.dbConfig.LongOperationTimeout)
 	defer cancel()
 
 	// Set PRAGMAs before starting transaction
-	for _, pragma := range pragmas {
-		if _, err := db.ExecContext(ctx, pragma); err != nil {
-			return fmt.Errorf("%w: failed to set pragma %q: %v", ErrDatabase, pragma, err)
+	utils.WriteDebugLog(componentName, "setting database pragmas",
+		utils.KeyAction, "set_pragmas",
+		utils.KeyType, "sqlite",
+		"pragmas", map[string]interface{}{
+			"journal_mode":  s.dbConfig.JournalMode,
+			"synchronous":   s.dbConfig.Synchronous,
+			"foreign_keys":  s.dbConfig.ForeignKeys,
+			"temp_store":    s.dbConfig.TempStore,
+			"cache_size_kb": s.dbConfig.CacheSizeKB,
+		})
+
+	for _, pragma := range getPragmas(s.dbConfig) {
+		if _, err := s.ExecContext(ctx, pragma); err != nil {
+			return utils.Errorf(componentName, utils.ErrOperation, utils.CategoryOperation,
+				"failed to set pragma %q: %v", pragma, err)
 		}
 	}
 
-	tx, err := db.BeginTxx(ctx, nil)
+	tx, err := s.BeginTxx(ctx, nil)
 	if err != nil {
-		return fmt.Errorf("%w: failed to start transaction: %v", ErrDatabase, err)
+		return utils.NewError(componentName, utils.ErrOperation, "failed to start transaction", utils.CategoryOperation, err)
 	}
 	defer func() {
 		if err := tx.Rollback(); err != nil && err != sql.ErrTxDone {
-			slog.Error("failed to rollback schema setup transaction", "error", err)
+			utils.WriteErrorLog(componentName, "failed to rollback schema setup transaction", err,
+				utils.KeyAction, "rollback",
+				utils.KeyTxType, "schema_setup")
 		}
 	}()
 
 	schemas := []string{
-		getChatHistoryTableSchema(db.config.MaxMessageSize),
+		getChatHistoryTableSchema(s.config.MaxMessageSize),
 		createChatHistoryTimestampIndex,
 		createChatHistoryUserIDIndex,
 	}
 
 	for i, schema := range schemas {
 		if _, err := tx.ExecContext(ctx, schema); err != nil {
-			return fmt.Errorf("%w: failed to execute schema %d: %v", ErrDatabase, i+1, err)
+			return utils.Errorf(componentName, utils.ErrOperation, utils.CategoryOperation,
+				"failed to execute schema %d: %v", i+1, err)
 		}
 	}
 
 	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("%w: failed to commit schema changes: %v", ErrDatabase, err)
+		return utils.NewError(componentName, utils.ErrOperation, "failed to commit schema changes", utils.CategoryOperation, err)
 	}
 
 	// Verify schema setup
 	var tableCount int
-	if err := db.GetContext(ctx, &tableCount, "SELECT count(*) FROM sqlite_master WHERE type='table'"); err != nil {
-		return fmt.Errorf("%w: failed to verify schema setup: %v", ErrDatabase, err)
+	if err := s.GetContext(ctx, &tableCount, "SELECT count(*) FROM sqlite_master WHERE type='table'"); err != nil {
+		return utils.NewError(componentName, utils.ErrOperation, "failed to verify schema setup", utils.CategoryOperation, err)
 	}
 
-	if tableCount < 2 {
-		return fmt.Errorf("%w: schema verification failed: expected 2 tables, got %d", ErrDatabase, tableCount)
+	if tableCount < 1 {
+		return utils.Errorf(componentName, utils.ErrValidation, utils.CategoryValidation,
+			"schema verification failed: expected at least 1 table, got %d", tableCount)
 	}
 
 	// Verify foreign key constraints are enabled
 	var foreignKeys bool
-	if err := db.GetContext(ctx, &foreignKeys, "PRAGMA foreign_keys"); err != nil {
-		return fmt.Errorf("%w: failed to verify foreign keys: %v", ErrDatabase, err)
+	if err := s.GetContext(ctx, &foreignKeys, "PRAGMA foreign_keys"); err != nil {
+		return utils.NewError(componentName, utils.ErrOperation, "failed to verify foreign keys", utils.CategoryOperation, err)
 	}
 
 	if !foreignKeys {
-		return fmt.Errorf("%w: foreign key constraints are not enabled", ErrDatabase)
+		return utils.NewError(componentName, utils.ErrValidation, "foreign key constraints are not enabled", utils.CategoryValidation, nil)
 	}
 
-	slog.Info("database schema initialized",
-		"tables", tableCount,
-		"foreign_keys", foreignKeys,
-		"journal_mode", "WAL",
-		"synchronous", "NORMAL",
-		"busy_timeout", "5000ms",
-	)
+	// Log consolidated database initialization info
+	utils.WriteInfoLog(componentName, "database initialized",
+		utils.KeyAction, "initialize",
+		utils.KeyResult, "success",
+		utils.KeyName, s.dbConfig.Name,
+		utils.KeyType, "sqlite",
+		utils.KeyCount, tableCount,
+		"settings", map[string]interface{}{
+			"connections": map[string]interface{}{
+				"max_open":     s.dbConfig.MaxOpenConns,
+				"max_idle":     s.dbConfig.MaxIdleConns,
+				"max_lifetime": s.dbConfig.ConnMaxLifetime,
+			},
+			"timeouts": map[string]interface{}{
+				"operation":      s.dbConfig.OperationTimeout,
+				"long_operation": s.dbConfig.LongOperationTimeout,
+			},
+			"pragmas": map[string]interface{}{
+				"journal_mode":  s.dbConfig.JournalMode,
+				"synchronous":   s.dbConfig.Synchronous,
+				"foreign_keys":  foreignKeys,
+				"temp_store":    s.dbConfig.TempStore,
+				"cache_size_kb": s.dbConfig.CacheSizeKB,
+			},
+		})
 	return nil
 }
 
 // GetRecentChatHistory retrieves the last n messages from chat history
-func (db *DB) GetRecentChatHistory(ctx context.Context, limit int) ([]ChatHistory, error) {
+func (s *sqliteDB) GetRecentChatHistory(ctx context.Context, limit int) ([]ChatHistory, error) {
 	if limit <= 0 {
-		return nil, fmt.Errorf("%w: invalid limit: %d", ErrDatabase, limit)
+		return nil, utils.Errorf(componentName, utils.ErrValidation, utils.CategoryValidation,
+			"invalid limit: %d", limit)
 	}
 
 	// Cap the limit to prevent excessive memory usage
 	if limit > 50 {
 		limit = 50
-		slog.Warn("limiting chat history retrieval", "requested", limit, "max_allowed", 50)
+		utils.WriteWarnLog(componentName, "limiting chat history retrieval",
+			utils.KeyRequested, limit,
+			utils.KeyLimit, 50,
+			utils.KeyAction, "get_history",
+			utils.KeyType, "chat_history")
 	}
 
 	var history []ChatHistory
-	err := db.breaker.Execute(ctx, func(ctx context.Context) error {
-		return resilience.WithRetry(ctx, func(ctx context.Context) error {
+	err := s.breaker.Execute(ctx, func(ctx context.Context) error {
+		return utils.WithRetry(ctx, func(ctx context.Context) error {
 			query := `SELECT id, user_id, user_name, user_msg, bot_msg, timestamp
 				FROM chat_history
 				WHERE user_msg != '' AND bot_msg != ''
 				ORDER BY timestamp DESC
 				LIMIT ?`
 
-			rows, err := db.QueryxContext(ctx, query, limit)
+			rows, err := s.QueryxContext(ctx, query, limit)
 			if err != nil {
-				return err
+				return utils.NewError(componentName, utils.ErrOperation, "failed to query chat history", utils.CategoryOperation, err)
 			}
 			defer rows.Close()
 
 			for rows.Next() {
 				var msg ChatHistory
 				if err := rows.StructScan(&msg); err != nil {
-					return fmt.Errorf("failed to scan chat history: %v", err)
+					return utils.NewError(componentName, utils.ErrOperation, "failed to scan chat history", utils.CategoryOperation, err)
 				}
 				history = append(history, msg)
 			}
 
 			if err := rows.Err(); err != nil {
-				return fmt.Errorf("error iterating chat history: %v", err)
+				return utils.NewError(componentName, utils.ErrOperation, "error iterating chat history", utils.CategoryOperation, err)
 			}
 
 			return nil
-		}, resilience.DefaultRetryConfig())
+		}, utils.DefaultRetryConfig())
 	})
 
 	if err != nil {
-		if errors.Is(err, resilience.ErrCircuitOpen) {
-			return nil, fmt.Errorf("%w: circuit breaker is open", ErrDatabase)
+		if stderrors.Is(err, gobreaker.ErrOpenState) {
+			return nil, utils.NewError(componentName, utils.ErrOperation, "circuit breaker is open", utils.CategoryOperation, err)
 		}
-		return nil, fmt.Errorf("%w: %v", ErrDatabase, err)
+		return nil, err
 	}
 
 	if len(history) == 0 {
-		slog.Debug("no chat history found", "limit", limit)
+		utils.WriteDebugLog(componentName, "no chat history found",
+			utils.KeyLimit, limit,
+			utils.KeyAction, "get_history",
+			utils.KeyType, "chat_history")
 		return nil, nil
 	}
 
-	slog.Debug("retrieved chat history",
-		"limit", limit,
-		"messages_found", len(history),
-	)
+	utils.WriteDebugLog(componentName, "retrieved chat history",
+		utils.KeyLimit, limit,
+		utils.KeyCount, len(history),
+		utils.KeyAction, "get_history",
+		utils.KeyType, "chat_history")
 	return history, nil
 }
 
 // SaveChatInteraction saves a new chat message to the database
-func (db *DB) SaveChatInteraction(ctx context.Context, userID int64, userName, userMsg, botMsg string) error {
+func (s *sqliteDB) SaveChatInteraction(ctx context.Context, userID int64, userName, userMsg, botMsg string) error {
 	if userID <= 0 {
-		return fmt.Errorf("%w: user_id must be positive", ErrDatabase)
+		return utils.NewError(componentName, utils.ErrValidation, "user_id must be positive", utils.CategoryValidation, nil)
 	}
 
 	// Validate and trim username
 	userName = strings.TrimSpace(userName)
 	if userName == "" {
-		return fmt.Errorf("%w: username cannot be empty", ErrDatabase)
+		return utils.NewError(componentName, utils.ErrValidation, "username cannot be empty", utils.CategoryValidation, nil)
 	}
-	if len(userName) > 64 { // reasonable max length for username
-		userName = userName[:64]
+	if len(userName) > s.dbConfig.MaxUsernameLen {
+		userName = userName[:s.dbConfig.MaxUsernameLen]
 	}
 
 	// Validate message lengths
 	if len(userMsg) == 0 || len(botMsg) == 0 {
-		return fmt.Errorf("%w: messages cannot be empty", ErrDatabase)
+		return utils.NewError(componentName, utils.ErrValidation, "messages cannot be empty", utils.CategoryValidation, nil)
 	}
-	if len(userMsg) > db.config.MaxMessageSize || len(botMsg) > db.config.MaxMessageSize {
-		return fmt.Errorf("%w: message exceeds maximum length of %d characters", ErrDatabase, db.config.MaxMessageSize)
+	if len(userMsg) > s.config.MaxMessageSize || len(botMsg) > s.config.MaxMessageSize {
+		return utils.Errorf(componentName, utils.ErrValidation, utils.CategoryValidation,
+			"message exceeds maximum length of %d characters", s.config.MaxMessageSize)
 	}
 
-	err := db.breaker.Execute(ctx, func(ctx context.Context) error {
-		return resilience.WithRetry(ctx, func(ctx context.Context) error {
-			tx, err := db.BeginTxx(ctx, nil)
+	err := s.breaker.Execute(ctx, func(ctx context.Context) error {
+		return utils.WithRetry(ctx, func(ctx context.Context) error {
+			tx, err := s.BeginTxx(ctx, nil)
 			if err != nil {
-				return fmt.Errorf("failed to start transaction: %v", err)
+				return utils.NewError(componentName, utils.ErrOperation, "failed to start transaction", utils.CategoryOperation, err)
 			}
 			defer func() {
 				if err := tx.Rollback(); err != nil && err != sql.ErrTxDone {
-					slog.Error("failed to rollback save chat transaction", "error", err)
+					utils.WriteErrorLog(componentName, "failed to rollback save chat transaction", err,
+						utils.KeyAction, "rollback",
+						utils.KeyTxType, "save_chat")
 				}
 			}()
 
@@ -309,81 +400,86 @@ func (db *DB) SaveChatInteraction(ctx context.Context, userID int64, userName, u
 				userID, userName, userMsg, botMsg, now,
 			)
 			if err != nil {
-				return fmt.Errorf("failed to save chat: %v", err)
+				return utils.NewError(componentName, utils.ErrOperation, "failed to save chat", utils.CategoryOperation, err)
 			}
 
 			messageID, err := result.LastInsertId()
 			if err != nil {
-				return fmt.Errorf("failed to get message ID: %v", err)
+				return utils.NewError(componentName, utils.ErrOperation, "failed to get message ID", utils.CategoryOperation, err)
 			}
 
 			if err := tx.Commit(); err != nil {
-				return fmt.Errorf("failed to commit transaction: %v", err)
+				return utils.NewError(componentName, utils.ErrOperation, "failed to commit transaction", utils.CategoryOperation, err)
 			}
 
-			slog.Debug("chat history saved",
-				"message_id", messageID,
-				"user_id", userID,
-				"user_name", userName,
-				"user_msg_length", len(userMsg),
-				"bot_msg_length", len(botMsg),
-				"timestamp", now.Format(time.RFC3339),
-			)
+			utils.WriteDebugLog(componentName, "chat history saved",
+				utils.KeyRequestID, messageID,
+				utils.KeyUserID, userID,
+				utils.KeyName, userName,
+				utils.KeySize, len(userMsg)+len(botMsg),
+				utils.KeyAction, "save_chat",
+				utils.KeyType, "chat_history",
+				"timestamp", now.Format(time.RFC3339))
 			return nil
-		}, resilience.DefaultRetryConfig())
+		}, utils.DefaultRetryConfig())
 	})
 
 	if err != nil {
-		if errors.Is(err, resilience.ErrCircuitOpen) {
-			return fmt.Errorf("%w: circuit breaker is open", ErrDatabase)
+		if stderrors.Is(err, gobreaker.ErrOpenState) {
+			return utils.NewError(componentName, utils.ErrOperation, "circuit breaker is open", utils.CategoryOperation, err)
 		}
-		return fmt.Errorf("%w: %v", ErrDatabase, err)
+		return err
 	}
 
 	return nil
 }
 
 // DeleteAllChatHistory deletes all chat history from the database
-func (db *DB) DeleteAllChatHistory(ctx context.Context) error {
-	err := db.breaker.Execute(ctx, func(ctx context.Context) error {
-		return resilience.WithRetry(ctx, func(ctx context.Context) error {
-			tx, err := db.BeginTxx(ctx, nil)
+func (s *sqliteDB) DeleteAllChatHistory(ctx context.Context) error {
+	err := s.breaker.Execute(ctx, func(ctx context.Context) error {
+		return utils.WithRetry(ctx, func(ctx context.Context) error {
+			tx, err := s.BeginTxx(ctx, nil)
 			if err != nil {
-				return fmt.Errorf("failed to start transaction: %v", err)
+				return utils.NewError(componentName, utils.ErrOperation, "failed to start transaction", utils.CategoryOperation, err)
 			}
 			defer func() {
 				if err := tx.Rollback(); err != nil && err != sql.ErrTxDone {
-					slog.Error("failed to rollback clear history transaction", "error", err)
+					utils.WriteErrorLog(componentName, "failed to rollback clear history transaction", err,
+						utils.KeyAction, "rollback",
+						utils.KeyTxType, "clear_history")
 				}
 			}()
 
 			if _, err := tx.ExecContext(ctx, "DELETE FROM chat_history"); err != nil {
-				return fmt.Errorf("failed to clear chat history: %v", err)
+				return utils.NewError(componentName, utils.ErrOperation, "failed to clear chat history", utils.CategoryOperation, err)
 			}
 
 			if err := tx.Commit(); err != nil {
-				return fmt.Errorf("failed to commit transaction: %v", err)
+				return utils.NewError(componentName, utils.ErrOperation, "failed to commit transaction", utils.CategoryOperation, err)
 			}
 
-			slog.Info("chat history cleared successfully")
+			utils.WriteInfoLog(componentName, "chat history cleared",
+				utils.KeyAction, "clear_history",
+				utils.KeyResult, "success",
+				utils.KeyType, "chat_history")
 			return nil
-		}, resilience.DefaultRetryConfig())
+		}, utils.DefaultRetryConfig())
 	})
 
 	if err != nil {
-		if errors.Is(err, resilience.ErrCircuitOpen) {
-			return fmt.Errorf("%w: circuit breaker is open", ErrDatabase)
+		if stderrors.Is(err, gobreaker.ErrOpenState) {
+			return utils.NewError(componentName, utils.ErrOperation, "circuit breaker is open", utils.CategoryOperation, err)
 		}
-		return fmt.Errorf("%w: %v", ErrDatabase, err)
+		return err
 	}
 
 	return nil
 }
 
 // Close closes the database connection
-func (db *DB) Close() error {
-	if err := db.DB.Close(); err != nil {
-		return fmt.Errorf("%w: failed to close database connection: %v", ErrDatabase, err)
+func (s *sqliteDB) Close() error {
+	if err := s.DB.Close(); err != nil {
+		return utils.NewError(componentName, utils.ErrOperation, "failed to close database connection", utils.CategoryOperation, err)
 	}
 	return nil
 }

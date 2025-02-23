@@ -1,4 +1,4 @@
-package sanitize
+package utils
 
 import (
 	"bytes"
@@ -9,22 +9,23 @@ import (
 	"github.com/yuin/goldmark"
 )
 
-// Policy represents a sanitization policy for text content
-type Policy struct {
+// TextPolicy represents a sanitization policy for text content
+type TextPolicy struct {
 	policy   *bluemonday.Policy
 	markdown goldmark.Markdown
 }
 
-// NewTelegramPolicy creates a new Policy for stripping HTML and markdown
-func NewTelegramPolicy() *Policy {
-	return &Policy{
+// NewTelegramTextPolicy creates a new Policy for stripping HTML and markdown
+// suitable for Telegram messages
+func NewTelegramTextPolicy() *TextPolicy {
+	return &TextPolicy{
 		policy:   bluemonday.StrictPolicy(),
 		markdown: goldmark.New(),
 	}
 }
 
 // SanitizeText strips HTML and markdown from the input text
-func (p *Policy) SanitizeText(text string) string {
+func (p *TextPolicy) SanitizeText(text string) string {
 	if text == "" {
 		return ""
 	}
@@ -32,6 +33,11 @@ func (p *Policy) SanitizeText(text string) string {
 	// Convert markdown to HTML
 	var buf bytes.Buffer
 	if err := p.markdown.Convert([]byte(text), &buf); err != nil {
+		WriteWarnLog("sanitize", "failed to convert markdown",
+			KeyError, err.Error(),
+			KeySize, len(text),
+			KeyAction, "markdown_convert",
+			KeyType, "sanitize")
 		return text
 	}
 
@@ -47,6 +53,15 @@ func (p *Policy) SanitizeText(text string) string {
 
 	// Convert HTML entities back to characters
 	sanitized = html.UnescapeString(sanitized)
+
+	WriteDebugLog("sanitize", "text sanitized successfully",
+		KeyAction, "sanitize_text",
+		KeyType, "sanitize",
+		KeySize, map[string]int{
+			"input":    len(text),
+			"output":   len(sanitized),
+			"markdown": len(htmlText),
+		})
 
 	return sanitized
 }

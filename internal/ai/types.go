@@ -1,29 +1,18 @@
 package ai
 
 import (
-	"errors"
-	"time"
+	"context"
+
+	"github.com/sashabaranov/go-openai"
 )
 
-var (
-	// ErrAI represents AI service related errors
-	ErrAI = errors.New("ai service error")
+// Service defines the required AI operations
+type Service interface {
+	GenerateResponse(ctx context.Context, userID int64, userName string, userMsg string) (string, error)
+	SanitizeResponse(response string) string
+}
 
-	// List of errors that should not be retried
-	invalidRequestErrors = []string{
-		"invalid_request_error",
-		"context_length_exceeded",
-		"rate_limit_exceeded",
-	}
-)
-
-// Config holds configuration for the AI service
-type Config struct {
-	Token       string
-	BaseURL     string
-	Model       string
-	Temperature float32
-	TopP        float32
-	Instruction string
-	Timeout     time.Duration
+// CompletionService defines the interface for OpenAI API operations
+type CompletionService interface {
+	CreateChatCompletion(ctx context.Context, request openai.ChatCompletionRequest) (openai.ChatCompletionResponse, error)
 }

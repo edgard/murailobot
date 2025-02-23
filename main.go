@@ -2,8 +2,6 @@ package main
 
 import (
 	"context"
-	"fmt"
-	"log/slog"
 	"os"
 	"os/signal"
 	"syscall"
@@ -11,87 +9,53 @@ import (
 	"github.com/edgard/murailobot/internal/ai"
 	"github.com/edgard/murailobot/internal/config"
 	"github.com/edgard/murailobot/internal/db"
-	"github.com/edgard/murailobot/internal/logger"
 	"github.com/edgard/murailobot/internal/telegram"
+	"github.com/edgard/murailobot/internal/utils"
 )
 
 func main() {
 	// Load configuration using the config package
-	cfg, err := config.Load()
+	config, err := config.Load()
 	if err != nil {
-		slog.Error("failed to load configuration", "error", err)
+		utils.WriteErrorLog("main", "failed to load configuration", err,
+			utils.KeyAction, "load_config")
 		os.Exit(1)
 	}
 
 	// Initialize logger
-	if err := logger.Setup(&cfg.Log); err != nil {
-		slog.Error("failed to initialize logger", "error", err)
+	logCfg := &utils.LogConfig{
+		Level:  config.Log.Level,
+		Format: config.Log.Format,
+	}
+	if err := utils.Setup(logCfg); err != nil {
+		utils.WriteErrorLog("main", "failed to initialize logger", err,
+			utils.KeyAction, "init_logger")
 		os.Exit(1)
 	}
 
 	// Initialize database
-	dbConfig := &db.Config{
-		Name:            cfg.Database.Name,
-		MaxOpenConns:    cfg.Database.MaxOpenConns,
-		MaxIdleConns:    cfg.Database.MaxIdleConns,
-		ConnMaxLifetime: cfg.Database.ConnMaxLifetime,
-		MaxMessageSize:  cfg.Database.MaxMessageSize,
-	}
-	database, err := db.New(dbConfig)
+	database, err := db.New(config)
 	if err != nil {
-		slog.Error("failed to initialize database", "error", err)
+		utils.WriteErrorLog("main", "failed to initialize database", err,
+			utils.KeyAction, "init_database")
 		os.Exit(1)
 	}
 	defer database.Close()
 
 	// Initialize AI client
-	aiConfig := &ai.Config{
-		Token:       cfg.OpenAI.Token,
-		BaseURL:     cfg.OpenAI.BaseURL,
-		Model:       cfg.OpenAI.Model,
-		Temperature: cfg.OpenAI.Temperature,
-		TopP:        cfg.OpenAI.TopP,
-		Instruction: cfg.OpenAI.Instruction,
-		Timeout:     cfg.OpenAI.Timeout,
-	}
-	aiClient, err := ai.New(aiConfig, database)
+	aiClient, err := ai.New(&config.AI, database)
 	if err != nil {
-		slog.Error("failed to initialize AI client", "error", err)
+		utils.WriteErrorLog("main", "failed to initialize AI client", err,
+			utils.KeyAction, "init_ai")
 		os.Exit(1)
 	}
 
 	// Initialize bot
-	tgConfig := &telegram.Config{
-		Token:    cfg.Bot.Token,
-		AdminUID: cfg.Bot.AdminUID,
-		Messages: telegram.BotMessages{
-			Welcome:        cfg.Bot.Messages.Welcome,
-			NotAuthorized:  cfg.Bot.Messages.NotAuthorized,
-			ProvideMessage: cfg.Bot.Messages.ProvideMessage,
-			MessageTooLong: cfg.Bot.Messages.MessageTooLong,
-			AIError:        cfg.Bot.Messages.AIError,
-			GeneralError:   cfg.Bot.Messages.GeneralError,
-			HistoryReset:   cfg.Bot.Messages.HistoryReset,
-		},
-		Polling: telegram.PollingConfig{
-			Timeout:            cfg.Bot.PollTimeout,
-			RequestTimeout:     cfg.Bot.RequestTimeout,
-			MaxRoutines:        cfg.Bot.MaxRoutines,
-			DropPendingUpdates: cfg.Bot.DropPendingUpdates,
-		},
-		TypingInterval:      cfg.Bot.TypingInterval,
-		TypingActionTimeout: cfg.Bot.TypingActionTimeout,
-		DBOperationTimeout:  cfg.Bot.DBOperationTimeout,
-		AIRequestTimeout:    cfg.Bot.AIRequestTimeout,
-	}
-	securityConfig := &telegram.SecurityConfig{
-		MaxMessageLength: cfg.Bot.MaxMessageLength,
-		AllowedUserIDs:   cfg.Bot.AllowedUserIDs,
-		BlockedUserIDs:   cfg.Bot.BlockedUserIDs,
-	}
-	bot, err := telegram.New(tgConfig, securityConfig, database, aiClient)
+	var bot telegram.BotService
+	bot, err = telegram.New(config, database, aiClient)
 	if err != nil {
-		slog.Error("failed to initialize bot", "error", err)
+		utils.WriteErrorLog("main", "failed to initialize bot", err,
+			utils.KeyAction, "init_bot")
 		os.Exit(1)
 	}
 
@@ -114,7 +78,9 @@ func main() {
 				if !ok {
 					return
 				}
-				slog.Info("received signal", "signal", sig)
+				utils.WriteInfoLog("main", "received shutdown signal",
+					utils.KeyAction, "shutdown",
+					utils.KeyReason, sig.String())
 				cancel()
 				return
 			case <-ctx.Done():
@@ -126,9 +92,12 @@ func main() {
 
 	// Start bot
 	if err := bot.Start(ctx); err != nil {
-		slog.Error("bot error", "error", err)
+		utils.WriteErrorLog("main", "bot error", err,
+			utils.KeyAction, "run_bot")
 		os.Exit(1)
 	}
 
-	fmt.Println("Bot stopped")
+	utils.WriteInfoLog("main", "bot stopped",
+		utils.KeyAction, "shutdown",
+		utils.KeyResult, "shutdown_complete")
 }
