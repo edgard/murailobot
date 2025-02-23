@@ -17,13 +17,14 @@ type ChatHistory struct {
 
 // Database provides thread-safe chat history operations.
 type Database interface {
-	// GetRecentChatHistory returns newest messages first
-	GetRecentChatHistory(ctx context.Context, limit int) ([]ChatHistory, error)
+	// GetRecent returns newest messages first
+	GetRecent(ctx context.Context, limit int) ([]ChatHistory, error)
 
-	SaveChatInteraction(ctx context.Context, userID int64, userName, userMsg, botMsg string) error
+	// Save stores a new chat interaction
+	Save(ctx context.Context, userID int64, userName, userMsg, botMsg string) error
 
-	// DeleteAllChatHistory cannot be undone
-	DeleteAllChatHistory(ctx context.Context) error
+	// DeleteAll removes all chat history (cannot be undone)
+	DeleteAll(ctx context.Context) error
 
 	// Close releases database resources
 	Close() error

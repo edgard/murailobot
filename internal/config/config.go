@@ -153,7 +153,7 @@ var DefaultBotCommands = []CommandConfig{
 func Load() (*Config, error) {
 	setDefaults()
 
-	utils.WriteDebugLog(componentName, "default configuration set",
+	utils.DebugLog(componentName, "default configuration set",
 		utils.KeyAction, "set_defaults")
 
 	cfg := &Config{}
@@ -170,7 +170,7 @@ func Load() (*Config, error) {
 		return nil, utils.NewError(componentName, utils.ErrInvalidConfig, "validation failed", utils.CategoryConfig, err)
 	}
 
-	utils.WriteInfoLog(componentName, "configuration loaded successfully",
+	utils.InfoLog(componentName, "configuration loaded successfully",
 		utils.KeyAction, "load_config",
 		"config_summary", map[string]interface{}{
 			"log_level":        cfg.Log.Level,

@@ -100,7 +100,7 @@ func (h *botCommandHandler) handleStart(bot *gotgbot.Bot, ctx *ext.Context) erro
 		return h.sendUnauthorizedMessage(bot, ctx, userID)
 	}
 
-	utils.WriteInfoLog(componentName, "received /start command",
+	utils.InfoLog(componentName, "received /start command",
 		utils.KeyUserID, userID,
 		utils.KeyRequestID, ctx.EffectiveChat.Id,
 		utils.KeyName, msg.From.Username,
@@ -111,7 +111,7 @@ func (h *botCommandHandler) handleStart(bot *gotgbot.Bot, ctx *ext.Context) erro
 
 	welcomeMsg := h.bot.cfg.Telegram.Messages.Welcome
 	if err := h.sendMessageWithRetry(msgCtx, bot, msg, welcomeMsg); err != nil {
-		utils.WriteErrorLog(componentName, "failed to send welcome message", err,
+		utils.ErrorLog(componentName, "failed to send welcome message", err,
 			utils.KeyUserID, userID,
 			utils.KeyRequestID, ctx.EffectiveChat.Id,
 			utils.KeyAction, "send_welcome")
@@ -139,7 +139,7 @@ func (h *botCommandHandler) handleChatMessage(bot *gotgbot.Bot, ctx *ext.Context
 	opCtx, cancel := context.WithTimeout(context.Background(), h.bot.cfg.Telegram.AIRequestTimeout)
 	defer cancel()
 
-	utils.WriteInfoLog(componentName, "received /mrl command",
+	utils.InfoLog(componentName, "received /mrl command",
 		utils.KeyUserID, userID,
 		utils.KeyRequestID, ctx.EffectiveChat.Id,
 		utils.KeyName, msg.From.Username,
@@ -159,7 +159,7 @@ func (h *botCommandHandler) handleChatMessage(bot *gotgbot.Bot, ctx *ext.Context
 		defer cancel()
 
 		if err := h.sendMessageWithRetry(msgCtx, bot, msg, h.bot.cfg.Telegram.Messages.ProvideMessage); err != nil {
-			utils.WriteErrorLog(componentName, "failed to send prompt message", err,
+			utils.ErrorLog(componentName, "failed to send prompt message", err,
 				utils.KeyUserID, msg.From.Id,
 				utils.KeyRequestID, ctx.EffectiveChat.Id,
 				utils.KeyAction, "send_prompt")
@@ -175,7 +175,7 @@ func (h *botCommandHandler) handleChatMessage(bot *gotgbot.Bot, ctx *ext.Context
 		username = "Unknown"
 	}
 
-	response, err := h.bot.ai.GenerateResponse(opCtx, userID, username, text)
+	response, err := h.bot.ai.Generate(opCtx, userID, username, text)
 	if err != nil {
 		var errMsg string
 		var appErr *utils.AppError
@@ -201,14 +201,14 @@ func (h *botCommandHandler) handleChatMessage(bot *gotgbot.Bot, ctx *ext.Context
 			errorCode = utils.ErrTimeout
 		}
 
-		utils.WriteErrorLog(componentName, "failed to generate AI response", err,
+		utils.ErrorLog(componentName, "failed to generate AI response", err,
 			utils.KeyUserID, msg.From.Id,
 			utils.KeyRequestID, ctx.EffectiveChat.Id,
 			utils.KeySize, len(text),
 			utils.KeyReason, errorCode,
 			utils.KeyAction, "generate_response")
 
-		errMsg = h.bot.ai.SanitizeResponse(errMsg)
+		errMsg = h.bot.ai.Sanitize(errMsg)
 		msgCtx, cancel := context.WithTimeout(opCtx, h.bot.cfg.Telegram.Polling.RequestTimeout)
 		defer cancel()
 
@@ -225,8 +225,8 @@ func (h *botCommandHandler) handleChatMessage(bot *gotgbot.Bot, ctx *ext.Context
 		dbCtx, cancel := context.WithTimeout(opCtx, h.bot.cfg.Telegram.DBOperationTimeout)
 		defer cancel()
 
-		if err := h.bot.db.SaveChatInteraction(dbCtx, msg.From.Id, username, text, response); err != nil {
-			utils.WriteErrorLog(componentName, "failed to save chat history", err,
+		if err := h.bot.db.Save(dbCtx, msg.From.Id, username, text, response); err != nil {
+			utils.ErrorLog(componentName, "failed to save chat history", err,
 				utils.KeyUserID, msg.From.Id,
 				utils.KeyRequestID, msg.Chat.Id,
 				utils.KeyAction, "save_chat",
@@ -237,7 +237,7 @@ func (h *botCommandHandler) handleChatMessage(bot *gotgbot.Bot, ctx *ext.Context
 		case <-opCtx.Done():
 			return opCtx.Err()
 		default:
-			response = h.bot.ai.SanitizeResponse(response)
+			response = h.bot.ai.Sanitize(response)
 			msgCtx, cancel := context.WithTimeout(opCtx, h.bot.cfg.Telegram.Polling.RequestTimeout)
 			defer cancel()
 
@@ -261,15 +261,15 @@ func (h *botCommandHandler) handleChatHistoryReset(bot *gotgbot.Bot, ctx *ext.Co
 	opCtx, cancel := context.WithTimeout(context.Background(), h.bot.cfg.Telegram.DBOperationTimeout)
 	defer cancel()
 
-	utils.WriteInfoLog(componentName, "received /mrl_reset command",
+	utils.InfoLog(componentName, "received /mrl_reset command",
 		utils.KeyUserID, userID,
 		utils.KeyRequestID, ctx.EffectiveChat.Id,
 		utils.KeyName, msg.From.Username,
 		utils.KeyType, "admin",
 		utils.KeyAction, "reset_command")
 
-	if err := h.bot.db.DeleteAllChatHistory(opCtx); err != nil {
-		utils.WriteErrorLog(componentName, "failed to reset chat history", err,
+	if err := h.bot.db.DeleteAll(opCtx); err != nil {
+		utils.ErrorLog(componentName, "failed to reset chat history", err,
 			utils.KeyUserID, userID,
 			utils.KeyRequestID, ctx.EffectiveChat.Id,
 			utils.KeyAction, "reset_history",
@@ -281,16 +281,16 @@ func (h *botCommandHandler) handleChatHistoryReset(bot *gotgbot.Bot, ctx *ext.Co
 		return utils.NewError(componentName, utils.ErrOperation, "failed to reset chat history", utils.CategoryOperation, err)
 	}
 
-	resetMsg := h.bot.ai.SanitizeResponse(h.bot.cfg.Telegram.Messages.HistoryReset)
+	resetMsg := h.bot.ai.Sanitize(h.bot.cfg.Telegram.Messages.HistoryReset)
 	if err := h.sendMessageWithRetry(opCtx, bot, msg, resetMsg); err != nil {
-		utils.WriteErrorLog(componentName, "failed to send reset confirmation message", err,
+		utils.ErrorLog(componentName, "failed to send reset confirmation message", err,
 			utils.KeyUserID, userID,
 			utils.KeyRequestID, ctx.EffectiveChat.Id,
 			utils.KeyAction, "send_reset_confirm")
 		return utils.NewError(componentName, utils.ErrOperation, "failed to send reset confirmation", utils.CategoryOperation, err)
 	}
 
-	utils.WriteInfoLog(componentName, "chat history reset completed",
+	utils.InfoLog(componentName, "chat history reset completed",
 		utils.KeyAction, "reset_history",
 		utils.KeyResult, "success",
 		utils.KeyUserID, userID,
@@ -304,7 +304,7 @@ func (h *botCommandHandler) isAuthorized(userID int64) bool {
 }
 
 func (h *botCommandHandler) sendUnauthorizedMessage(bot *gotgbot.Bot, ctx *ext.Context, userID int64) error {
-	utils.WriteWarnLog(componentName, "unauthorized access attempt",
+	utils.WarnLog(componentName, "unauthorized access attempt",
 		utils.KeyUserID, userID,
 		utils.KeyRequestID, ctx.EffectiveChat.Id,
 		utils.KeyReason, "not_authorized",

@@ -52,7 +52,7 @@ func New(cfg *config.AIConfig, db db.Database) (Service, error) {
 	breaker := utils.NewCircuitBreaker(utils.CircuitBreakerConfig{
 		Name: "ai-api",
 		OnStateChange: func(name string, from, to utils.CircuitState) {
-			utils.WriteInfoLog(componentName, "AI API circuit breaker state changed",
+			utils.InfoLog(componentName, "AI API circuit breaker state changed",
 				utils.KeyName, name,
 				utils.KeyFrom, from.String(),
 				utils.KeyTo, to.String(),
@@ -72,7 +72,7 @@ func New(cfg *config.AIConfig, db db.Database) (Service, error) {
 		breaker:       breaker,
 	}
 
-	utils.WriteInfoLog(componentName, "AI client initialized",
+	utils.InfoLog(componentName, "AI client initialized",
 		utils.KeyType, "openai",
 		utils.KeyAction, "initialize",
 		utils.KeyName, cfg.BaseURL,
@@ -85,13 +85,13 @@ func New(cfg *config.AIConfig, db db.Database) (Service, error) {
 	return c, nil
 }
 
-func (c *client) SanitizeResponse(response string) string {
-	return c.policy.SanitizeText(response)
+func (c *client) Sanitize(response string) string {
+	return c.policy.Sanitize(response)
 }
 
-// formatChatHistory processes chat history in reverse chronological order,
+// formatHistory processes chat history in reverse chronological order,
 // validates messages, and formats them with metadata for the AI context
-func (c *client) formatChatHistory(history []db.ChatHistory) []openai.ChatCompletionMessage {
+func (c *client) formatHistory(history []db.ChatHistory) []openai.ChatCompletionMessage {
 	if len(history) == 0 {
 		return nil
 	}
@@ -103,7 +103,7 @@ func (c *client) formatChatHistory(history []db.ChatHistory) []openai.ChatComple
 
 		if msg.ID <= 0 || msg.UserID <= 0 ||
 			msg.UserMsg == "" || msg.BotMsg == "" || msg.Timestamp.IsZero() {
-			utils.WriteWarnLog(componentName, "skipping invalid message in history",
+			utils.WarnLog(componentName, "skipping invalid message in history",
 				utils.KeyRequestID, msg.ID,
 				utils.KeyUserID, msg.UserID,
 				utils.KeyType, "chat_history",
@@ -123,7 +123,7 @@ func (c *client) formatChatHistory(history []db.ChatHistory) []openai.ChatComple
 	}
 
 	if len(validMsgs) == 0 {
-		utils.WriteWarnLog(componentName, "no valid messages in history",
+		utils.WarnLog(componentName, "no valid messages in history",
 			utils.KeyCount, len(history),
 			utils.KeyType, "chat_history",
 			utils.KeyAction, "validate_history",
@@ -157,7 +157,7 @@ func (c *client) formatChatHistory(history []db.ChatHistory) []openai.ChatComple
 		)
 	}
 
-	utils.WriteDebugLog(componentName, "formatted chat history",
+	utils.DebugLog(componentName, "formatted chat history",
 		utils.KeyType, "chat_history",
 		utils.KeyAction, "format_history",
 		"stats", map[string]int{
@@ -169,13 +169,13 @@ func (c *client) formatChatHistory(history []db.ChatHistory) []openai.ChatComple
 	return messages
 }
 
-func (c *client) GenerateResponse(ctx context.Context, userID int64, userName string, userMsg string) (string, error) {
+func (c *client) Generate(ctx context.Context, userID int64, userName string, userMsg string) (string, error) {
 	userMsg = strings.TrimSpace(userMsg)
 	if userMsg == "" {
 		return "", utils.NewError(componentName, utils.ErrValidation, "user message is empty", utils.CategoryValidation, nil)
 	}
 
-	utils.WriteDebugLog(componentName, "generating AI response",
+	utils.DebugLog(componentName, "generating AI response",
 		utils.KeyType, "openai",
 		utils.KeyAction, "generate_response",
 		utils.KeyUserID, userID,
@@ -192,12 +192,12 @@ func (c *client) GenerateResponse(ctx context.Context, userID int64, userName st
 	var history []db.ChatHistory
 	err := utils.WithRetry(ctx, func(ctx context.Context) error {
 		var err error
-		history, err = c.db.GetRecentChatHistory(ctx, 10)
+		history, err = c.db.GetRecent(ctx, 10)
 		return err
 	}, retryConfig)
 
 	if err != nil {
-		utils.WriteWarnLog(componentName, "failed to get chat history",
+		utils.WarnLog(componentName, "failed to get chat history",
 			utils.KeyError, err.Error(),
 			utils.KeyUserID, userID,
 			utils.KeyType, "chat_history",
@@ -213,7 +213,7 @@ func (c *client) GenerateResponse(ctx context.Context, userID int64, userName st
 	})
 
 	if len(history) > 0 {
-		historyMsgs := c.formatChatHistory(history)
+		historyMsgs := c.formatHistory(history)
 		if len(historyMsgs) > 0 {
 			messages = append(messages, historyMsgs...)
 		}
@@ -254,7 +254,7 @@ func (c *client) GenerateResponse(ctx context.Context, userID int64, userName st
 				return utils.NewError(componentName, utils.ErrAPI, "no response choices available", utils.CategoryExternal, nil)
 			}
 
-			response = c.SanitizeResponse(resp.Choices[0].Message.Content)
+			response = c.Sanitize(resp.Choices[0].Message.Content)
 			if response == "" {
 				return utils.NewError(componentName, utils.ErrAPI, "empty response after sanitization", utils.CategoryExternal, nil)
 			}

@@ -19,7 +19,7 @@ const componentName = "main"
 func main() {
 	config, err := config.Load()
 	if err != nil {
-		utils.WriteErrorLog(componentName, "failed to load configuration", err,
+		utils.ErrorLog(componentName, "failed to load configuration", err,
 			utils.KeyAction, "load_config")
 		os.Exit(1)
 	}
@@ -29,14 +29,14 @@ func main() {
 		Format: config.Log.Format,
 	}
 	if err := utils.Setup(logCfg); err != nil {
-		utils.WriteErrorLog(componentName, "failed to initialize logger", err,
+		utils.ErrorLog(componentName, "failed to initialize logger", err,
 			utils.KeyAction, "init_logger")
 		os.Exit(1)
 	}
 
 	database, err := db.New(config)
 	if err != nil {
-		utils.WriteErrorLog(componentName, "failed to initialize database", err,
+		utils.ErrorLog(componentName, "failed to initialize database", err,
 			utils.KeyAction, "init_database")
 		os.Exit(1)
 	}
@@ -44,7 +44,7 @@ func main() {
 
 	aiClient, err := ai.New(&config.AI, database)
 	if err != nil {
-		utils.WriteErrorLog(componentName, "failed to initialize AI client", err,
+		utils.ErrorLog(componentName, "failed to initialize AI client", err,
 			utils.KeyAction, "init_ai")
 		os.Exit(1)
 	}
@@ -52,7 +52,7 @@ func main() {
 	var bot telegram.BotService
 	bot, err = telegram.New(config, database, aiClient)
 	if err != nil {
-		utils.WriteErrorLog(componentName, "failed to initialize bot", err,
+		utils.ErrorLog(componentName, "failed to initialize bot", err,
 			utils.KeyAction, "init_bot")
 		os.Exit(1)
 	}
@@ -76,7 +76,7 @@ func main() {
 				if !ok {
 					return
 				}
-				utils.WriteInfoLog(componentName, "received shutdown signal",
+				utils.InfoLog(componentName, "received shutdown signal",
 					utils.KeyAction, "shutdown",
 					utils.KeyReason, sig.String())
 				cancel()
@@ -88,12 +88,12 @@ func main() {
 	}()
 
 	if err := bot.Start(ctx); err != nil {
-		utils.WriteErrorLog(componentName, "bot error", err,
+		utils.ErrorLog(componentName, "bot error", err,
 			utils.KeyAction, "run_bot")
 		os.Exit(1)
 	}
 
-	utils.WriteInfoLog(componentName, "bot stopped",
+	utils.InfoLog(componentName, "bot stopped",
 		utils.KeyAction, "shutdown",
 		utils.KeyResult, "shutdown_complete")
 }

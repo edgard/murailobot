@@ -11,7 +11,7 @@ import (
 // 4. Otherwise, all non-blocked users are allowed
 func (c *Config) IsUserAuthorized(userID int64) bool {
 	if userID == c.Telegram.AdminID {
-		utils.WriteDebugLog(componentName, "admin access granted",
+		utils.DebugLog(componentName, "admin access granted",
 			utils.KeyUserID, userID,
 			utils.KeyAction, "authorization",
 			utils.KeyResult, "authorized")
@@ -23,7 +23,7 @@ func (c *Config) IsUserAuthorized(userID int64) bool {
 		blockedMap[id] = true
 	}
 	if blockedMap[userID] {
-		utils.WriteDebugLog(componentName, "access denied - user blocked",
+		utils.DebugLog(componentName, "access denied - user blocked",
 			utils.KeyUserID, userID,
 			utils.KeyAction, "authorization",
 			utils.KeyResult, "blocked")
@@ -36,7 +36,7 @@ func (c *Config) IsUserAuthorized(userID int64) bool {
 			allowedMap[id] = true
 		}
 		allowed := allowedMap[userID]
-		utils.WriteDebugLog(componentName, "checking allowed users list",
+		utils.DebugLog(componentName, "checking allowed users list",
 			utils.KeyUserID, userID,
 			utils.KeyAction, "authorization",
 			utils.KeyResult, map[string]interface{}{
@@ -46,7 +46,7 @@ func (c *Config) IsUserAuthorized(userID int64) bool {
 		return allowed
 	}
 
-	utils.WriteDebugLog(componentName, "access granted - no restrictions",
+	utils.DebugLog(componentName, "access granted - no restrictions",
 		utils.KeyUserID, userID,
 		utils.KeyAction, "authorization",
 		utils.KeyResult, "authorized")

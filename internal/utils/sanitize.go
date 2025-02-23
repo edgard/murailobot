@@ -26,20 +26,20 @@ func NewTelegramTextPolicy() *TextPolicy {
 	}
 }
 
-// SanitizeText processes text through:
+// Sanitize processes text through:
 // 1. Markdown to HTML conversion
 // 2. Block elements to newlines
 // 3. HTML tag removal
 // 4. Whitespace normalization
 // 5. Entity decoding
-func (p *TextPolicy) SanitizeText(text string) string {
+func (p *TextPolicy) Sanitize(text string) string {
 	if text == "" {
 		return ""
 	}
 
 	var buf bytes.Buffer
 	if err := p.markdown.Convert([]byte(text), &buf); err != nil {
-		WriteWarnLog(sanitizeComponent, "failed to convert markdown",
+		WarnLog(sanitizeComponent, "failed to convert markdown",
 			KeyError, err.Error(),
 			KeySize, len(text),
 			KeyAction, "markdown_convert",
@@ -58,7 +58,7 @@ func (p *TextPolicy) SanitizeText(text string) string {
 	sanitized = regexp.MustCompile(`\n\s*\n+`).ReplaceAllString(sanitized, "\n\n")
 	sanitized = html.UnescapeString(sanitized)
 
-	WriteDebugLog(sanitizeComponent, "text sanitized successfully",
+	DebugLog(sanitizeComponent, "text sanitized successfully",
 		KeyAction, "sanitize_text",
 		KeyType, "sanitize",
 		KeySize, map[string]int{

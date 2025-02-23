@@ -28,7 +28,7 @@ func New(cfg *config.Config, database db.Database, aiService ai.Service) (BotSer
 	breaker := utils.NewCircuitBreaker(utils.CircuitBreakerConfig{
 		Name: "telegram-api",
 		OnStateChange: func(name string, from, to utils.CircuitState) {
-			utils.WriteInfoLog(componentName, "Telegram API circuit breaker state changed",
+			utils.InfoLog(componentName, "Telegram API circuit breaker state changed",
 				utils.KeyName, name,
 				utils.KeyFrom, from.String(),
 				utils.KeyTo, to.String(),
@@ -58,7 +58,7 @@ func New(cfg *config.Config, database db.Database, aiService ai.Service) (BotSer
 
 	dispatcher := ext.NewDispatcher(&ext.DispatcherOpts{
 		Error: func(b *gotgbot.Bot, ctx *ext.Context, err error) ext.DispatcherAction {
-			utils.WriteErrorLog(componentName, "error handling update", err,
+			utils.ErrorLog(componentName, "error handling update", err,
 				utils.KeyRequestID, ctx.Update.UpdateId,
 				utils.KeyAction, "handle_update",
 				utils.KeyType, "telegram_update")
@@ -97,12 +97,12 @@ func (b *bot) Start(ctx context.Context) error {
 		return utils.NewError(componentName, utils.ErrOperation, "failed to start polling", utils.CategoryOperation, err)
 	}
 
-	utils.WriteInfoLog(componentName, "bot started",
+	utils.InfoLog(componentName, "bot started",
 		utils.KeyAction, "start",
 		utils.KeyType, "telegram_bot")
 
 	<-ctx.Done()
-	utils.WriteInfoLog(componentName, "shutting down bot",
+	utils.InfoLog(componentName, "shutting down bot",
 		utils.KeyAction, "shutdown",
 		utils.KeyType, "telegram_bot")
 
@@ -128,7 +128,7 @@ func (b *bot) HandleMessage(update *gotgbot.Update) error {
 }
 
 func (b *bot) SendMessage(chatID int64, text string) error {
-	utils.WriteDebugLog(componentName, "sending message",
+	utils.DebugLog(componentName, "sending message",
 		utils.KeyAction, "send_message",
 		utils.KeyType, "telegram_api",
 		utils.KeyRequestID, chatID,
@@ -142,7 +142,7 @@ func (b *bot) SendMessage(chatID int64, text string) error {
 }
 
 func (b *bot) SendTypingAction(chatID int64) error {
-	utils.WriteDebugLog(componentName, "sending typing action",
+	utils.DebugLog(componentName, "sending typing action",
 		utils.KeyAction, "send_typing",
 		utils.KeyType, "telegram_api",
 		utils.KeyRequestID, chatID)
@@ -163,7 +163,7 @@ func (b *bot) SendContinuousTyping(ctx context.Context, bot *gotgbot.Bot, chatID
 		},
 	})
 	if err != nil {
-		utils.WriteErrorLog(componentName, "failed to send initial typing action", err,
+		utils.ErrorLog(componentName, "failed to send initial typing action", err,
 			utils.KeyAction, "send_initial_typing",
 			utils.KeyType, "telegram_api",
 			utils.KeyRequestID, chatID)
@@ -191,7 +191,7 @@ func (b *bot) SendContinuousTyping(ctx context.Context, bot *gotgbot.Bot, chatID
 						},
 					})
 					if err != nil {
-						utils.WriteErrorLog(componentName, "failed to send continuous typing action", err,
+						utils.ErrorLog(componentName, "failed to send continuous typing action", err,
 							utils.KeyAction, "send_continuous_typing",
 							utils.KeyType, "telegram_api",
 							utils.KeyRequestID, chatID)

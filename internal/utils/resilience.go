@@ -99,7 +99,7 @@ func NewCircuitBreaker(cfg CircuitBreakerConfig) *CircuitBreaker {
 			fromState := mapState(from)
 			toState := mapState(to)
 			cfg.OnStateChange(name, fromState, toState)
-			WriteInfoLog(resilienceComponent, "Circuit breaker state changed",
+			InfoLog(resilienceComponent, "Circuit breaker state changed",
 				KeyName, name,
 				KeyFrom, fromState.String(),
 				KeyTo, toState.String(),
@@ -123,7 +123,7 @@ func (cb *CircuitBreaker) Execute(ctx context.Context, operation func(context.Co
 		defer cancel()
 	}
 
-	WriteDebugLog(resilienceComponent, "executing operation through circuit breaker",
+	DebugLog(resilienceComponent, "executing operation through circuit breaker",
 		KeyName, cb.name,
 		KeyAction, "circuit_breaker_execute",
 		KeyType, "circuit_breaker")
@@ -136,7 +136,7 @@ func (cb *CircuitBreaker) Execute(ctx context.Context, operation func(context.Co
 			}
 			return nil, err
 		}
-		WriteDebugLog(resilienceComponent, "operation completed successfully",
+		DebugLog(resilienceComponent, "operation completed successfully",
 			KeyName, cb.name,
 			KeyAction, "circuit_breaker_success",
 			KeyType, "circuit_breaker")
@@ -144,7 +144,7 @@ func (cb *CircuitBreaker) Execute(ctx context.Context, operation func(context.Co
 	})
 
 	if err != nil {
-		WriteDebugLog(resilienceComponent, "operation failed",
+		DebugLog(resilienceComponent, "operation failed",
 			KeyName, cb.name,
 			KeyAction, "circuit_breaker_failure",
 			KeyType, "circuit_breaker",
@@ -209,7 +209,7 @@ func WithRetry(ctx context.Context, operation func(context.Context) error, cfg R
 				interval = cfg.MaxInterval
 			}
 
-			WriteDebugLog(resilienceComponent, "Operation failed, retrying",
+			DebugLog(resilienceComponent, "Operation failed, retrying",
 				KeyType, "retry",
 				KeyAction, "retry_operation",
 				KeyCount, attempt,

@@ -78,7 +78,7 @@ func New(cfg *config.Config) (Database, error) {
 		HalfOpenLimit: 1,
 		ResetInterval: 10 * time.Second,
 		OnStateChange: func(name string, from, to utils.CircuitState) {
-			utils.WriteInfoLog(componentName, "circuit breaker state changed",
+			utils.InfoLog(componentName, "circuit breaker state changed",
 				utils.KeyName, name,
 				utils.KeyFrom, from.String(),
 				utils.KeyTo, to.String(),
@@ -114,7 +114,7 @@ func New(cfg *config.Config) (Database, error) {
 	conn.SetMaxIdleConns(dbConfig.MaxIdleConns)
 	conn.SetConnMaxLifetime(dbConfig.ConnMaxLifetime)
 
-	utils.WriteDebugLog(componentName, "database connection pool configured",
+	utils.DebugLog(componentName, "database connection pool configured",
 		utils.KeyAction, "configure_pool",
 		utils.KeyType, "sqlite",
 		"pool_config", map[string]interface{}{
@@ -179,7 +179,7 @@ func (s *sqliteDB) setupSchema() error {
 	ctx, cancel := context.WithTimeout(context.Background(), s.dbConfig.LongOperationTimeout)
 	defer cancel()
 
-	utils.WriteDebugLog(componentName, "setting database pragmas",
+	utils.DebugLog(componentName, "setting database pragmas",
 		utils.KeyAction, "set_pragmas",
 		utils.KeyType, "sqlite",
 		"pragmas", map[string]interface{}{
@@ -203,7 +203,7 @@ func (s *sqliteDB) setupSchema() error {
 	}
 	defer func() {
 		if err := tx.Rollback(); err != nil && err != sql.ErrTxDone {
-			utils.WriteErrorLog(componentName, "failed to rollback schema setup transaction", err,
+			utils.ErrorLog(componentName, "failed to rollback schema setup transaction", err,
 				utils.KeyAction, "rollback",
 				utils.KeyTxType, "schema_setup")
 		}
@@ -245,7 +245,7 @@ func (s *sqliteDB) setupSchema() error {
 		return utils.NewError(componentName, utils.ErrValidation, "foreign key constraints are not enabled", utils.CategoryValidation, nil)
 	}
 
-	utils.WriteInfoLog(componentName, "database initialized",
+	utils.InfoLog(componentName, "database initialized",
 		utils.KeyAction, "initialize",
 		utils.KeyResult, "success",
 		utils.KeyName, s.dbConfig.Name,
@@ -272,8 +272,8 @@ func (s *sqliteDB) setupSchema() error {
 	return nil
 }
 
-// GetRecentChatHistory caps limit at 50 to prevent memory issues
-func (s *sqliteDB) GetRecentChatHistory(ctx context.Context, limit int) ([]ChatHistory, error) {
+// GetRecent caps limit at 50 to prevent memory issues
+func (s *sqliteDB) GetRecent(ctx context.Context, limit int) ([]ChatHistory, error) {
 	if limit <= 0 {
 		return nil, utils.Errorf(componentName, utils.ErrValidation, utils.CategoryValidation,
 			"invalid limit: %d", limit)
@@ -281,7 +281,7 @@ func (s *sqliteDB) GetRecentChatHistory(ctx context.Context, limit int) ([]ChatH
 
 	if limit > 50 {
 		limit = 50
-		utils.WriteWarnLog(componentName, "limiting chat history retrieval",
+		utils.WarnLog(componentName, "limiting chat history retrieval",
 			utils.KeyRequested, limit,
 			utils.KeyLimit, 50,
 			utils.KeyAction, "get_history",
@@ -327,14 +327,14 @@ func (s *sqliteDB) GetRecentChatHistory(ctx context.Context, limit int) ([]ChatH
 	}
 
 	if len(history) == 0 {
-		utils.WriteDebugLog(componentName, "no chat history found",
+		utils.DebugLog(componentName, "no chat history found",
 			utils.KeyLimit, limit,
 			utils.KeyAction, "get_history",
 			utils.KeyType, "chat_history")
 		return nil, nil
 	}
 
-	utils.WriteDebugLog(componentName, "retrieved chat history",
+	utils.DebugLog(componentName, "retrieved chat history",
 		utils.KeyLimit, limit,
 		utils.KeyCount, len(history),
 		utils.KeyAction, "get_history",
@@ -342,7 +342,7 @@ func (s *sqliteDB) GetRecentChatHistory(ctx context.Context, limit int) ([]ChatH
 	return history, nil
 }
 
-func (s *sqliteDB) SaveChatInteraction(ctx context.Context, userID int64, userName, userMsg, botMsg string) error {
+func (s *sqliteDB) Save(ctx context.Context, userID int64, userName, userMsg, botMsg string) error {
 	if userID <= 0 {
 		return utils.NewError(componentName, utils.ErrValidation, "user_id must be positive", utils.CategoryValidation, nil)
 	}
@@ -371,7 +371,7 @@ func (s *sqliteDB) SaveChatInteraction(ctx context.Context, userID int64, userNa
 			}
 			defer func() {
 				if err := tx.Rollback(); err != nil && err != sql.ErrTxDone {
-					utils.WriteErrorLog(componentName, "failed to rollback save chat transaction", err,
+					utils.ErrorLog(componentName, "failed to rollback save chat transaction", err,
 						utils.KeyAction, "rollback",
 						utils.KeyTxType, "save_chat")
 				}
@@ -397,7 +397,7 @@ func (s *sqliteDB) SaveChatInteraction(ctx context.Context, userID int64, userNa
 				return utils.NewError(componentName, utils.ErrOperation, "failed to commit transaction", utils.CategoryOperation, err)
 			}
 
-			utils.WriteDebugLog(componentName, "chat history saved",
+			utils.DebugLog(componentName, "chat history saved",
 				utils.KeyRequestID, messageID,
 				utils.KeyUserID, userID,
 				utils.KeyName, userName,
@@ -419,8 +419,8 @@ func (s *sqliteDB) SaveChatInteraction(ctx context.Context, userID int64, userNa
 	return nil
 }
 
-// DeleteAllChatHistory cannot be undone
-func (s *sqliteDB) DeleteAllChatHistory(ctx context.Context) error {
+// DeleteAll cannot be undone
+func (s *sqliteDB) DeleteAll(ctx context.Context) error {
 	err := s.breaker.Execute(ctx, func(ctx context.Context) error {
 		return utils.WithRetry(ctx, func(ctx context.Context) error {
 			tx, err := s.BeginTxx(ctx, nil)
@@ -429,7 +429,7 @@ func (s *sqliteDB) DeleteAllChatHistory(ctx context.Context) error {
 			}
 			defer func() {
 				if err := tx.Rollback(); err != nil && err != sql.ErrTxDone {
-					utils.WriteErrorLog(componentName, "failed to rollback clear history transaction", err,
+					utils.ErrorLog(componentName, "failed to rollback clear history transaction", err,
 						utils.KeyAction, "rollback",
 						utils.KeyTxType, "clear_history")
 				}
@@ -443,7 +443,7 @@ func (s *sqliteDB) DeleteAllChatHistory(ctx context.Context) error {
 				return utils.NewError(componentName, utils.ErrOperation, "failed to commit transaction", utils.CategoryOperation, err)
 			}
 
-			utils.WriteInfoLog(componentName, "chat history cleared",
+			utils.InfoLog(componentName, "chat history cleared",
 				utils.KeyAction, "clear_history",
 				utils.KeyResult, "success",
 				utils.KeyType, "chat_history")

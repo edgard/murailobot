@@ -193,21 +193,21 @@ func writeLog(level slog.Level, component, msg string, attrs ...any) {
 	slog.Log(context.Background(), level, msg, args...)
 }
 
-func WriteErrorLog(component string, msg string, err error, attrs ...any) {
+func ErrorLog(component string, msg string, err error, attrs ...any) {
 	args := make([]any, 0, len(attrs)+2)
 	args = append(args, KeyError, err)
 	args = append(args, attrs...)
 	writeLog(slog.LevelError, component, msg, args...)
 }
 
-func WriteWarnLog(component string, msg string, attrs ...any) {
+func WarnLog(component string, msg string, attrs ...any) {
 	writeLog(slog.LevelWarn, component, msg, attrs...)
 }
 
-func WriteInfoLog(component string, msg string, attrs ...any) {
+func InfoLog(component string, msg string, attrs ...any) {
 	writeLog(slog.LevelInfo, component, msg, attrs...)
 }
 
-func WriteDebugLog(component string, msg string, attrs ...any) {
+func DebugLog(component string, msg string, attrs ...any) {
 	writeLog(slog.LevelDebug, component, msg, attrs...)
 }

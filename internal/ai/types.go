@@ -8,8 +8,8 @@ import (
 
 // Service provides AI chat functionality with message history.
 type Service interface {
-	GenerateResponse(ctx context.Context, userID int64, userName string, userMsg string) (string, error)
-	SanitizeResponse(response string) string
+	Generate(ctx context.Context, userID int64, userName string, userMsg string) (string, error)
+	Sanitize(response string) string
 }
 
 // CompletionService abstracts OpenAI API operations for testing and provider switching.
