@@ -73,7 +73,7 @@ telegram:
 #------------------------------------------------------------------------------
 database:
   # Basic Settings
-  name: "storage.db"                         # Database filename (directory must be private: 0600)
+  name: "storage.db"                         # Database filename
   max_username_len: 64                       # Max username length (1-256)
   max_history_limit: 50                      # Messages per user (1-100)
 

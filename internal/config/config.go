@@ -2,8 +2,6 @@ package config
 
 import (
 	"net/url"
-	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -92,7 +90,7 @@ type CommandConfig struct {
 
 // DatabaseConfig defines database connection configuration
 type DatabaseConfig struct {
-	Name            string        `mapstructure:"name" validate:"required,db_dir_perms"`
+	Name            string        `mapstructure:"name" validate:"required"`
 	MaxOpenConns    int           `mapstructure:"max_open_conns" validate:"required,min=1,max=100"`
 	MaxIdleConns    int           `mapstructure:"max_idle_conns" validate:"required,min=0,ltefield=MaxOpenConns"`
 	ConnMaxLifetime time.Duration `mapstructure:"conn_max_lifetime" validate:"required,min=1s,max=24h"`
@@ -321,22 +319,6 @@ func (c *Config) Validate() error {
 		return len(model) > 0 // Just ensure it's not empty
 	}); err != nil {
 		return utils.NewError(componentName, utils.ErrValidation, "failed to register AI model validator", utils.CategoryValidation, err)
-	}
-
-	// Register custom validation for database directory permissions
-	if err := v.RegisterValidation("db_dir_perms", func(fl validator.FieldLevel) bool {
-		dbName := fl.Field().String()
-		dbDir := filepath.Dir(dbName)
-		if dbDir == "." {
-			return true
-		}
-		info, err := os.Stat(dbDir)
-		if err != nil {
-			return os.IsNotExist(err) // Directory will be created with correct permissions
-		}
-		return info.Mode().Perm()&0077 == 0
-	}); err != nil {
-		return utils.NewError(componentName, utils.ErrValidation, "failed to register DB permissions validator", utils.CategoryValidation, err)
 	}
 
 	// Register custom validation for hostname requirement in URLs
