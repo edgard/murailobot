@@ -57,8 +57,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Handle graceful shutdown on SIGINT/SIGTERM signals.
-	// This ensures proper cleanup of resources and active connections.
+	// Handle SIGINT/SIGTERM for graceful shutdown
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 

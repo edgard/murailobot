@@ -1,6 +1,4 @@
-// Package config provides configuration management for the Telegram bot application.
-// It handles loading and validating configuration from multiple sources including
-// default values, config files, and environment variables.
+// Package config loads and validates configuration from files and environment.
 package config
 
 import (
@@ -15,46 +13,33 @@ import (
 
 const componentName = "config"
 
-// Config represents the complete application configuration.
-// It contains all settings required for the bot's operation,
-// including logging, AI, database, and Telegram configurations.
 type Config struct {
 	Log            LogConfig      `mapstructure:"log" validate:"required"`
 	AI             AIConfig       `mapstructure:"ai" validate:"required"`
 	Database       DatabaseConfig `mapstructure:"database" validate:"required"`
 	Telegram       TelegramConfig `mapstructure:"telegram" validate:"required"`
-	MaxMessageSize int            `mapstructure:"max_message_size" validate:"required,min=1,max=4096"` // Maximum message length in characters
+	MaxMessageSize int            `mapstructure:"max_message_size" validate:"required,min=1,max=4096"`
 }
 
-// TelegramConfig holds all Telegram-related configuration settings.
-// It includes authentication, security, message handling, and operational parameters.
 type TelegramConfig struct {
-	// Core settings for bot operation
 	Token    string          `mapstructure:"token" validate:"required"`
 	AdminID  int64           `mapstructure:"admin_id" validate:"required,gt=0,required_with=AllowedUserIDs"`
 	Commands []CommandConfig `mapstructure:"commands" validate:"required,dive"`
 
-	// Access control settings
+	// Cannot be both allowed and blocked
 	AllowedUserIDs []int64 `mapstructure:"allowed_user_ids" validate:"dive,gt=0,excluded_with=BlockedUserIDs"`
 	BlockedUserIDs []int64 `mapstructure:"blocked_user_ids" validate:"dive,gt=0,nefield=AdminID"`
 
-	// Bot response templates
-	Messages BotMessages `mapstructure:"messages" validate:"required"`
+	Messages BotMessages   `mapstructure:"messages" validate:"required"`
+	Polling  PollingConfig `mapstructure:"polling" validate:"required"`
 
-	// Update polling configuration
-	Polling PollingConfig `mapstructure:"polling" validate:"required"`
-
-	// Chat interaction settings
 	TypingInterval      time.Duration `mapstructure:"typing_interval" validate:"required,min=100ms,ltfield=TypingActionTimeout"`
 	TypingActionTimeout time.Duration `mapstructure:"typing_action_timeout" validate:"required,min=1s,max=10s,ltfield=Polling.RequestTimeout"`
 
-	// Operation timeouts
 	DBOperationTimeout time.Duration `mapstructure:"db_operation_timeout" validate:"required,min=5s,max=60s"`
 	AIRequestTimeout   time.Duration `mapstructure:"ai_request_timeout" validate:"required,min=1s,max=10m"`
 }
 
-// BotMessages defines templates for various bot responses.
-// These messages are used to maintain consistent communication with users.
 type BotMessages struct {
 	Welcome        string `mapstructure:"welcome" validate:"required"`
 	NotAuthorized  string `mapstructure:"not_authorized" validate:"required"`
@@ -65,21 +50,17 @@ type BotMessages struct {
 	HistoryReset   string `mapstructure:"history_reset" validate:"required"`
 }
 
-// PollingConfig defines settings for Telegram's long polling mechanism.
 type PollingConfig struct {
 	Timeout            time.Duration `mapstructure:"timeout" validate:"required,min=1s,ltfield=RequestTimeout"`
 	RequestTimeout     time.Duration `mapstructure:"request_timeout" validate:"required,min=1s"`
-	DropPendingUpdates bool          `mapstructure:"drop_pending_updates"` // Whether to skip pending updates on startup
+	DropPendingUpdates bool          `mapstructure:"drop_pending_updates"`
 }
 
-// LogConfig defines logging behavior and output format.
 type LogConfig struct {
 	Level  string `mapstructure:"level" validate:"required,oneof=debug info warn error"`
 	Format string `mapstructure:"format" validate:"required,oneof=json text"`
 }
 
-// AIConfig defines settings for the AI service integration.
-// It supports OpenAI-compatible APIs with customizable parameters.
 type AIConfig struct {
 	Token       string        `mapstructure:"token" validate:"required,ai_token"`
 	BaseURL     string        `mapstructure:"base_url" validate:"required,url,startswith=https://,hostname_required"`
@@ -90,14 +71,11 @@ type AIConfig struct {
 	Timeout     time.Duration `mapstructure:"timeout" validate:"required,min=1s,max=10m"`
 }
 
-// CommandConfig defines a bot command with its description.
 type CommandConfig struct {
 	Command     string `mapstructure:"command" validate:"required"`
 	Description string `mapstructure:"description" validate:"required"`
 }
 
-// DatabaseConfig defines database connection and operation settings.
-// Currently supports SQLite with specific optimizations.
 type DatabaseConfig struct {
 	Name            string        `mapstructure:"name" validate:"required"`
 	MaxOpenConns    int           `mapstructure:"max_open_conns" validate:"required,min=1,max=100"`
@@ -106,11 +84,10 @@ type DatabaseConfig struct {
 	MaxUsernameLen  int           `mapstructure:"max_username_len" validate:"required,min=1,max=256"`
 	MaxHistoryLimit int           `mapstructure:"max_history_limit" validate:"required,min=1,max=100"`
 
-	// SQLite-specific settings
 	OperationTimeout     time.Duration `mapstructure:"operation_timeout" validate:"required,min=1s,max=30s"`
 	LongOperationTimeout time.Duration `mapstructure:"long_operation_timeout" validate:"required,min=1s,max=60s"`
 
-	// SQLite performance and reliability pragmas
+	// SQLite performance settings
 	JournalMode string `mapstructure:"journal_mode" validate:"required,oneof=DELETE TRUNCATE PERSIST MEMORY WAL OFF"`
 	Synchronous string `mapstructure:"synchronous" validate:"required,oneof=OFF NORMAL FULL EXTRA"`
 	ForeignKeys bool   `mapstructure:"foreign_keys" validate:"required"`
@@ -118,13 +95,10 @@ type DatabaseConfig struct {
 	CacheSizeKB int    `mapstructure:"cache_size_kb" validate:"required,min=1,max=10000"`
 }
 
-// Default configuration values for various components
 const (
-	// Log defaults
 	DefaultLogLevel  = "info"
 	DefaultLogFormat = "json"
 
-	// Database defaults
 	DefaultDBName            = "storage.db"
 	DefaultDBMaxOpenConns    = 50
 	DefaultDBMaxIdleConns    = 10
@@ -133,7 +107,6 @@ const (
 	DefaultDBMaxHistoryLimit = 50
 	DefaultDBConnMaxLifetime = time.Hour
 
-	// SQLite defaults for optimal performance
 	DefaultDBOperationTimeout     = 5 * time.Second
 	DefaultDBLongOperationTimeout = 30 * time.Second
 	DefaultDBJournalMode          = "WAL"
@@ -142,7 +115,6 @@ const (
 	DefaultDBTempStore            = "MEMORY"
 	DefaultDBCacheSizeKB          = 2000
 
-	// AI service defaults
 	DefaultAIBaseURL     = "https://api.openai.com/v1"
 	DefaultAIModel       = "gpt-4-turbo-preview"
 	DefaultAITemperature = 0.5
@@ -151,7 +123,6 @@ const (
 	DefaultAIInstruction = "You are a helpful assistant focused on providing clear and accurate responses."
 	DefaultAIMaxResponse = 4096
 
-	// Telegram defaults
 	DefaultTelegramMaxMessageLength    = 4096
 	DefaultTelegramTypingInterval      = 3 * time.Second
 	DefaultTelegramTypingActionTimeout = 5 * time.Second
@@ -159,11 +130,10 @@ const (
 	DefaultTelegramAIRequestTimeout    = 2 * time.Minute
 	DefaultTelegramPollingTimeout      = 10 * time.Second
 	DefaultTelegramRequestTimeout      = 30 * time.Second
-	DefaultTelegramMaxRoutines         = 50 // Limited by CPU count + 2
+	DefaultTelegramMaxRoutines         = 50
 	DefaultTelegramDropPendingUpdates  = true
 )
 
-// DefaultBotMessages provides default templates for bot responses.
 var DefaultBotMessages = BotMessages{
 	Welcome:        "👋 Welcome! I'm ready to assist you. Use /mrl followed by your message to start a conversation.",
 	NotAuthorized:  "🚫 Access denied. Please contact the administrator.",
@@ -174,18 +144,12 @@ var DefaultBotMessages = BotMessages{
 	MessageTooLong: "📝 Message exceeds maximum length of %d characters.",
 }
 
-// DefaultBotCommands defines the standard set of bot commands.
 var DefaultBotCommands = []CommandConfig{
 	{Command: "start", Description: "Start conversation with the bot"},
 	{Command: "mrl", Description: "Generate AI response"},
 	{Command: "mrl_reset", Description: "Reset chat history (admin only)"},
 }
 
-// Load reads configuration from multiple sources in order of precedence:
-// 1. Default values
-// 2. config.yaml file
-// 3. BOT_* environment variables
-// It returns a validated configuration or an error if validation fails.
 func Load() (*Config, error) {
 	setDefaults()
 
@@ -219,7 +183,6 @@ func Load() (*Config, error) {
 	return cfg, nil
 }
 
-// loadConfig initializes viper and loads configuration from file and environment.
 func loadConfig() error {
 	viper.SetConfigName("config")
 	viper.SetConfigType("yaml")
@@ -248,7 +211,6 @@ func loadConfig() error {
 	return nil
 }
 
-// setDefaults initializes default values for all optional configuration parameters.
 func setDefaults() {
 	defaults := map[string]interface{}{
 		"max_message_size": DefaultTelegramMaxMessageLength,
@@ -302,8 +264,6 @@ func setDefaults() {
 	}
 }
 
-// Validate performs comprehensive validation of all configuration fields
-// using struct tags and custom validation rules.
 func (c *Config) Validate() error {
 	v := validator.New()
 

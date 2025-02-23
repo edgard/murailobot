@@ -1,7 +1,4 @@
-// Package utils provides common utility functions and patterns.
-// This file implements resilience patterns including circuit breakers
-// and retries with exponential backoff to handle transient failures
-// and prevent cascading failures in distributed systems.
+// Package utils provides circuit breaker and retry patterns.
 package utils
 
 import (
@@ -14,21 +11,18 @@ import (
 
 const resilienceComponent = "resilience"
 
-// CircuitState represents the state of a circuit breaker.
-// The circuit breaker can be in one of three states:
-// - Closed: Normal operation, requests are allowed
-// - Half-Open: Testing if service has recovered
-// - Open: Requests are blocked to prevent cascading failures
+// CircuitState represents circuit breaker states:
+// - Closed: Normal operation
+// - Half-Open: Testing recovery
+// - Open: Failing fast
 type CircuitState int
 
 const (
-	StateClosed   CircuitState = iota // Normal operation
-	StateHalfOpen                     // Testing recovery
-	StateOpen                         // Failing fast
+	StateClosed CircuitState = iota
+	StateHalfOpen
+	StateOpen
 )
 
-// String returns the string representation of CircuitState.
-// This is used for logging and debugging purposes.
 func (s CircuitState) String() string {
 	switch s {
 	case StateClosed:
@@ -42,31 +36,21 @@ func (s CircuitState) String() string {
 	}
 }
 
-// CircuitBreaker implements the circuit breaker pattern to prevent
-// cascading failures in distributed systems. It tracks operation
-// failures and temporarily blocks operations when failure thresholds
-// are exceeded.
 type CircuitBreaker struct {
-	name    string                    // Identifier for logging
-	timeout time.Duration             // Default operation timeout
-	cb      *gobreaker.CircuitBreaker // Underlying circuit breaker
+	name    string
+	timeout time.Duration
+	cb      *gobreaker.CircuitBreaker
 }
 
-// CircuitBreakerConfig holds configuration for circuit breakers.
-// It allows fine-tuning of circuit breaker behavior to match
-// the characteristics of the protected resource.
 type CircuitBreakerConfig struct {
-	Name          string                                   // Identifier for the circuit breaker
-	MaxFailures   int                                      // Number of failures before opening
-	Timeout       time.Duration                            // Default operation timeout
-	HalfOpenLimit int                                      // Max requests in half-open state
-	ResetInterval time.Duration                            // Time before attempting recovery
-	OnStateChange func(name string, from, to CircuitState) // State change callback
+	Name          string
+	MaxFailures   int
+	Timeout       time.Duration
+	HalfOpenLimit int
+	ResetInterval time.Duration
+	OnStateChange func(name string, from, to CircuitState)
 }
 
-// mapState converts gobreaker state to our CircuitState type.
-// This allows us to abstract the underlying circuit breaker
-// implementation from the rest of the application.
 func mapState(state gobreaker.State) CircuitState {
 	switch state {
 	case gobreaker.StateClosed:
@@ -80,12 +64,11 @@ func mapState(state gobreaker.State) CircuitState {
 	}
 }
 
-// NewCircuitBreaker creates a new circuit breaker with the given configuration.
-// It provides sensible defaults if configuration values are not specified:
-// - MaxFailures: 5 consecutive failures before opening
-// - Timeout: 30 seconds default operation timeout
-// - HalfOpenLimit: 1 test request when half-open
-// - ResetInterval: 60 seconds before attempting recovery
+// NewCircuitBreaker creates circuit breaker with defaults:
+// - 5 failures before opening
+// - 30s timeout
+// - 1 test request when half-open
+// - 60s before recovery attempt
 func NewCircuitBreaker(cfg CircuitBreakerConfig) *CircuitBreaker {
 	if cfg.MaxFailures <= 0 {
 		cfg.MaxFailures = 5
@@ -132,10 +115,7 @@ func NewCircuitBreaker(cfg CircuitBreakerConfig) *CircuitBreaker {
 	}
 }
 
-// Execute runs an operation through the circuit breaker with timeout handling.
-// If the context doesn't have a deadline, it applies the circuit breaker's
-// default timeout. The operation is only executed if the circuit breaker
-// is in a state that allows it (Closed or testing in Half-Open).
+// Execute runs operation with timeout and circuit breaking
 func (cb *CircuitBreaker) Execute(ctx context.Context, operation func(context.Context) error) error {
 	if _, ok := ctx.Deadline(); !ok {
 		var cancel context.CancelFunc
@@ -173,22 +153,20 @@ func (cb *CircuitBreaker) Execute(ctx context.Context, operation func(context.Co
 	return err
 }
 
-// RetryConfig holds configuration for retry operations.
-// It defines the backoff strategy for retrying failed operations.
 type RetryConfig struct {
-	MaxAttempts     int           // Maximum number of attempts
-	InitialInterval time.Duration // Starting delay between retries
-	MaxInterval     time.Duration // Maximum delay between retries
-	Multiplier      float64       // Factor to increase delay after each retry
-	RandomFactor    float64       // Randomization factor (0-1) for jitter
+	MaxAttempts     int
+	InitialInterval time.Duration
+	MaxInterval     time.Duration
+	Multiplier      float64
+	RandomFactor    float64
 }
 
-// DefaultRetryConfig returns a default retry configuration:
-// - 3 maximum attempts
-// - 100ms initial interval
-// - 30s maximum interval
-// - 2.0 multiplier (exponential backoff)
-// - 0.1 random factor (10% jitter)
+// DefaultRetryConfig returns:
+// - 3 attempts
+// - 100ms initial delay
+// - 30s max delay
+// - 2.0x multiplier
+// - 10% jitter
 func DefaultRetryConfig() RetryConfig {
 	return RetryConfig{
 		MaxAttempts:     3,
@@ -199,13 +177,10 @@ func DefaultRetryConfig() RetryConfig {
 	}
 }
 
-// WithRetry executes an operation with exponential backoff retry.
-// It implements the following retry strategy:
-// - Exponential backoff between attempts
+// WithRetry implements exponential backoff with:
 // - Jitter to prevent thundering herd
-// - Maximum retry interval cap
+// - Maximum interval cap
 // - Context cancellation handling
-// - Special error handling (e.g., circuit breaker open)
 func WithRetry(ctx context.Context, operation func(context.Context) error, cfg RetryConfig) error {
 	var lastErr error
 	interval := cfg.InitialInterval
@@ -223,13 +198,11 @@ func WithRetry(ctx context.Context, operation func(context.Context) error, cfg R
 			return NewError(resilienceComponent, ErrTimeout, "retry abandoned: context done", CategoryOperation, ctx.Err())
 		}
 
-		// Don't retry on certain errors
 		if err == gobreaker.ErrOpenState {
 			return err
 		}
 
 		if attempt < cfg.MaxAttempts {
-			// Calculate next interval with jitter
 			jitter := 1.0 + (cfg.RandomFactor * (2*rnd.Float64() - 1))
 			interval = time.Duration(float64(interval) * cfg.Multiplier * jitter)
 			if interval > cfg.MaxInterval {

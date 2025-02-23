@@ -1,4 +1,3 @@
-// Package telegram implements Telegram bot functionality.
 package telegram
 
 import (
@@ -15,12 +14,6 @@ import (
 
 const componentName = "telegram"
 
-// New creates a new Telegram bot instance with the provided configuration
-// and dependencies. It sets up:
-//   - Circuit breaker for API call protection
-//   - Update dispatcher for message handling
-//   - Command handlers for bot interactions
-//   - Retry mechanisms for reliability
 func New(cfg *config.Config, database db.Database, aiService ai.Service) (BotService, error) {
 	if cfg == nil {
 		return nil, utils.NewError(componentName, utils.ErrValidation, "config is nil", utils.CategoryValidation, nil)
@@ -91,10 +84,6 @@ func New(cfg *config.Config, database db.Database, aiService ai.Service) (BotSer
 	return svc, nil
 }
 
-// Start begins the bot's operation, listening for updates and processing messages.
-// It runs until the provided context is cancelled, at which point it performs
-// a graceful shutdown. The bot uses long polling with configurable timeouts
-// and can optionally drop pending updates on startup.
 func (b *bot) Start(ctx context.Context) error {
 	if err := b.updater.StartPolling(b.Bot, &ext.PollingOpts{
 		DropPendingUpdates: b.cfg.Telegram.Polling.DropPendingUpdates,
@@ -124,14 +113,10 @@ func (b *bot) Start(ctx context.Context) error {
 	return nil
 }
 
-// Stop gracefully shuts down the bot's update polling and message handling.
 func (b *bot) Stop() error {
 	return b.updater.Stop()
 }
 
-// HandleMessage processes an incoming Telegram update, which may contain
-// a message or command. It delegates the actual handling to the appropriate
-// command handler based on the update content.
 func (b *bot) HandleMessage(update *gotgbot.Update) error {
 	if update == nil {
 		return utils.NewError(componentName, utils.ErrValidation, "update is nil", utils.CategoryValidation, nil)
@@ -142,8 +127,6 @@ func (b *bot) HandleMessage(update *gotgbot.Update) error {
 	return newCommandHandler(b).HandleUpdate(b.Bot, &ext.Context{Update: update})
 }
 
-// SendMessage sends a text message to the specified chat ID.
-// It includes logging for debugging and error tracking.
 func (b *bot) SendMessage(chatID int64, text string) error {
 	utils.WriteDebugLog(componentName, "sending message",
 		utils.KeyAction, "send_message",
@@ -158,7 +141,6 @@ func (b *bot) SendMessage(chatID int64, text string) error {
 	return nil
 }
 
-// SendTypingAction sends a single "typing" status indicator to the specified chat.
 func (b *bot) SendTypingAction(chatID int64) error {
 	utils.WriteDebugLog(componentName, "sending typing action",
 		utils.KeyAction, "send_typing",
@@ -172,12 +154,9 @@ func (b *bot) SendTypingAction(chatID int64) error {
 	return nil
 }
 
-// SendContinuousTyping maintains a continuous "typing" status indicator in the specified chat.
-// It runs in a separate goroutine and continues until the context is cancelled.
-// The typing indicator is refreshed at configured intervals to maintain the status.
-// This is useful for long-running operations like AI response generation.
+// SendContinuousTyping refreshes typing status at configured intervals
+// until context cancellation. Used during long operations like AI generation.
 func (b *bot) SendContinuousTyping(ctx context.Context, bot *gotgbot.Bot, chatID int64) {
-	// Send initial typing action immediately
 	_, err := bot.SendChatAction(chatID, "typing", &gotgbot.SendChatActionOpts{
 		RequestOpts: &gotgbot.RequestOpts{
 			Timeout: b.cfg.Telegram.TypingActionTimeout,
@@ -226,8 +205,6 @@ func (b *bot) SendContinuousTyping(ctx context.Context, bot *gotgbot.Bot, chatID
 	<-done // Wait for goroutine to finish
 }
 
-// withRetry executes a function with the default retry configuration.
-// It's used internally to add reliability to API calls and database operations.
 func (b *bot) withRetry(ctx context.Context, fn func(context.Context) error) error {
 	return utils.WithRetry(ctx, fn, utils.DefaultRetryConfig())
 }

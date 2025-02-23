@@ -1,6 +1,4 @@
-// Package ai provides integration with OpenAI's API for chat completion functionality.
-// It handles message history, response generation, and implements circuit breaking
-// and retry mechanisms for improved reliability.
+// Package ai provides OpenAI API integration with circuit breaking and retries.
 package ai
 
 import (
@@ -19,8 +17,7 @@ import (
 
 const componentName = "ai"
 
-// invalidRequestErrors defines OpenAI API error types that should not be retried
-// as they indicate permanent failures rather than temporary issues.
+// Non-retryable OpenAI API errors that indicate permanent failures
 var invalidRequestErrors = []string{
 	"invalid_request_error",
 	"context_length_exceeded",
@@ -29,7 +26,6 @@ var invalidRequestErrors = []string{
 	"organization_not_found",
 }
 
-// client implements the Service interface for OpenAI API interactions.
 type client struct {
 	completionSvc CompletionService
 	model         string
@@ -41,8 +37,6 @@ type client struct {
 	breaker       *utils.CircuitBreaker
 }
 
-// New creates a new AI service with the provided configuration and database connection.
-// It sets up the OpenAI client, circuit breaker, and message sanitization policy.
 func New(cfg *config.AIConfig, db db.Database) (Service, error) {
 	if cfg == nil {
 		return nil, utils.NewError(componentName, utils.ErrInvalidConfig, "configuration is nil", utils.CategoryConfig, nil)
@@ -91,15 +85,12 @@ func New(cfg *config.AIConfig, db db.Database) (Service, error) {
 	return c, nil
 }
 
-// SanitizeResponse applies text sanitization rules to ensure the response
-// is compatible with Telegram message formatting.
 func (c *client) SanitizeResponse(response string) string {
 	return c.policy.SanitizeText(response)
 }
 
-// formatChatHistory converts database chat history entries into OpenAI chat messages.
-// It validates messages, filters invalid ones, and formats them chronologically
-// with metadata including timestamps and user information.
+// formatChatHistory processes chat history in reverse chronological order,
+// validates messages, and formats them with metadata for the AI context
 func (c *client) formatChatHistory(history []db.ChatHistory) []openai.ChatCompletionMessage {
 	if len(history) == 0 {
 		return nil
@@ -178,9 +169,6 @@ func (c *client) formatChatHistory(history []db.ChatHistory) []openai.ChatComple
 	return messages
 }
 
-// GenerateResponse creates an AI response for the given user message, incorporating
-// chat history for context. It implements retry logic and circuit breaking for
-// reliability, and sanitizes the response for Telegram compatibility.
 func (c *client) GenerateResponse(ctx context.Context, userID int64, userName string, userMsg string) (string, error) {
 	userMsg = strings.TrimSpace(userMsg)
 	if userMsg == "" {

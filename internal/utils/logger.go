@@ -1,6 +1,4 @@
-// Package utils provides common utility functions and patterns.
-// This file implements structured logging with consistent formatting,
-// attribute handling, and log level management using slog.
+// Package utils provides structured logging with consistent formatting.
 package utils
 
 import (
@@ -12,68 +10,53 @@ import (
 	"time"
 )
 
-// Core logger constants define size limits and component identification.
 const (
 	componentName = "logger"
-	maxLogSize    = 32 * 1024 // 32KB limit for individual log messages
+	maxLogSize    = 32 * 1024 // 32KB limit
 )
 
-// Standard log keys for structured logging provide a consistent vocabulary
-// for log attributes across the application. These keys should be used
-// instead of ad-hoc attribute names to ensure logs are searchable and
-// maintain a standard format.
+// Standard log keys for consistent attribute naming
 const (
-	// Core attributes identify the source and context of log entries
-	KeyComponent = "component" // Component/module name (required in all logs)
-	KeyError     = "error"     // Error details for error logging
-	KeyUserID    = "user_id"   // User identifier for user-related operations
-	KeyResult    = "result"    // Operation result (success/failure/etc.)
-	KeyReason    = "reason"    // Reason for an action or state change
+	// Core attributes
+	KeyComponent = "component" // Required in all logs
+	KeyError     = "error"
+	KeyUserID    = "user_id"
+	KeyResult    = "result"
+	KeyReason    = "reason"
 
-	// Metrics and measurements provide quantitative context
-	KeyLimit     = "limit"      // Limit values (e.g., page size, rate limits)
-	KeyCount     = "count"      // Count of items (e.g., results, attempts)
-	KeySize      = "size"       // Size of data (e.g., message length, file size)
-	KeyRequestID = "request_id" // Request identifier for operation tracking
-	KeyRequested = "requested"  // Originally requested value
+	// Metrics
+	KeyLimit     = "limit"
+	KeyCount     = "count"
+	KeySize      = "size"
+	KeyRequestID = "request_id"
+	KeyRequested = "requested"
 
-	// State and transitions track operational flow
-	KeyFrom   = "from_state" // Previous state in state transitions
-	KeyTo     = "to_state"   // New state in state transitions
-	KeyAction = "action"     // Action being performed
+	// State
+	KeyFrom   = "from_state"
+	KeyTo     = "to_state"
+	KeyAction = "action"
 
-	// Resource information identifies affected entities
-	KeyName = "name" // Resource name or identifier
-	KeyType = "type" // Resource or operation type
+	// Resources
+	KeyName = "name"
+	KeyType = "type"
 
-	// Transaction information for database operations
-	KeyTxType = "transaction" // Transaction type or category
+	// Transactions
+	KeyTxType = "transaction"
 )
 
-// LogConfig defines logging configuration parameters.
-// Both fields are validated using struct tags to ensure
-// only supported values are used.
 type LogConfig struct {
 	Level  string `validate:"required,oneof=debug info warn error"`
 	Format string `validate:"required,oneof=json text"`
 }
 
 var (
-	// Default logger settings provide basic logging capability
-	// before Setup() is called. These ensure logging is always
-	// available, even during initialization.
 	defaultLevel  = slog.LevelInfo
 	defaultFormat = "json"
 
-	// Logger initialization state is protected by a mutex
-	// to ensure thread-safe setup and access.
 	loggerMu sync.RWMutex
 	isSetup  bool
 )
 
-// levelMap provides direct mapping from configuration strings
-// to slog.Level values. This map is used during setup to
-// convert the configured level string to a slog.Level.
 var levelMap = map[string]slog.Level{
 	"debug": slog.LevelDebug,
 	"info":  slog.LevelInfo,
@@ -81,9 +64,6 @@ var levelMap = map[string]slog.Level{
 	"error": slog.LevelError,
 }
 
-// truncateString ensures a string doesn't exceed maxLogSize.
-// It adds an ellipsis (...) when truncation occurs to indicate
-// the string was cut off.
 func truncateString(s string) string {
 	if len(s) <= maxLogSize {
 		return s
@@ -91,25 +71,14 @@ func truncateString(s string) string {
 	return s[:maxLogSize-3] + "..."
 }
 
-// customHandler wraps a slog.Handler to provide additional functionality:
-// - Message and attribute size limiting
-// - Consistent time formatting
-// - Source location tracking
 type customHandler struct {
 	handler slog.Handler
 }
 
-// Enabled implements slog.Handler interface.
-// It delegates the enabled check to the wrapped handler.
 func (h *customHandler) Enabled(ctx context.Context, level slog.Level) bool {
 	return h.handler.Enabled(ctx, level)
 }
 
-// Handle implements slog.Handler interface.
-// It processes the log record before passing it to the wrapped handler:
-// - Truncates oversized messages
-// - Truncates oversized attribute values
-// - Ensures consistent attribute formatting
 func (h *customHandler) Handle(ctx context.Context, r slog.Record) error {
 	if len(r.Message) > maxLogSize {
 		r = slog.NewRecord(r.Time, r.Level, truncateString(r.Message), r.PC)
@@ -125,26 +94,15 @@ func (h *customHandler) Handle(ctx context.Context, r slog.Record) error {
 	return h.handler.Handle(ctx, r)
 }
 
-// WithAttrs implements slog.Handler interface.
-// It wraps the new handler to maintain custom handling.
 func (h *customHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
 	return &customHandler{handler: h.handler.WithAttrs(attrs)}
 }
 
-// WithGroup implements slog.Handler interface.
-// It wraps the new handler to maintain custom handling.
 func (h *customHandler) WithGroup(name string) slog.Handler {
 	return &customHandler{handler: h.handler.WithGroup(name)}
 }
 
-// Setup initializes the logger with the given configuration.
-// It configures:
-// - Log level (debug, info, warn, error)
-// - Output format (json, text)
-// - Custom attribute handling
-// - UTC timestamp formatting
-// This function is thread-safe and can be called multiple times,
-// but typically should only be called once during application startup.
+// Setup initializes thread-safe logging with size limits and UTC timestamps
 func Setup(cfg *LogConfig) error {
 	loggerMu.Lock()
 	defer loggerMu.Unlock()
@@ -194,8 +152,7 @@ func Setup(cfg *LogConfig) error {
 	return nil
 }
 
-// getDefaultHandler returns a handler with default settings.
-// This is used when logging is needed before Setup() is called.
+// getDefaultHandler provides basic logging before Setup
 func getDefaultHandler() slog.Handler {
 	opts := &slog.HandlerOptions{
 		Level: defaultLevel,
@@ -215,9 +172,6 @@ func getDefaultHandler() slog.Handler {
 	return slog.NewJSONHandler(os.Stderr, opts)
 }
 
-// ensureLogger ensures a logger is available by setting up a default logger
-// if none has been configured. This provides basic logging capability
-// before Setup() is called.
 func ensureLogger() {
 	loggerMu.Lock()
 	defer loggerMu.Unlock()
@@ -229,9 +183,6 @@ func ensureLogger() {
 	}
 }
 
-// writeLog is a generic logging function that ensures consistent formatting
-// and attribute handling across all log levels. It automatically adds
-// the component name as a required attribute.
 func writeLog(level slog.Level, component, msg string, attrs ...any) {
 	ensureLogger()
 
@@ -242,9 +193,6 @@ func writeLog(level slog.Level, component, msg string, attrs ...any) {
 	slog.Log(context.Background(), level, msg, args...)
 }
 
-// WriteErrorLog logs an error with consistent attributes.
-// It automatically includes the error value and any additional
-// attributes provided.
 func WriteErrorLog(component string, msg string, err error, attrs ...any) {
 	args := make([]any, 0, len(attrs)+2)
 	args = append(args, KeyError, err)
@@ -252,23 +200,14 @@ func WriteErrorLog(component string, msg string, err error, attrs ...any) {
 	writeLog(slog.LevelError, component, msg, args...)
 }
 
-// WriteWarnLog logs a warning with consistent attributes.
-// Use this for potentially problematic situations that don't
-// prevent normal operation.
 func WriteWarnLog(component string, msg string, attrs ...any) {
 	writeLog(slog.LevelWarn, component, msg, attrs...)
 }
 
-// WriteInfoLog logs an info message with consistent attributes.
-// Use this for normal operational events that highlight the
-// progress of the application.
 func WriteInfoLog(component string, msg string, attrs ...any) {
 	writeLog(slog.LevelInfo, component, msg, attrs...)
 }
 
-// WriteDebugLog logs a debug message with consistent attributes.
-// Use this for detailed information useful during debugging
-// and development.
 func WriteDebugLog(component string, msg string, attrs ...any) {
 	writeLog(slog.LevelDebug, component, msg, attrs...)
 }

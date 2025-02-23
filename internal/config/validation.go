@@ -1,24 +1,15 @@
-// Package config provides configuration validation functionality.
-// This file specifically handles user authorization and message validation logic.
 package config
 
 import (
 	"github.com/edgard/murailobot/internal/utils"
 )
 
-// IsUserAuthorized determines if a user is authorized to interact with the bot.
-// Authorization follows these rules in order:
-//  1. Admin is always authorized and cannot be blocked
-//  2. Blocked users are denied access regardless of other settings
-//  3. If an allowed users list exists, only listed users are authorized
-//  4. If no allowed users list exists, all non-blocked users are authorized
-//
-// The configuration validation ensures:
-//   - Admin is never blocked (validator: nefield=Config.Telegram.AdminID)
-//   - No user is both allowed and blocked (validator: excluded_with=BlockedUserIDs)
-//   - Admin is in allowed users list if present (validator: required_with=Config.Security.AllowedUserIDs)
+// IsUserAuthorized checks authorization in order:
+// 1. Admin is always authorized and cannot be blocked
+// 2. Blocked users are denied access
+// 3. If allowed list exists, only listed users are authorized
+// 4. Otherwise, all non-blocked users are allowed
 func (c *Config) IsUserAuthorized(userID int64) bool {
-	// Fast path: admin is always authorized
 	if userID == c.Telegram.AdminID {
 		utils.WriteDebugLog(componentName, "admin access granted",
 			utils.KeyUserID, userID,
@@ -27,7 +18,6 @@ func (c *Config) IsUserAuthorized(userID int64) bool {
 		return true
 	}
 
-	// Fast path: check blocked users first
 	blockedMap := make(map[int64]bool, len(c.Telegram.BlockedUserIDs))
 	for _, id := range c.Telegram.BlockedUserIDs {
 		blockedMap[id] = true
@@ -40,7 +30,6 @@ func (c *Config) IsUserAuthorized(userID int64) bool {
 		return false
 	}
 
-	// If allowed users list exists, user must be in it
 	if len(c.Telegram.AllowedUserIDs) > 0 {
 		allowedMap := make(map[int64]bool, len(c.Telegram.AllowedUserIDs))
 		for _, id := range c.Telegram.AllowedUserIDs {
@@ -57,7 +46,6 @@ func (c *Config) IsUserAuthorized(userID int64) bool {
 		return allowed
 	}
 
-	// If no allowed users list, everyone except blocked users is allowed
 	utils.WriteDebugLog(componentName, "access granted - no restrictions",
 		utils.KeyUserID, userID,
 		utils.KeyAction, "authorization",
@@ -65,16 +53,7 @@ func (c *Config) IsUserAuthorized(userID int64) bool {
 	return true
 }
 
-// ValidateChatMessage performs comprehensive validation of a chat message.
-// It checks both the message content and user authorization:
-//  1. Message must not be empty
-//  2. Message length must not exceed configured maximum
-//  3. User must be authorized according to security settings
-//
-// Returns nil if all validations pass, or an appropriate error describing
-// which validation failed.
 func (c *Config) ValidateChatMessage(userID int64, message string) error {
-	// Check message length
 	if len(message) == 0 {
 		return utils.NewError(componentName, utils.ErrValidation, "message is empty", utils.CategoryValidation, nil)
 	}
@@ -84,7 +63,6 @@ func (c *Config) ValidateChatMessage(userID int64, message string) error {
 			"message exceeds maximum length of %d characters", c.MaxMessageSize)
 	}
 
-	// Check user authorization
 	if !c.IsUserAuthorized(userID) {
 		return utils.NewError(componentName, utils.ErrValidation, "user not authorized", utils.CategoryValidation, nil)
 	}
