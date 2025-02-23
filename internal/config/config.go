@@ -1,3 +1,6 @@
+// Package config provides configuration management for the Telegram bot application.
+// It handles loading and validating configuration from multiple sources including
+// default values, config files, and environment variables.
 package config
 
 import (
@@ -12,33 +15,36 @@ import (
 
 const componentName = "config"
 
-// Config represents the complete application configuration
+// Config represents the complete application configuration.
+// It contains all settings required for the bot's operation,
+// including logging, AI, database, and Telegram configurations.
 type Config struct {
 	Log            LogConfig      `mapstructure:"log" validate:"required"`
 	AI             AIConfig       `mapstructure:"ai" validate:"required"`
 	Database       DatabaseConfig `mapstructure:"database" validate:"required"`
 	Telegram       TelegramConfig `mapstructure:"telegram" validate:"required"`
-	MaxMessageSize int            `mapstructure:"max_message_size" validate:"required,min=1,max=4096"` // Global message size limit
+	MaxMessageSize int            `mapstructure:"max_message_size" validate:"required,min=1,max=4096"` // Maximum message length in characters
 }
 
-// TelegramConfig holds all Telegram-related configuration
+// TelegramConfig holds all Telegram-related configuration settings.
+// It includes authentication, security, message handling, and operational parameters.
 type TelegramConfig struct {
-	// Core settings
+	// Core settings for bot operation
 	Token    string          `mapstructure:"token" validate:"required"`
 	AdminID  int64           `mapstructure:"admin_id" validate:"required,gt=0,required_with=AllowedUserIDs"`
 	Commands []CommandConfig `mapstructure:"commands" validate:"required,dive"`
 
-	// Security settings
+	// Access control settings
 	AllowedUserIDs []int64 `mapstructure:"allowed_user_ids" validate:"dive,gt=0,excluded_with=BlockedUserIDs"`
 	BlockedUserIDs []int64 `mapstructure:"blocked_user_ids" validate:"dive,gt=0,nefield=AdminID"`
 
-	// Message templates
+	// Bot response templates
 	Messages BotMessages `mapstructure:"messages" validate:"required"`
 
-	// Polling configuration
+	// Update polling configuration
 	Polling PollingConfig `mapstructure:"polling" validate:"required"`
 
-	// Typing settings
+	// Chat interaction settings
 	TypingInterval      time.Duration `mapstructure:"typing_interval" validate:"required,min=100ms,ltfield=TypingActionTimeout"`
 	TypingActionTimeout time.Duration `mapstructure:"typing_action_timeout" validate:"required,min=1s,max=10s,ltfield=Polling.RequestTimeout"`
 
@@ -47,7 +53,8 @@ type TelegramConfig struct {
 	AIRequestTimeout   time.Duration `mapstructure:"ai_request_timeout" validate:"required,min=1s,max=10m"`
 }
 
-// BotMessages holds message templates
+// BotMessages defines templates for various bot responses.
+// These messages are used to maintain consistent communication with users.
 type BotMessages struct {
 	Welcome        string `mapstructure:"welcome" validate:"required"`
 	NotAuthorized  string `mapstructure:"not_authorized" validate:"required"`
@@ -58,20 +65,21 @@ type BotMessages struct {
 	HistoryReset   string `mapstructure:"history_reset" validate:"required"`
 }
 
-// PollingConfig holds polling-related settings
+// PollingConfig defines settings for Telegram's long polling mechanism.
 type PollingConfig struct {
 	Timeout            time.Duration `mapstructure:"timeout" validate:"required,min=1s,ltfield=RequestTimeout"`
 	RequestTimeout     time.Duration `mapstructure:"request_timeout" validate:"required,min=1s"`
-	DropPendingUpdates bool          `mapstructure:"drop_pending_updates"`
+	DropPendingUpdates bool          `mapstructure:"drop_pending_updates"` // Whether to skip pending updates on startup
 }
 
-// LogConfig defines logging-related configuration
+// LogConfig defines logging behavior and output format.
 type LogConfig struct {
 	Level  string `mapstructure:"level" validate:"required,oneof=debug info warn error"`
 	Format string `mapstructure:"format" validate:"required,oneof=json text"`
 }
 
-// AIConfig defines AI API configuration (using OpenAI-compatible API)
+// AIConfig defines settings for the AI service integration.
+// It supports OpenAI-compatible APIs with customizable parameters.
 type AIConfig struct {
 	Token       string        `mapstructure:"token" validate:"required,ai_token"`
 	BaseURL     string        `mapstructure:"base_url" validate:"required,url,startswith=https://,hostname_required"`
@@ -82,13 +90,14 @@ type AIConfig struct {
 	Timeout     time.Duration `mapstructure:"timeout" validate:"required,min=1s,max=10m"`
 }
 
-// CommandConfig defines a bot command
+// CommandConfig defines a bot command with its description.
 type CommandConfig struct {
 	Command     string `mapstructure:"command" validate:"required"`
 	Description string `mapstructure:"description" validate:"required"`
 }
 
-// DatabaseConfig defines database connection configuration
+// DatabaseConfig defines database connection and operation settings.
+// Currently supports SQLite with specific optimizations.
 type DatabaseConfig struct {
 	Name            string        `mapstructure:"name" validate:"required"`
 	MaxOpenConns    int           `mapstructure:"max_open_conns" validate:"required,min=1,max=100"`
@@ -97,11 +106,11 @@ type DatabaseConfig struct {
 	MaxUsernameLen  int           `mapstructure:"max_username_len" validate:"required,min=1,max=256"`
 	MaxHistoryLimit int           `mapstructure:"max_history_limit" validate:"required,min=1,max=100"`
 
-	// SQLite specific settings
+	// SQLite-specific settings
 	OperationTimeout     time.Duration `mapstructure:"operation_timeout" validate:"required,min=1s,max=30s"`
 	LongOperationTimeout time.Duration `mapstructure:"long_operation_timeout" validate:"required,min=1s,max=60s"`
 
-	// SQLite pragmas
+	// SQLite performance and reliability pragmas
 	JournalMode string `mapstructure:"journal_mode" validate:"required,oneof=DELETE TRUNCATE PERSIST MEMORY WAL OFF"`
 	Synchronous string `mapstructure:"synchronous" validate:"required,oneof=OFF NORMAL FULL EXTRA"`
 	ForeignKeys bool   `mapstructure:"foreign_keys" validate:"required"`
@@ -109,7 +118,7 @@ type DatabaseConfig struct {
 	CacheSizeKB int    `mapstructure:"cache_size_kb" validate:"required,min=1,max=10000"`
 }
 
-// Default configuration values
+// Default configuration values for various components
 const (
 	// Log defaults
 	DefaultLogLevel  = "info"
@@ -124,7 +133,7 @@ const (
 	DefaultDBMaxHistoryLimit = 50
 	DefaultDBConnMaxLifetime = time.Hour
 
-	// SQLite defaults
+	// SQLite defaults for optimal performance
 	DefaultDBOperationTimeout     = 5 * time.Second
 	DefaultDBLongOperationTimeout = 30 * time.Second
 	DefaultDBJournalMode          = "WAL"
@@ -133,7 +142,7 @@ const (
 	DefaultDBTempStore            = "MEMORY"
 	DefaultDBCacheSizeKB          = 2000
 
-	// AI defaults
+	// AI service defaults
 	DefaultAIBaseURL     = "https://api.openai.com/v1"
 	DefaultAIModel       = "gpt-4-turbo-preview"
 	DefaultAITemperature = 0.5
@@ -150,11 +159,11 @@ const (
 	DefaultTelegramAIRequestTimeout    = 2 * time.Minute
 	DefaultTelegramPollingTimeout      = 10 * time.Second
 	DefaultTelegramRequestTimeout      = 30 * time.Second
-	DefaultTelegramMaxRoutines         = 50 // Will be capped by CPU count + 2
+	DefaultTelegramMaxRoutines         = 50 // Limited by CPU count + 2
 	DefaultTelegramDropPendingUpdates  = true
 )
 
-// Default bot messages
+// DefaultBotMessages provides default templates for bot responses.
 var DefaultBotMessages = BotMessages{
 	Welcome:        "👋 Welcome! I'm ready to assist you. Use /mrl followed by your message to start a conversation.",
 	NotAuthorized:  "🚫 Access denied. Please contact the administrator.",
@@ -165,38 +174,34 @@ var DefaultBotMessages = BotMessages{
 	MessageTooLong: "📝 Message exceeds maximum length of %d characters.",
 }
 
-// Default bot commands
+// DefaultBotCommands defines the standard set of bot commands.
 var DefaultBotCommands = []CommandConfig{
 	{Command: "start", Description: "Start conversation with the bot"},
 	{Command: "mrl", Description: "Generate AI response"},
 	{Command: "mrl_reset", Description: "Reset chat history (admin only)"},
 }
 
-// Load loads and validates configuration from:
+// Load reads configuration from multiple sources in order of precedence:
 // 1. Default values
 // 2. config.yaml file
 // 3. BOT_* environment variables
+// It returns a validated configuration or an error if validation fails.
 func Load() (*Config, error) {
-	// Set defaults
 	setDefaults()
 
 	utils.WriteDebugLog(componentName, "default configuration set",
 		utils.KeyAction, "set_defaults")
 
-	// Create empty config that will be populated with defaults and overrides
 	cfg := &Config{}
 
-	// Try to load config file (optional)
 	if err := loadConfig(); err != nil {
 		return nil, utils.NewError(componentName, utils.ErrInvalidConfig, "failed to load config file", utils.CategoryConfig, err)
 	}
 
-	// Unmarshal config file over defaults
 	if err := viper.Unmarshal(cfg); err != nil {
 		return nil, utils.NewError(componentName, utils.ErrInvalidConfig, "failed to parse config", utils.CategoryConfig, err)
 	}
 
-	// Validate the complete config
 	if err := cfg.Validate(); err != nil {
 		return nil, utils.NewError(componentName, utils.ErrInvalidConfig, "validation failed", utils.CategoryConfig, err)
 	}
@@ -214,18 +219,16 @@ func Load() (*Config, error) {
 	return cfg, nil
 }
 
-// loadConfig initializes and loads the configuration using viper
+// loadConfig initializes viper and loads configuration from file and environment.
 func loadConfig() error {
 	viper.SetConfigName("config")
 	viper.SetConfigType("yaml")
 	viper.AddConfigPath(".")
 
-	// Setup environment variables
 	viper.SetEnvPrefix("BOT")
 	viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 	viper.AutomaticEnv()
 
-	// Bind specific environment variables
 	if err := viper.BindEnv("telegram.token", "BOT_TELEGRAM_TOKEN"); err != nil {
 		return utils.NewError(componentName, utils.ErrInvalidConfig, "failed to bind telegram token env var", utils.CategoryConfig, err)
 	}
@@ -236,21 +239,19 @@ func loadConfig() error {
 		return utils.NewError(componentName, utils.ErrInvalidConfig, "failed to bind AI token env var", utils.CategoryConfig, err)
 	}
 
-	// Allow missing config file
 	if err := viper.ReadInConfig(); err != nil {
 		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
 			return utils.NewError(componentName, utils.ErrInvalidConfig, "failed to read config file", utils.CategoryConfig, err)
 		}
-		// Config file not found is okay, we'll use defaults
 	}
 
 	return nil
 }
 
-// setDefaults sets default values for optional configuration parameters
+// setDefaults initializes default values for all optional configuration parameters.
 func setDefaults() {
 	defaults := map[string]interface{}{
-		"max_message_size": DefaultTelegramMaxMessageLength, // Use Telegram's default as the global limit
+		"max_message_size": DefaultTelegramMaxMessageLength,
 
 		"log": map[string]interface{}{
 			"level":  DefaultLogLevel,
@@ -296,32 +297,29 @@ func setDefaults() {
 		},
 	}
 
-	// Set all defaults at once
 	for key, value := range defaults {
 		viper.SetDefault(key, value)
 	}
 }
 
-// Validate performs validation of all configuration fields
+// Validate performs comprehensive validation of all configuration fields
+// using struct tags and custom validation rules.
 func (c *Config) Validate() error {
 	v := validator.New()
 
-	// Register custom validation for AI token format
 	if err := v.RegisterValidation("ai_token", func(fl validator.FieldLevel) bool {
 		return strings.HasPrefix(fl.Field().String(), "sk-")
 	}); err != nil {
 		return utils.NewError(componentName, utils.ErrValidation, "failed to register AI token validator", utils.CategoryValidation, err)
 	}
 
-	// Register custom validation for AI model format
 	if err := v.RegisterValidation("ai_model", func(fl validator.FieldLevel) bool {
 		model := fl.Field().String()
-		return len(model) > 0 // Just ensure it's not empty
+		return len(model) > 0
 	}); err != nil {
 		return utils.NewError(componentName, utils.ErrValidation, "failed to register AI model validator", utils.CategoryValidation, err)
 	}
 
-	// Register custom validation for hostname requirement in URLs
 	if err := v.RegisterValidation("hostname_required", func(fl validator.FieldLevel) bool {
 		urlStr := fl.Field().String()
 		parsedURL, err := url.Parse(urlStr)
@@ -333,7 +331,6 @@ func (c *Config) Validate() error {
 		return utils.NewError(componentName, utils.ErrValidation, "failed to register hostname validator", utils.CategoryValidation, err)
 	}
 
-	// Validate using struct tags
 	if err := v.Struct(c); err != nil {
 		if validationErrors, ok := err.(validator.ValidationErrors); ok {
 			var msg string

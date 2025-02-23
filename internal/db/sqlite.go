@@ -1,3 +1,4 @@
+// Package db provides SQLite-based persistence for chat interactions.
 package db
 
 import (
@@ -18,15 +19,22 @@ import (
 	"github.com/sony/gobreaker"
 )
 
+// SQL statements for creating indices to optimize query performance.
 var (
+	// createChatHistoryTimestampIndex creates an index on the timestamp column
+	// to optimize retrieval of recent messages.
 	createChatHistoryTimestampIndex = `
 		CREATE INDEX IF NOT EXISTS idx_chat_history_timestamp ON chat_history(timestamp)`
 
+	// createChatHistoryUserIDIndex creates an index on the user_id column
+	// to optimize user-specific queries.
 	createChatHistoryUserIDIndex = `
 		CREATE INDEX IF NOT EXISTS idx_chat_history_user_id ON chat_history(user_id)`
 )
 
-// sqliteDB implements the Database interface
+// sqliteDB implements the Database interface using SQLite as the backend.
+// It provides thread-safe access to the database with connection pooling,
+// circuit breaking, and automatic retries for transient failures.
 type sqliteDB struct {
 	*sqlx.DB
 	config   *config.Config
@@ -36,7 +44,12 @@ type sqliteDB struct {
 
 const componentName = "db"
 
-// New creates a new SQLite database connection with the given configuration
+// New creates a new SQLite database connection with the given configuration.
+// It performs the following setup:
+// 1. Creates and secures the database directory
+// 2. Sets up connection pooling and circuit breaker
+// 3. Initializes the database schema
+// 4. Configures SQLite for optimal performance
 func New(cfg *config.Config) (Database, error) {
 	if cfg == nil {
 		return nil, utils.NewError(componentName, utils.ErrInvalidConfig, "configuration is nil", utils.CategoryConfig, nil)
@@ -44,21 +57,18 @@ func New(cfg *config.Config) (Database, error) {
 
 	dbConfig := &cfg.Database
 
-	// Ensure database directory exists with proper permissions
+	// Ensure database directory exists with proper permissions (0750)
 	dbDir := filepath.Dir(dbConfig.Name)
 	if dbDir != "." {
-		// Create directory with secure permissions
 		if err := os.MkdirAll(dbDir, 0750); err != nil {
 			return nil, utils.NewError(componentName, utils.ErrOperation, "failed to create database directory", utils.CategoryOperation, err)
 		}
 
-		// Verify directory permissions
 		info, err := os.Stat(dbDir)
 		if err != nil {
 			return nil, utils.NewError(componentName, utils.ErrOperation, "failed to check directory permissions", utils.CategoryOperation, err)
 		}
 
-		// Ensure directory has secure permissions
 		if info.Mode().Perm()&0077 != 0 {
 			if err := os.Chmod(dbDir, 0750); err != nil {
 				return nil, utils.NewError(componentName, utils.ErrOperation, "failed to set secure directory permissions", utils.CategoryOperation, err)
@@ -66,9 +76,8 @@ func New(cfg *config.Config) (Database, error) {
 		}
 	}
 
-	// Check if database file exists and verify permissions
+	// Ensure database file has secure permissions (0600)
 	if info, err := os.Stat(dbConfig.Name); err == nil {
-		// Ensure database file has secure permissions (readable/writable only by owner)
 		if info.Mode().Perm()&0077 != 0 {
 			if err := os.Chmod(dbConfig.Name, 0600); err != nil {
 				return nil, utils.NewError(componentName, utils.ErrOperation, "failed to set secure database file permissions", utils.CategoryOperation, err)
@@ -117,7 +126,7 @@ func New(cfg *config.Config) (Database, error) {
 		return nil, err
 	}
 
-	// Configure connection pool
+	// Configure connection pool for optimal concurrency
 	conn.SetMaxOpenConns(dbConfig.MaxOpenConns)
 	conn.SetMaxIdleConns(dbConfig.MaxIdleConns)
 	conn.SetConnMaxLifetime(dbConfig.ConnMaxLifetime)
@@ -146,7 +155,13 @@ func New(cfg *config.Config) (Database, error) {
 	return db, nil
 }
 
-// getPragmas returns SQLite pragma statements based on configuration
+// getPragmas returns SQLite pragma statements based on configuration.
+// These pragmas optimize SQLite for the bot's usage patterns:
+// - journal_mode: Controls how write transactions are journaled
+// - synchronous: Controls fsync behavior for durability vs performance
+// - foreign_keys: Enables foreign key constraint enforcement
+// - temp_store: Controls temporary table and index storage location
+// - cache_size: Controls the page cache size in memory
 func getPragmas(cfg *config.DatabaseConfig) []string {
 	// Convert cache size from KB to pages (each page is 1KB)
 	cacheSize := -cfg.CacheSizeKB // Negative value means KB instead of number of pages
@@ -160,7 +175,7 @@ func getPragmas(cfg *config.DatabaseConfig) []string {
 	}
 }
 
-// boolToOnOff converts a boolean to "ON" or "OFF" string
+// boolToOnOff converts a boolean to SQLite's "ON" or "OFF" string representation.
 func boolToOnOff(b bool) string {
 	if b {
 		return "ON"
@@ -168,7 +183,12 @@ func boolToOnOff(b bool) string {
 	return "OFF"
 }
 
-// getChatHistoryTableSchema returns the chat history table schema with configurable message size
+// getChatHistoryTableSchema returns the chat history table schema.
+// The schema includes:
+// - Automatic ID generation
+// - User identification fields
+// - Message content with length constraints
+// - Timestamp for message ordering
 func getChatHistoryTableSchema(maxMessageSize int) string {
 	return `
 		CREATE TABLE IF NOT EXISTS chat_history (
@@ -181,12 +201,12 @@ func getChatHistoryTableSchema(maxMessageSize int) string {
 		)`
 }
 
+// setupSchema initializes the database schema and configures SQLite settings.
+// It runs in a transaction to ensure atomic schema creation and verification.
 func (s *sqliteDB) setupSchema() error {
-	// Use context with timeout for schema setup
 	ctx, cancel := context.WithTimeout(context.Background(), s.dbConfig.LongOperationTimeout)
 	defer cancel()
 
-	// Set PRAGMAs before starting transaction
 	utils.WriteDebugLog(componentName, "setting database pragmas",
 		utils.KeyAction, "set_pragmas",
 		utils.KeyType, "sqlite",
@@ -255,7 +275,6 @@ func (s *sqliteDB) setupSchema() error {
 		return utils.NewError(componentName, utils.ErrValidation, "foreign key constraints are not enabled", utils.CategoryValidation, nil)
 	}
 
-	// Log consolidated database initialization info
 	utils.WriteInfoLog(componentName, "database initialized",
 		utils.KeyAction, "initialize",
 		utils.KeyResult, "success",
@@ -283,14 +302,15 @@ func (s *sqliteDB) setupSchema() error {
 	return nil
 }
 
-// GetRecentChatHistory retrieves the last n messages from chat history
+// GetRecentChatHistory retrieves the most recent chat interactions.
+// It enforces a maximum limit of 50 messages to prevent excessive memory usage.
+// Results are ordered by timestamp descending (newest first) and exclude empty messages.
 func (s *sqliteDB) GetRecentChatHistory(ctx context.Context, limit int) ([]ChatHistory, error) {
 	if limit <= 0 {
 		return nil, utils.Errorf(componentName, utils.ErrValidation, utils.CategoryValidation,
 			"invalid limit: %d", limit)
 	}
 
-	// Cap the limit to prevent excessive memory usage
 	if limit > 50 {
 		limit = 50
 		utils.WriteWarnLog(componentName, "limiting chat history retrieval",
@@ -354,13 +374,17 @@ func (s *sqliteDB) GetRecentChatHistory(ctx context.Context, limit int) ([]ChatH
 	return history, nil
 }
 
-// SaveChatInteraction saves a new chat message to the database
+// SaveChatInteraction stores a new chat interaction in the database.
+// It performs the following validations:
+// - User ID must be positive
+// - Username must not be empty (truncated if too long)
+// - Messages must not be empty or exceed size limits
+// The operation is performed in a transaction with retry and circuit breaking.
 func (s *sqliteDB) SaveChatInteraction(ctx context.Context, userID int64, userName, userMsg, botMsg string) error {
 	if userID <= 0 {
 		return utils.NewError(componentName, utils.ErrValidation, "user_id must be positive", utils.CategoryValidation, nil)
 	}
 
-	// Validate and trim username
 	userName = strings.TrimSpace(userName)
 	if userName == "" {
 		return utils.NewError(componentName, utils.ErrValidation, "username cannot be empty", utils.CategoryValidation, nil)
@@ -369,7 +393,6 @@ func (s *sqliteDB) SaveChatInteraction(ctx context.Context, userID int64, userNa
 		userName = userName[:s.dbConfig.MaxUsernameLen]
 	}
 
-	// Validate message lengths
 	if len(userMsg) == 0 || len(botMsg) == 0 {
 		return utils.NewError(componentName, utils.ErrValidation, "messages cannot be empty", utils.CategoryValidation, nil)
 	}
@@ -434,7 +457,9 @@ func (s *sqliteDB) SaveChatInteraction(ctx context.Context, userID int64, userNa
 	return nil
 }
 
-// DeleteAllChatHistory deletes all chat history from the database
+// DeleteAllChatHistory removes all chat history from the database.
+// This operation is performed in a transaction and cannot be undone.
+// It uses circuit breaking and retry mechanisms for reliability.
 func (s *sqliteDB) DeleteAllChatHistory(ctx context.Context) error {
 	err := s.breaker.Execute(ctx, func(ctx context.Context) error {
 		return utils.WithRetry(ctx, func(ctx context.Context) error {
@@ -476,7 +501,8 @@ func (s *sqliteDB) DeleteAllChatHistory(ctx context.Context) error {
 	return nil
 }
 
-// Close closes the database connection
+// Close releases all database resources.
+// After closing, no other methods should be called on this instance.
 func (s *sqliteDB) Close() error {
 	if err := s.DB.Close(); err != nil {
 		return utils.NewError(componentName, utils.ErrOperation, "failed to close database connection", utils.CategoryOperation, err)

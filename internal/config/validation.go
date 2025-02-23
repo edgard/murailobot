@@ -1,14 +1,22 @@
+// Package config provides configuration validation functionality.
+// This file specifically handles user authorization and message validation logic.
 package config
 
 import (
 	"github.com/edgard/murailobot/internal/utils"
 )
 
-// IsUserAuthorized checks if a user is authorized based on security configuration.
-// The configuration validation ensures that:
-// 1. Admin is never blocked (via validator tag nefield=Config.Telegram.AdminID)
-// 2. No user is both allowed and blocked (via validator tag excluded_with=BlockedUserIDs)
-// 3. Admin is in allowed users list if the list is not empty (via validator tag required_with=Config.Security.AllowedUserIDs)
+// IsUserAuthorized determines if a user is authorized to interact with the bot.
+// Authorization follows these rules in order:
+//  1. Admin is always authorized and cannot be blocked
+//  2. Blocked users are denied access regardless of other settings
+//  3. If an allowed users list exists, only listed users are authorized
+//  4. If no allowed users list exists, all non-blocked users are authorized
+//
+// The configuration validation ensures:
+//   - Admin is never blocked (validator: nefield=Config.Telegram.AdminID)
+//   - No user is both allowed and blocked (validator: excluded_with=BlockedUserIDs)
+//   - Admin is in allowed users list if present (validator: required_with=Config.Security.AllowedUserIDs)
 func (c *Config) IsUserAuthorized(userID int64) bool {
 	// Fast path: admin is always authorized
 	if userID == c.Telegram.AdminID {
@@ -57,8 +65,14 @@ func (c *Config) IsUserAuthorized(userID int64) bool {
 	return true
 }
 
-// ValidateChatMessage validates a chat message and its metadata.
-// This combines message length and user authorization checks.
+// ValidateChatMessage performs comprehensive validation of a chat message.
+// It checks both the message content and user authorization:
+//  1. Message must not be empty
+//  2. Message length must not exceed configured maximum
+//  3. User must be authorized according to security settings
+//
+// Returns nil if all validations pass, or an appropriate error describing
+// which validation failed.
 func (c *Config) ValidateChatMessage(userID int64, message string) error {
 	// Check message length
 	if len(message) == 0 {

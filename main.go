@@ -1,3 +1,4 @@
+// Package main implements a Telegram bot with AI capabilities.
 package main
 
 import (
@@ -16,7 +17,6 @@ import (
 const componentName = "main"
 
 func main() {
-	// Load configuration using the config package
 	config, err := config.Load()
 	if err != nil {
 		utils.WriteErrorLog(componentName, "failed to load configuration", err,
@@ -24,7 +24,6 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Initialize logger
 	logCfg := &utils.LogConfig{
 		Level:  config.Log.Level,
 		Format: config.Log.Format,
@@ -35,7 +34,6 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Initialize database
 	database, err := db.New(config)
 	if err != nil {
 		utils.WriteErrorLog(componentName, "failed to initialize database", err,
@@ -44,7 +42,6 @@ func main() {
 	}
 	defer database.Close()
 
-	// Initialize AI client
 	aiClient, err := ai.New(&config.AI, database)
 	if err != nil {
 		utils.WriteErrorLog(componentName, "failed to initialize AI client", err,
@@ -52,7 +49,6 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Initialize bot
 	var bot telegram.BotService
 	bot, err = telegram.New(config, database, aiClient)
 	if err != nil {
@@ -61,7 +57,8 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Set up signal handling for graceful shutdown
+	// Handle graceful shutdown on SIGINT/SIGTERM signals.
+	// This ensures proper cleanup of resources and active connections.
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -86,13 +83,11 @@ func main() {
 				cancel()
 				return
 			case <-ctx.Done():
-				// Context was cancelled elsewhere
 				return
 			}
 		}
 	}()
 
-	// Start bot
 	if err := bot.Start(ctx); err != nil {
 		utils.WriteErrorLog(componentName, "bot error", err,
 			utils.KeyAction, "run_bot")

@@ -1,3 +1,6 @@
+// Package ai provides integration with OpenAI's API for chat completion functionality.
+// It handles message history, response generation, and implements circuit breaking
+// and retry mechanisms for improved reliability.
 package ai
 
 import (
@@ -16,7 +19,8 @@ import (
 
 const componentName = "ai"
 
-// List of non-retryable error messages from OpenAI API
+// invalidRequestErrors defines OpenAI API error types that should not be retried
+// as they indicate permanent failures rather than temporary issues.
 var invalidRequestErrors = []string{
 	"invalid_request_error",
 	"context_length_exceeded",
@@ -25,7 +29,7 @@ var invalidRequestErrors = []string{
 	"organization_not_found",
 }
 
-// client implements the Service interface
+// client implements the Service interface for OpenAI API interactions.
 type client struct {
 	completionSvc CompletionService
 	model         string
@@ -37,7 +41,8 @@ type client struct {
 	breaker       *utils.CircuitBreaker
 }
 
-// New creates a new AI service instance
+// New creates a new AI service with the provided configuration and database connection.
+// It sets up the OpenAI client, circuit breaker, and message sanitization policy.
 func New(cfg *config.AIConfig, db db.Database) (Service, error) {
 	if cfg == nil {
 		return nil, utils.NewError(componentName, utils.ErrInvalidConfig, "configuration is nil", utils.CategoryConfig, nil)
@@ -52,11 +57,6 @@ func New(cfg *config.AIConfig, db db.Database) (Service, error) {
 
 	breaker := utils.NewCircuitBreaker(utils.CircuitBreakerConfig{
 		Name: "ai-api",
-		// Using default values from utils.NewCircuitBreaker:
-		// MaxFailures: 5
-		// Timeout: 30s
-		// HalfOpenLimit: 1
-		// ResetInterval: 60s
 		OnStateChange: func(name string, from, to utils.CircuitState) {
 			utils.WriteInfoLog(componentName, "AI API circuit breaker state changed",
 				utils.KeyName, name,
@@ -91,11 +91,15 @@ func New(cfg *config.AIConfig, db db.Database) (Service, error) {
 	return c, nil
 }
 
-// SanitizeResponse sanitizes the response text for Telegram messages
+// SanitizeResponse applies text sanitization rules to ensure the response
+// is compatible with Telegram message formatting.
 func (c *client) SanitizeResponse(response string) string {
 	return c.policy.SanitizeText(response)
 }
 
+// formatChatHistory converts database chat history entries into OpenAI chat messages.
+// It validates messages, filters invalid ones, and formats them chronologically
+// with metadata including timestamps and user information.
 func (c *client) formatChatHistory(history []db.ChatHistory) []openai.ChatCompletionMessage {
 	if len(history) == 0 {
 		return nil
@@ -103,11 +107,9 @@ func (c *client) formatChatHistory(history []db.ChatHistory) []openai.ChatComple
 
 	validMsgs := make([]db.ChatHistory, 0, len(history))
 
-	// Filter and validate messages in reverse order (newest first)
 	for i := len(history) - 1; i >= 0; i-- {
 		msg := history[i]
 
-		// Validate message integrity
 		if msg.ID <= 0 || msg.UserID <= 0 ||
 			msg.UserMsg == "" || msg.BotMsg == "" || msg.Timestamp.IsZero() {
 			utils.WriteWarnLog(componentName, "skipping invalid message in history",
@@ -140,14 +142,11 @@ func (c *client) formatChatHistory(history []db.ChatHistory) []openai.ChatComple
 
 	messages := make([]openai.ChatCompletionMessage, 0, len(validMsgs)*2)
 
-	// Process valid messages in chronological order
 	for i := len(validMsgs) - 1; i >= 0; i-- {
 		msg := validMsgs[i]
-		// Trim messages to ensure no leading/trailing whitespace
 		userMsg := strings.TrimSpace(msg.UserMsg)
 		botMsg := strings.TrimSpace(msg.BotMsg)
 
-		// Format user message with timestamp and user info
 		formattedUserMsg := fmt.Sprintf("[%s] UID %d (%s): %s",
 			msg.Timestamp.Format(time.RFC3339),
 			msg.UserID,
@@ -179,6 +178,9 @@ func (c *client) formatChatHistory(history []db.ChatHistory) []openai.ChatComple
 	return messages
 }
 
+// GenerateResponse creates an AI response for the given user message, incorporating
+// chat history for context. It implements retry logic and circuit breaking for
+// reliability, and sanitizes the response for Telegram compatibility.
 func (c *client) GenerateResponse(ctx context.Context, userID int64, userName string, userMsg string) (string, error) {
 	userMsg = strings.TrimSpace(userMsg)
 	if userMsg == "" {
@@ -199,7 +201,6 @@ func (c *client) GenerateResponse(ctx context.Context, userID int64, userName st
 
 	retryConfig := utils.DefaultRetryConfig()
 
-	// Get last 10 messages from chat history with retry
 	var history []db.ChatHistory
 	err := utils.WithRetry(ctx, func(ctx context.Context) error {
 		var err error
@@ -208,24 +209,21 @@ func (c *client) GenerateResponse(ctx context.Context, userID int64, userName st
 	}, retryConfig)
 
 	if err != nil {
-		// Log warning but continue without history
 		utils.WriteWarnLog(componentName, "failed to get chat history",
 			utils.KeyError, err.Error(),
 			utils.KeyUserID, userID,
 			utils.KeyType, "chat_history",
 			utils.KeyAction, "get_history",
 			utils.KeyReason, "will continue without history")
-		// Initialize empty history to continue without past context
 		history = make([]db.ChatHistory, 0)
 	}
 
-	messages := make([]openai.ChatCompletionMessage, 0, 21) // Pre-allocate for system + history + user message
+	messages := make([]openai.ChatCompletionMessage, 0, 21)
 	messages = append(messages, openai.ChatCompletionMessage{
 		Role:    "system",
 		Content: c.instruction,
 	})
 
-	// Add history messages if available
 	if len(history) > 0 {
 		historyMsgs := c.formatChatHistory(history)
 		if len(historyMsgs) > 0 {
@@ -233,7 +231,6 @@ func (c *client) GenerateResponse(ctx context.Context, userID int64, userName st
 		}
 	}
 
-	// Add current user message with timestamp
 	currentMsg := fmt.Sprintf("[%s] UID %d (%s): %s",
 		time.Now().Format(time.RFC3339),
 		userID,
@@ -245,7 +242,6 @@ func (c *client) GenerateResponse(ctx context.Context, userID int64, userName st
 		Content: currentMsg,
 	})
 
-	// Execute request through circuit breaker with retry
 	var response string
 	err = c.breaker.Execute(ctx, func(ctx context.Context) error {
 		return utils.WithRetry(ctx, func(ctx context.Context) error {
@@ -258,13 +254,12 @@ func (c *client) GenerateResponse(ctx context.Context, userID int64, userName st
 
 			if err != nil {
 				errStr := err.Error()
-				// Check for non-retryable errors
 				for _, errType := range invalidRequestErrors {
 					if strings.Contains(errStr, errType) {
 						return utils.NewError(componentName, utils.ErrValidation, "permanent API error", utils.CategoryValidation, err)
 					}
 				}
-				return err // Retryable error
+				return err
 			}
 
 			if len(resp.Choices) == 0 {

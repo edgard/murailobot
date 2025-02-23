@@ -1,3 +1,4 @@
+// Package telegram provides Telegram bot command handling functionality.
 package telegram
 
 import (
@@ -10,12 +11,16 @@ import (
 	"github.com/edgard/murailobot/internal/utils"
 )
 
-// botCommandHandler handles Telegram bot commands
+// botCommandHandler implements the command handling logic for the Telegram bot.
+// It processes incoming commands, manages user authorization, and coordinates
+// between the AI service and database operations.
 type botCommandHandler struct {
-	bot  *bot
-	name string
+	bot  *bot   // Reference to the main bot instance
+	name string // Handler name for debugging
 }
 
+// newCommandHandler creates a new command handler instance.
+// It implements the ext.Handler interface for processing Telegram updates.
 func newCommandHandler(bot *bot) ext.Handler {
 	return &botCommandHandler{
 		bot:  bot,
@@ -23,18 +28,25 @@ func newCommandHandler(bot *bot) ext.Handler {
 	}
 }
 
-// Name returns the handler name for debugging
+// Name returns the handler's identifier for debugging and logging purposes.
 func (h *botCommandHandler) Name() string {
 	return h.name
 }
 
-// CheckUpdate implements ext.Handler interface
+// CheckUpdate implements ext.Handler interface.
+// It determines if an update contains a valid command that this handler
+// should process (messages starting with '/').
 func (h *botCommandHandler) CheckUpdate(_ *gotgbot.Bot, ctx *ext.Context) bool {
 	msg := ctx.EffectiveMessage
 	return msg != nil && msg.Text != "" && strings.HasPrefix(msg.Text, "/")
 }
 
-// validateMessage checks if a message is valid and contains a command
+// validateMessage checks if a message contains a valid command.
+// It performs the following validations:
+// - Message exists and is not empty
+// - Message starts with '/'
+// - Command is properly formatted
+// Returns the clean command without the bot username suffix.
 func (h *botCommandHandler) validateMessage(msg *gotgbot.Message) (string, error) {
 	if msg == nil {
 		return "", utils.NewError(componentName, utils.ErrOperation, "message is nil", utils.CategoryOperation, nil)
@@ -53,20 +65,22 @@ func (h *botCommandHandler) validateMessage(msg *gotgbot.Message) (string, error
 		return "", nil
 	}
 
-	// Extract clean command without bot username
 	cmd := strings.Split(strings.TrimPrefix(parts[0], "/"), "@")[0]
 	return cmd, nil
 }
 
-// HandleUpdate implements ext.Handler interface
+// HandleUpdate implements ext.Handler interface.
+// It processes incoming commands and routes them to the appropriate handler:
+// - /start: Initial bot interaction
+// - /mrl: Generate AI response
+// - /mrl_reset: Clear chat history (admin only)
+// For AI-related commands, it maintains a typing indicator while processing.
 func (h *botCommandHandler) HandleUpdate(b *gotgbot.Bot, ctx *ext.Context) error {
-	// Start typing indicator immediately for any command
 	if ctx.EffectiveMessage != nil && ctx.EffectiveMessage.Text != "" && strings.HasPrefix(ctx.EffectiveMessage.Text, "/") {
 		opCtx, cancel := context.WithTimeout(context.Background(), h.bot.cfg.Telegram.AIRequestTimeout)
 		typingCtx, cancelTyping := context.WithCancel(opCtx)
 		go h.bot.SendContinuousTyping(typingCtx, b, ctx.EffectiveChat.Id)
 
-		// Ensure we clean up the typing indicator when we're done
 		defer func() {
 			cancelTyping()
 			cancel()
@@ -92,7 +106,9 @@ func (h *botCommandHandler) HandleUpdate(b *gotgbot.Bot, ctx *ext.Context) error
 	return nil
 }
 
-// handleStart handles the /start command
+// handleStart processes the /start command.
+// It sends a welcome message if the user is authorized.
+// This is typically the first interaction a user has with the bot.
 func (h *botCommandHandler) handleStart(bot *gotgbot.Bot, ctx *ext.Context) error {
 	msg := ctx.EffectiveMessage
 	if msg == nil {
@@ -125,7 +141,14 @@ func (h *botCommandHandler) handleStart(bot *gotgbot.Bot, ctx *ext.Context) erro
 	return nil
 }
 
-// handleChatMessage handles the /mrl command
+// handleChatMessage processes the /mrl command.
+// This is the main command for interacting with the AI:
+// 1. Validates user authorization
+// 2. Processes the message text
+// 3. Generates AI response
+// 4. Saves the interaction to chat history
+// 5. Sends the response back to the user
+// The entire operation is protected by timeouts and circuit breakers.
 func (h *botCommandHandler) handleChatMessage(bot *gotgbot.Bot, ctx *ext.Context) error {
 	msg := ctx.EffectiveMessage
 	if msg == nil {
@@ -148,14 +171,12 @@ func (h *botCommandHandler) handleChatMessage(bot *gotgbot.Bot, ctx *ext.Context
 		utils.KeyAction, "chat_command",
 		utils.KeySize, len(msg.Text))
 
-	// Validate and sanitize input
 	text := strings.TrimSpace(msg.Text)
 	cmdParts := strings.Fields(text)
 	if len(cmdParts) == 0 {
 		return nil
 	}
 
-	// Handle command with or without bot username
 	cmd := strings.Split(cmdParts[0], "@")[0]
 	if cmd == "/mrl" && len(cmdParts) == 1 {
 		msgCtx, cancel := context.WithTimeout(opCtx, h.bot.cfg.Telegram.Polling.RequestTimeout)
@@ -171,10 +192,8 @@ func (h *botCommandHandler) handleChatMessage(bot *gotgbot.Bot, ctx *ext.Context
 		return nil
 	}
 
-	// Remove command from text
 	text = strings.TrimSpace(strings.TrimPrefix(text, cmdParts[0]))
 
-	// Generate AI response
 	username := strings.TrimSpace(msg.From.Username)
 	if username == "" {
 		username = "Unknown"
@@ -227,7 +246,6 @@ func (h *botCommandHandler) handleChatMessage(bot *gotgbot.Bot, ctx *ext.Context
 	case <-opCtx.Done():
 		return opCtx.Err()
 	default:
-		// Save chat history
 		dbCtx, cancel := context.WithTimeout(opCtx, h.bot.cfg.Telegram.DBOperationTimeout)
 		defer cancel()
 
@@ -237,7 +255,6 @@ func (h *botCommandHandler) handleChatMessage(bot *gotgbot.Bot, ctx *ext.Context
 				utils.KeyRequestID, msg.Chat.Id,
 				utils.KeyAction, "save_chat",
 				utils.KeyType, "chat_history")
-			// Continue execution - saving history is not critical
 		}
 
 		select {
@@ -253,7 +270,9 @@ func (h *botCommandHandler) handleChatMessage(bot *gotgbot.Bot, ctx *ext.Context
 	}
 }
 
-// handleChatHistoryReset handles the /mrl_reset command
+// handleChatHistoryReset processes the /mrl_reset command.
+// This admin-only command clears all chat history from the database.
+// It includes proper authorization checks and confirmation messages.
 func (h *botCommandHandler) handleChatHistoryReset(bot *gotgbot.Bot, ctx *ext.Context) error {
 	msg := ctx.EffectiveMessage
 	if msg == nil {
@@ -275,7 +294,6 @@ func (h *botCommandHandler) handleChatHistoryReset(bot *gotgbot.Bot, ctx *ext.Co
 		utils.KeyType, "admin",
 		utils.KeyAction, "reset_command")
 
-	// Clear chat history
 	if err := h.bot.db.DeleteAllChatHistory(opCtx); err != nil {
 		utils.WriteErrorLog(componentName, "failed to reset chat history", err,
 			utils.KeyUserID, userID,
@@ -309,10 +327,14 @@ func (h *botCommandHandler) handleChatHistoryReset(bot *gotgbot.Bot, ctx *ext.Co
 
 // Helper methods
 
+// isAuthorized checks if a user is allowed to interact with the bot
+// based on the configured access control lists.
 func (h *botCommandHandler) isAuthorized(userID int64) bool {
 	return h.bot.cfg.IsUserAuthorized(userID)
 }
 
+// sendUnauthorizedMessage sends an access denied message to unauthorized users.
+// It includes logging for security monitoring.
 func (h *botCommandHandler) sendUnauthorizedMessage(bot *gotgbot.Bot, ctx *ext.Context, userID int64) error {
 	utils.WriteWarnLog(componentName, "unauthorized access attempt",
 		utils.KeyUserID, userID,
@@ -326,6 +348,8 @@ func (h *botCommandHandler) sendUnauthorizedMessage(bot *gotgbot.Bot, ctx *ext.C
 	return h.sendMessageWithRetry(msgCtx, bot, ctx.EffectiveMessage, h.bot.cfg.Telegram.Messages.NotAuthorized)
 }
 
+// sendMessageWithRetry sends a message to Telegram with retry and circuit breaking.
+// It handles transient failures and backs off appropriately to avoid rate limiting.
 func (h *botCommandHandler) sendMessageWithRetry(ctx context.Context, bot *gotgbot.Bot, msg *gotgbot.Message, text string) error {
 	return h.bot.breaker.Execute(ctx, func(ctx context.Context) error {
 		return h.bot.withRetry(ctx, func(ctx context.Context) error {
