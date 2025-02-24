@@ -117,30 +117,6 @@ func (b *bot) Stop() error {
 	return b.updater.Stop()
 }
 
-func (b *bot) HandleMessage(update *gotgbot.Update) error {
-	if update == nil {
-		return utils.NewError(componentName, utils.ErrValidation, "update is nil", utils.CategoryValidation, nil)
-	}
-	if update.Message == nil {
-		return nil
-	}
-	return newCommandHandler(b).HandleUpdate(b.Bot, &ext.Context{Update: update})
-}
-
-func (b *bot) SendMessage(chatID int64, text string) error {
-	utils.DebugLog(componentName, "sending message",
-		utils.KeyAction, "send_message",
-		utils.KeyType, "telegram_api",
-		utils.KeyRequestID, chatID,
-		utils.KeySize, len(text))
-
-	_, err := b.Bot.SendMessage(chatID, text, nil)
-	if err != nil {
-		return utils.NewError(componentName, utils.ErrOperation, "failed to send message", utils.CategoryOperation, err)
-	}
-	return nil
-}
-
 func (b *bot) SendTypingAction(chatID int64) error {
 	utils.DebugLog(componentName, "sending typing action",
 		utils.KeyAction, "send_typing",

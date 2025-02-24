@@ -130,7 +130,6 @@ const (
 	DefaultTelegramAIRequestTimeout    = 2 * time.Minute
 	DefaultTelegramPollingTimeout      = 10 * time.Second
 	DefaultTelegramRequestTimeout      = 30 * time.Second
-	DefaultTelegramMaxRoutines         = 50
 	DefaultTelegramDropPendingUpdates  = true
 )
 

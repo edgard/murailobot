@@ -17,8 +17,6 @@ type BotService interface {
 	// Start runs until context cancellation or Stop
 	Start(ctx context.Context) error
 	Stop() error
-	HandleMessage(update *gotgbot.Update) error
-	SendMessage(chatID int64, text string) error
 	SendTypingAction(chatID int64) error
 }
 
