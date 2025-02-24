@@ -58,11 +58,6 @@ func (c *Config) ValidateChatMessage(userID int64, message string) error {
 		return utils.NewError(componentName, utils.ErrValidation, "message is empty", utils.CategoryValidation, nil)
 	}
 
-	if len(message) > c.MaxMessageSize {
-		return utils.Errorf(componentName, utils.ErrValidation, utils.CategoryValidation,
-			"message exceeds maximum length of %d characters", c.MaxMessageSize)
-	}
-
 	if !c.IsUserAuthorized(userID) {
 		return utils.NewError(componentName, utils.ErrValidation, "user not authorized", utils.CategoryValidation, nil)
 	}

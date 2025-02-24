@@ -2,9 +2,6 @@
 # MurailoBot Configuration File                                                #
 ################################################################################
 
-# Global Settings
-max_message_size: 4096                       # Global message size limit for all components
-
 #------------------------------------------------------------------------------
 # AI Configuration - OpenAI-compatible API settings                            #
 #------------------------------------------------------------------------------
@@ -61,7 +58,6 @@ telegram:
     welcome: "👋 Welcome! I'm ready to assist you. Use /mrl followed by your message to start a conversation."
     not_authorized: "🚫 Access denied. Please contact the administrator."
     provide_message: "ℹ️ Please provide a message with your command."
-    message_too_long: "📝 Message exceeds maximum length of %d characters."
     ai_error: "🤖 Unable to process request. Please try again."
     general_error: "❌ An error occurred. Please try again later."
     history_reset: "🔄 Chat history has been cleared."

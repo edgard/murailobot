@@ -14,11 +14,10 @@ import (
 const componentName = "config"
 
 type Config struct {
-	Log            LogConfig      `mapstructure:"log" validate:"required"`
-	AI             AIConfig       `mapstructure:"ai" validate:"required"`
-	Database       DatabaseConfig `mapstructure:"database" validate:"required"`
-	Telegram       TelegramConfig `mapstructure:"telegram" validate:"required"`
-	MaxMessageSize int            `mapstructure:"max_message_size" validate:"required,min=1,max=4096"`
+	Log      LogConfig      `mapstructure:"log" validate:"required"`
+	AI       AIConfig       `mapstructure:"ai" validate:"required"`
+	Database DatabaseConfig `mapstructure:"database" validate:"required"`
+	Telegram TelegramConfig `mapstructure:"telegram" validate:"required"`
 }
 
 type TelegramConfig struct {
@@ -44,7 +43,6 @@ type BotMessages struct {
 	Welcome        string `mapstructure:"welcome" validate:"required"`
 	NotAuthorized  string `mapstructure:"not_authorized" validate:"required"`
 	ProvideMessage string `mapstructure:"provide_message" validate:"required"`
-	MessageTooLong string `mapstructure:"message_too_long" validate:"required"`
 	AIError        string `mapstructure:"ai_error" validate:"required"`
 	GeneralError   string `mapstructure:"general_error" validate:"required"`
 	HistoryReset   string `mapstructure:"history_reset" validate:"required"`
@@ -119,9 +117,7 @@ const (
 	DefaultAITemperature = 1.0
 	DefaultAITimeout     = 2 * time.Minute
 	DefaultAIInstruction = "You are a helpful assistant focused on providing clear and accurate responses."
-	DefaultAIMaxResponse = 4096
 
-	DefaultTelegramMaxMessageLength    = 4096
 	DefaultTelegramTypingInterval      = 3 * time.Second
 	DefaultTelegramTypingActionTimeout = 5 * time.Second
 	DefaultTelegramDBOperationTimeout  = 15 * time.Second
@@ -138,7 +134,6 @@ var DefaultBotMessages = BotMessages{
 	ProvideMessage: "ℹ️ Please provide a message with your command.",
 	GeneralError:   "❌ An error occurred. Please try again later.",
 	AIError:        "🤖 Unable to process request. Please try again.",
-	MessageTooLong: "📝 Message exceeds maximum length of %d characters.",
 }
 
 var DefaultBotCommands = []CommandConfig{
@@ -170,11 +165,10 @@ func Load() (*Config, error) {
 	utils.InfoLog(componentName, "configuration loaded successfully",
 		utils.KeyAction, "load_config",
 		"config_summary", map[string]interface{}{
-			"log_level":        cfg.Log.Level,
-			"log_format":       cfg.Log.Format,
-			"max_message_size": cfg.MaxMessageSize,
-			"ai_model":         cfg.AI.Model,
-			"db_name":          cfg.Database.Name,
+			"log_level":  cfg.Log.Level,
+			"log_format": cfg.Log.Format,
+			"ai_model":   cfg.AI.Model,
+			"db_name":    cfg.Database.Name,
 		})
 
 	return cfg, nil
@@ -210,8 +204,6 @@ func loadConfig() error {
 
 func setDefaults() {
 	defaults := map[string]interface{}{
-		"max_message_size": DefaultTelegramMaxMessageLength,
-
 		"log": map[string]interface{}{
 			"level":  DefaultLogLevel,
 			"format": DefaultLogFormat,

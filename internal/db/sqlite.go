@@ -163,16 +163,16 @@ func boolToOnOff(b bool) string {
 	return "OFF"
 }
 
-func getChatHistoryTableSchema(maxMessageSize int) string {
+func getChatHistoryTableSchema() string {
 	return `
-		CREATE TABLE IF NOT EXISTS chat_history (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			user_id INTEGER NOT NULL,
-			user_name TEXT NOT NULL,
-			user_msg TEXT NOT NULL CHECK(length(user_msg) <= ` + strconv.Itoa(maxMessageSize) + `),
-			bot_msg TEXT NOT NULL CHECK(length(bot_msg) <= ` + strconv.Itoa(maxMessageSize) + `),
-			timestamp DATETIME NOT NULL
-		)`
+CREATE TABLE IF NOT EXISTS chat_history (
+id INTEGER PRIMARY KEY AUTOINCREMENT,
+user_id INTEGER NOT NULL,
+user_name TEXT NOT NULL,
+user_msg TEXT NOT NULL,
+bot_msg TEXT NOT NULL,
+timestamp DATETIME NOT NULL
+)`
 }
 
 func (s *sqliteDB) setupSchema() error {
@@ -210,7 +210,7 @@ func (s *sqliteDB) setupSchema() error {
 	}()
 
 	schemas := []string{
-		getChatHistoryTableSchema(s.config.MaxMessageSize),
+		getChatHistoryTableSchema(),
 		createChatHistoryTimestampIndex,
 		createChatHistoryUserIDIndex,
 	}
@@ -357,10 +357,6 @@ func (s *sqliteDB) Save(ctx context.Context, userID int64, userName, userMsg, bo
 
 	if len(userMsg) == 0 || len(botMsg) == 0 {
 		return utils.NewError(componentName, utils.ErrValidation, "messages cannot be empty", utils.CategoryValidation, nil)
-	}
-	if len(userMsg) > s.config.MaxMessageSize || len(botMsg) > s.config.MaxMessageSize {
-		return utils.Errorf(componentName, utils.ErrValidation, utils.CategoryValidation,
-			"message exceeds maximum length of %d characters", s.config.MaxMessageSize)
 	}
 
 	err := s.breaker.Execute(ctx, func(ctx context.Context) error {
