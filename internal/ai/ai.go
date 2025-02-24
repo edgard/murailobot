@@ -30,7 +30,6 @@ type client struct {
 	completionSvc CompletionService
 	model         string
 	temperature   float32
-	topP          float32
 	instruction   string
 	db            db.Database
 	policy        *utils.TextPolicy
@@ -65,7 +64,6 @@ func New(cfg *config.AIConfig, db db.Database) (Service, error) {
 		completionSvc: openai.NewClientWithConfig(config),
 		model:         cfg.Model,
 		temperature:   cfg.Temperature,
-		topP:          cfg.TopP,
 		instruction:   cfg.Instruction,
 		db:            db,
 		policy:        utils.NewTelegramTextPolicy(),
@@ -79,7 +77,6 @@ func New(cfg *config.AIConfig, db db.Database) (Service, error) {
 		"model_config", map[string]interface{}{
 			"model":       cfg.Model,
 			"temperature": cfg.Temperature,
-			"top_p":       cfg.TopP,
 			"timeout":     cfg.Timeout,
 		})
 	return c, nil
@@ -184,7 +181,6 @@ func (c *client) Generate(ctx context.Context, userID int64, userName string, us
 		"model_params", map[string]interface{}{
 			"model":       c.model,
 			"temperature": c.temperature,
-			"top_p":       c.topP,
 		})
 
 	retryConfig := utils.DefaultRetryConfig()
@@ -237,7 +233,6 @@ func (c *client) Generate(ctx context.Context, userID int64, userName string, us
 				Model:       c.model,
 				Messages:    messages,
 				Temperature: c.temperature,
-				TopP:        c.topP,
 			})
 
 			if err != nil {

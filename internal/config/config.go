@@ -66,7 +66,6 @@ type AIConfig struct {
 	BaseURL     string        `mapstructure:"base_url" validate:"required,url,startswith=https://,hostname_required"`
 	Model       string        `mapstructure:"model" validate:"required,ai_model"`
 	Temperature float32       `mapstructure:"temperature" validate:"required,min=0,max=2"`
-	TopP        float32       `mapstructure:"top_p" validate:"required,min=0,max=1"`
 	Instruction string        `mapstructure:"instruction" validate:"required,min=1"`
 	Timeout     time.Duration `mapstructure:"timeout" validate:"required,min=1s,max=10m"`
 }
@@ -117,8 +116,7 @@ const (
 
 	DefaultAIBaseURL     = "https://api.openai.com/v1"
 	DefaultAIModel       = "gpt-4-turbo-preview"
-	DefaultAITemperature = 0.5
-	DefaultAITopP        = 0.9
+	DefaultAITemperature = 1.0
 	DefaultAITimeout     = 2 * time.Minute
 	DefaultAIInstruction = "You are a helpful assistant focused on providing clear and accurate responses."
 	DefaultAIMaxResponse = 4096
@@ -237,7 +235,6 @@ func setDefaults() {
 			"base_url":    DefaultAIBaseURL,
 			"model":       DefaultAIModel,
 			"temperature": DefaultAITemperature,
-			"top_p":       DefaultAITopP,
 			"timeout":     DefaultAITimeout,
 			"instruction": DefaultAIInstruction,
 		},

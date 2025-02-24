@@ -15,8 +15,7 @@ ai:
 
   # Model Settings
   model: "gpt-4-turbo-preview"               # Any non-empty model name supported by your provider
-  temperature: 0.5                           # Response randomness (0.0-2.0, lower = more focused)
-  top_p: 0.9                                 # Nucleus sampling (0.0-1.0)
+  temperature: 1                             # Response randomness (0.0-2.0, lower = more focused)
 
   # Behavior Settings
   instruction: "You are a helpful assistant focused on providing clear and accurate responses." # System message (1-1000 chars)
