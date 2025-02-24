@@ -19,14 +19,6 @@ import (
 	"github.com/sony/gobreaker"
 )
 
-var (
-	createChatHistoryTimestampIndex = `
-		CREATE INDEX IF NOT EXISTS idx_chat_history_timestamp ON chat_history(timestamp)`
-
-	createChatHistoryUserIDIndex = `
-		CREATE INDEX IF NOT EXISTS idx_chat_history_user_id ON chat_history(user_id)`
-)
-
 type sqliteDB struct {
 	*sqlx.DB
 	config   *config.Config
@@ -208,6 +200,12 @@ func (s *sqliteDB) setupSchema() error {
 				utils.KeyTxType, "schema_setup")
 		}
 	}()
+
+	createChatHistoryTimestampIndex := `
+CREATE INDEX IF NOT EXISTS idx_chat_history_timestamp ON chat_history(timestamp)`
+
+	createChatHistoryUserIDIndex := `
+CREATE INDEX IF NOT EXISTS idx_chat_history_user_id ON chat_history(user_id)`
 
 	schemas := []string{
 		getChatHistoryTableSchema(),

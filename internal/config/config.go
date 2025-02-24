@@ -99,7 +99,6 @@ const (
 	DefaultDBName            = "storage.db"
 	DefaultDBMaxOpenConns    = 50
 	DefaultDBMaxIdleConns    = 10
-	DefaultDBMaxMessageSize  = 4096
 	DefaultDBMaxUsernameLen  = 64
 	DefaultDBMaxHistoryLimit = 50
 	DefaultDBConnMaxLifetime = time.Hour
