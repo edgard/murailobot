@@ -126,7 +126,6 @@ release:
     name: "{{ .ProjectName }}"
   draft: false
   prerelease: auto
-  discussion_category_name: Releases
   header: |
     ## {{ .ProjectName }} v{{ .Version }} ({{ .Date }})
 
