@@ -4,6 +4,12 @@ on:
   push:
     branches:
       - master
+    paths:
+      - '**.go'
+      - 'go.mod'
+      - 'go.sum'
+      - 'Dockerfile.*'
+      - 'config.yaml.example'
 
 permissions:
   contents: write
