@@ -75,7 +75,7 @@ dockers:
       - --label=org.opencontainers.image.url=https://github.com/edgard/{{ .ProjectName }}
       - --label=org.opencontainers.image.licenses=MIT
       - --label=org.opencontainers.image.vendor=edgard
-      - --label=org.opencontainers.image.base.name=debian:bullseye-slim
+      - --label=org.opencontainers.image.base.name=gcr.io/distroless/cc-debian12:latest
 
   - use: buildx
     goos: linux
@@ -97,7 +97,7 @@ dockers:
       - --label=org.opencontainers.image.url=https://github.com/edgard/{{ .ProjectName }}
       - --label=org.opencontainers.image.licenses=MIT
       - --label=org.opencontainers.image.vendor=edgard
-      - --label=org.opencontainers.image.base.name=arm64v8/debian:bullseye-slim
+      - --label=org.opencontainers.image.base.name=gcr.io/distroless/cc-debian12:latest
 
 docker_manifests:
   - name_template: ghcr.io/edgard/{{ .ProjectName }}:{{ .Version }}

@@ -1,9 +1,4 @@
-FROM --platform=linux/arm64 arm64v8/debian:bullseye-slim
-
-RUN apt-get update && apt-get install -y \
-    libsqlite3-0 \
-    ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
+FROM --platform=linux/arm64 gcr.io/distroless/cc-debian12:latest
 
 WORKDIR /app
 
