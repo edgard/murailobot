@@ -1,4 +1,3 @@
-// Package utils provides text sanitization for messaging platforms.
 package utils
 
 import (
@@ -10,62 +9,31 @@ import (
 	"github.com/yuin/goldmark"
 )
 
-const sanitizeComponent = "sanitize"
-
-// TextPolicy combines HTML sanitization and Markdown processing
-type TextPolicy struct {
-	policy   *bluemonday.Policy
-	markdown goldmark.Markdown
-}
-
-// NewTelegramTextPolicy creates strict policy for Telegram
-func NewTelegramTextPolicy() *TextPolicy {
-	return &TextPolicy{
-		policy:   bluemonday.StrictPolicy(),
-		markdown: goldmark.New(),
-	}
-}
-
-// Sanitize processes text through:
-// 1. Markdown to HTML conversion
-// 2. Block elements to newlines
-// 3. HTML tag removal
-// 4. Whitespace normalization
-// 5. Entity decoding
-func (p *TextPolicy) Sanitize(text string) string {
+// Sanitize cleans and formats text by converting markdown to HTML
+// and removing potentially unsafe content
+func Sanitize(text string) string {
 	if text == "" {
 		return ""
 	}
 
+	policy := bluemonday.StrictPolicy()
+	markdown := goldmark.New()
+
 	var buf bytes.Buffer
-	if err := p.markdown.Convert([]byte(text), &buf); err != nil {
-		WarnLog(sanitizeComponent, "failed to convert markdown",
-			KeyError, err.Error(),
-			KeySize, len(text),
-			KeyAction, "markdown_convert",
-			KeyType, "sanitize")
+	if err := markdown.Convert([]byte(text), &buf); err != nil {
 		return text
 	}
 
 	htmlText := buf.String()
-	// Replace block elements with newlines:
-	// <br>, <p>, <div>, <pre>, <h1-6>
+
 	htmlText = regexp.MustCompile(
 		`<br\s*/?>|</?p>|</?div>|</?pre>|</?h[1-6]>`,
 	).ReplaceAllString(htmlText, "\n")
 
-	sanitized := p.policy.Sanitize(htmlText)
+	sanitized := policy.Sanitize(htmlText)
 	sanitized = regexp.MustCompile(`\n\s*\n+`).ReplaceAllString(sanitized, "\n\n")
 	sanitized = html.UnescapeString(sanitized)
-
-	DebugLog(sanitizeComponent, "text sanitized successfully",
-		KeyAction, "sanitize_text",
-		KeyType, "sanitize",
-		KeySize, map[string]int{
-			"input":    len(text),
-			"output":   len(sanitized),
-			"markdown": len(htmlText),
-		})
+	sanitized = regexp.MustCompile(`\s{2,}`).ReplaceAllString(sanitized, " ")
 
 	return sanitized
 }

@@ -1,30 +1,44 @@
-// Package telegram implements a Telegram bot with AI capabilities.
 package telegram
 
 import (
 	"context"
+	"time"
 
-	"github.com/PaulSonOfLars/gotgbot/v2"
-	"github.com/PaulSonOfLars/gotgbot/v2/ext"
 	"github.com/edgard/murailobot/internal/ai"
-	"github.com/edgard/murailobot/internal/config"
 	"github.com/edgard/murailobot/internal/db"
-	"github.com/edgard/murailobot/internal/utils"
+	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
-// BotService handles Telegram bot operations.
+const defaultTypingInterval = 5 * time.Second
+
+// BotService defines telegram bot operations
 type BotService interface {
-	// Start runs until context cancellation or Stop
 	Start(ctx context.Context) error
 	Stop() error
-	SendTypingAction(chatID int64) error
+	SendContinuousTyping(ctx context.Context, chatID int64)
+}
+
+// Messages stores bot response templates
+type Messages struct {
+	Welcome      string `yaml:"welcome"`
+	Unauthorized string `yaml:"unauthorized"`
+	GeneralError string `yaml:"general_error"`
+	AIError      string `yaml:"ai_error"`
+	HistoryReset string `yaml:"history_reset"`
+	Provide      string `yaml:"provide_message"`
+	Timeout      string `yaml:"timeout"`
+}
+
+// Config holds bot settings
+type Config struct {
+	Token    string   `yaml:"token"`
+	AdminID  int64    `yaml:"admin_id"`
+	Messages Messages `yaml:"messages"`
 }
 
 type bot struct {
-	*gotgbot.Bot
-	updater *ext.Updater
-	db      db.Database
-	ai      ai.Service
-	cfg     *config.Config
-	breaker *utils.CircuitBreaker
+	api *tgbotapi.BotAPI
+	db  db.Database
+	ai  ai.Service
+	cfg *Config
 }

@@ -3,58 +3,20 @@
 ################################################################################
 
 #------------------------------------------------------------------------------
-# AI Configuration - OpenAI-compatible API settings                            #
+# Bot Configuration
 #------------------------------------------------------------------------------
 ai:
-  # Required Settings
-  token: "your-api-token"                    # API token (must start with 'sk-')
-  base_url: "https://api.openai.com/v1"      # HTTPS API endpoint with valid hostname
+  token: "sk-your-token-here"                # REQUIRED: API token
+  base_url: "https://api.openai.com/v1"      # Optional: API endpoint URL
+  model: "gpt-4o"                            # Optional: Model identifier
+  temperature: 1.0                           # Optional: Between 0.0 and 2.0
+  timeout: "2m"                              # Optional: Between 1s and 10m
+  instruction: "You are a helpful assistant focused on providing clear and accurate responses." # Optional: System prompt
 
-  # Model Settings
-  model: "gpt-4-turbo-preview"               # Any non-empty model name supported by your provider
-  temperature: 1                             # Response randomness (0.0-2.0, lower = more focused)
-
-  # Behavior Settings
-  instruction: "You are a helpful assistant focused on providing clear and accurate responses." # System message (1-1000 chars)
-  timeout: "2m"                              # AI request timeout (1s-10m)
-
-
-#------------------------------------------------------------------------------
-# Telegram Bot Configuration - Bot interface and behavior settings            #
-#------------------------------------------------------------------------------
 telegram:
-  # Required Settings (can be set via BOT_TELEGRAM_TOKEN and BOT_TELEGRAM_ADMIN_ID env vars)
-  token: "your-telegram-bot-token"           # Bot token from @BotFather
-  admin_id: 123456789                        # Admin's Telegram ID (get from @userinfobot)
-
-  # Access Control
-  allowed_user_ids: []                       # Allowed users (empty = allow all, exclusive with blocked_user_ids)
-  blocked_user_ids: []                       # Blocked users (cannot include admin_id)
-
-  # Performance Settings
-  typing_interval: "3s"                      # Typing indicator interval (min: 100ms, < typing_action_timeout)
-  typing_action_timeout: "5s"                # Typing duration (1-10s, < polling.request_timeout)
-  db_operation_timeout: "15s"                # DB operation timeout (5-60s)
-  ai_request_timeout: "2m"                   # AI request timeout (1s-10m)
-
-  # Update Polling
-  polling:
-    timeout: "10s"                           # Update polling timeout (min: 1s, < request_timeout)
-    request_timeout: "30s"                   # API request timeout (min: 1s)
-    max_routines: 50                         # Max concurrent routines (1-100, limited by CPU count)
-    drop_pending_updates: true               # Skip updates on startup
-
-  # Bot Commands
-  commands:
-    - command: "start"
-      description: "Start conversation with the bot"
-    - command: "mrl"
-      description: "Generate AI response"
-    - command: "mrl_reset"
-      description: "Reset chat history (admin only)"
-
-  # Response Messages
-  messages:
+  token: "your-telegram-bot-token"           # REQUIRED: Bot token from @BotFather
+  admin_id: 123456789                        # REQUIRED: Admin's Telegram user ID
+  messages:                                  # Optional: all messages have defaults
     welcome: "👋 Welcome! I'm ready to assist you. Use /mrl followed by your message to start a conversation."
     not_authorized: "🚫 Access denied. Please contact the administrator."
     provide_message: "ℹ️ Please provide a message with your command."
@@ -62,36 +24,6 @@ telegram:
     general_error: "❌ An error occurred. Please try again later."
     history_reset: "🔄 Chat history has been cleared."
 
-
-#------------------------------------------------------------------------------
-# Database Configuration - SQLite settings for chat history and user data      #
-#------------------------------------------------------------------------------
-database:
-  # Basic Settings
-  name: "storage.db"                         # Database filename
-  max_username_len: 64                       # Max username length (1-256)
-  max_history_limit: 50                      # Messages per user (1-100)
-
-  # Connection Settings
-  max_open_conns: 50                         # Max open connections (1-100)
-  max_idle_conns: 10                         # Max idle connections (≤ max_open_conns)
-  conn_max_lifetime: "1h"                    # Connection lifetime (1s-24h)
-
-  # Timeouts
-  operation_timeout: "5s"                    # Standard operation timeout (1-30s)
-  long_operation_timeout: "30s"              # Long operation timeout (1-60s)
-
-  # SQLite Optimizations
-  journal_mode: "WAL"                        # Write-Ahead Logging mode (DELETE|TRUNCATE|PERSIST|MEMORY|WAL|OFF)
-  synchronous: "NORMAL"                      # Sync mode (OFF|NORMAL|FULL|EXTRA)
-  foreign_keys: true                         # Enable foreign key constraints
-  temp_store: "MEMORY"                       # Temp storage (DEFAULT|FILE|MEMORY)
-  cache_size_kb: 2000                        # Cache size in KB (1-10000)
-
-
-#------------------------------------------------------------------------------
-# Logging Configuration - Application logging settings                         #
-#------------------------------------------------------------------------------
 log:
-  level: "info"                              # Log level (debug, info, warn, error)
-  format: "json"                             # Log format (json, text)
+  level: "info"                              # Optional: debug, info, warn, or error
+  format: "json"                             # Optional: json or text

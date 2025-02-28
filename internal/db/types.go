@@ -1,31 +1,38 @@
-// Package db provides persistent storage for chat interactions.
 package db
 
 import (
 	"context"
 	"time"
+
+	"gorm.io/gorm"
 )
 
-type ChatHistory struct {
-	ID        int64     `db:"id"`
-	UserID    int64     `db:"user_id"`
-	UserName  string    `db:"user_name"`
-	UserMsg   string    `db:"user_msg"`
-	BotMsg    string    `db:"bot_msg"`
-	Timestamp time.Time `db:"timestamp"`
+type database struct {
+	db  *gorm.DB
+	cfg *Config
 }
 
-// Database provides thread-safe chat history operations.
+// Config defines database settings
+type Config struct {
+	TempStore   string
+	CacheSizeKB int
+	OpTimeout   time.Duration
+}
+
+// ChatHistory stores a chat interaction record
+type ChatHistory struct {
+	gorm.Model
+	UserID    int64     `gorm:"not null;index"`
+	UserName  string    `gorm:"type:text"`
+	UserMsg   string    `gorm:"not null;type:text"`
+	BotMsg    string    `gorm:"not null;type:text"`
+	Timestamp time.Time `gorm:"not null;index"`
+}
+
+// Database interface for chat history operations
 type Database interface {
-	// GetRecent returns newest messages first
 	GetRecent(ctx context.Context, limit int) ([]ChatHistory, error)
-
-	// Save stores a new chat interaction
-	Save(ctx context.Context, userID int64, userName, userMsg, botMsg string) error
-
-	// DeleteAll removes all chat history (cannot be undone)
+	Save(ctx context.Context, userID int64, userName string, userMsg, botMsg string) error
 	DeleteAll(ctx context.Context) error
-
-	// Close releases database resources
 	Close() error
 }

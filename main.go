@@ -1,8 +1,8 @@
-// Package main implements a Telegram bot with AI capabilities.
 package main
 
 import (
 	"context"
+	"log/slog"
 	"os"
 	"os/signal"
 	"syscall"
@@ -14,86 +14,65 @@ import (
 	"github.com/edgard/murailobot/internal/utils"
 )
 
-const componentName = "main"
-
 func main() {
-	config, err := config.Load()
+	logger := slog.New(slog.NewJSONHandler(os.Stderr, nil))
+	slog.SetDefault(logger)
+
+	cfg, err := config.LoadConfig()
 	if err != nil {
-		utils.ErrorLog(componentName, "failed to load configuration", err,
-			utils.KeyAction, "load_config")
+		slog.Error("failed to load configuration", "error", err)
 		os.Exit(1)
 	}
 
-	logCfg := &utils.LogConfig{
-		Level:  config.Log.Level,
-		Format: config.Log.Format,
-	}
-	if err := utils.Setup(logCfg); err != nil {
-		utils.ErrorLog(componentName, "failed to initialize logger", err,
-			utils.KeyAction, "init_logger")
+	if err := utils.Setup(cfg); err != nil {
+		slog.Error("failed to setup logger", "error", err)
 		os.Exit(1)
 	}
 
-	database, err := db.New(config)
+	database, err := db.New(nil) // Use db package defaults
 	if err != nil {
-		utils.ErrorLog(componentName, "failed to initialize database", err,
-			utils.KeyAction, "init_database")
+		slog.Error("failed to initialize database", "error", err)
 		os.Exit(1)
 	}
-	defer database.Close()
-
-	aiClient, err := ai.New(&config.AI, database)
-	if err != nil {
-		utils.ErrorLog(componentName, "failed to initialize AI client", err,
-			utils.KeyAction, "init_ai")
-		os.Exit(1)
-	}
-
-	var bot telegram.BotService
-	bot, err = telegram.New(config, database, aiClient)
-	if err != nil {
-		utils.ErrorLog(componentName, "failed to initialize bot", err,
-			utils.KeyAction, "init_bot")
-		os.Exit(1)
-	}
-
-	// Handle SIGINT/SIGTERM for graceful shutdown
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
-
-	go func() {
-		defer func() {
-			signal.Stop(sigChan)
-			close(sigChan)
-		}()
-
-		for {
-			select {
-			case sig, ok := <-sigChan:
-				if !ok {
-					return
-				}
-				utils.InfoLog(componentName, "received shutdown signal",
-					utils.KeyAction, "shutdown",
-					utils.KeyReason, sig.String())
-				cancel()
-				return
-			case <-ctx.Done():
-				return
-			}
+	defer func() {
+		if err := database.Close(); err != nil {
+			slog.Error("failed to close database", "error", err)
 		}
 	}()
 
-	if err := bot.Start(ctx); err != nil {
-		utils.ErrorLog(componentName, "bot error", err,
-			utils.KeyAction, "run_bot")
+	aiClient, err := ai.New(cfg, database)
+	if err != nil {
+		slog.Error("failed to initialize AI client", "error", err)
 		os.Exit(1)
 	}
 
-	utils.InfoLog(componentName, "bot stopped",
-		utils.KeyAction, "shutdown",
-		utils.KeyResult, "shutdown_complete")
+	bot, err := telegram.New(cfg, database, aiClient)
+	if err != nil {
+		slog.Error("failed to initialize Telegram bot", "error", err)
+		os.Exit(1)
+	}
+
+	slog.Info("application initialized successfully")
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	go func() {
+		quit := make(chan os.Signal, 1)
+		signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+		sig := <-quit
+		slog.Info("received shutdown signal", "signal", sig)
+		cancel()
+	}()
+
+	if err := bot.Start(ctx); err != nil {
+		if err != context.Canceled {
+			slog.Error("bot stopped with error", "error", err)
+			os.Exit(1)
+		} else {
+			slog.Info("bot stopped due to context cancellation")
+		}
+	}
+
+	slog.Info("application shutdown complete")
 }

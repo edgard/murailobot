@@ -2,17 +2,40 @@ package ai
 
 import (
 	"context"
+	"time"
 
+	"github.com/edgard/murailobot/internal/db"
 	"github.com/sashabaranov/go-openai"
 )
 
-// Service provides AI chat functionality with message history.
-type Service interface {
-	Generate(ctx context.Context, userID int64, userName string, userMsg string) (string, error)
-	Sanitize(response string) string
+// Non-retryable OpenAI API errors
+var invalidRequestErrors = []string{
+	"invalid_request_error",
+	"context_length_exceeded",
+	"rate_limit_exceeded",
+	"invalid_api_key",
+	"organization_not_found",
 }
 
-// CompletionService abstracts OpenAI API operations for testing and provider switching.
-type CompletionService interface {
-	CreateChatCompletion(ctx context.Context, request openai.ChatCompletionRequest) (openai.ChatCompletionResponse, error)
+type client struct {
+	openaiClient *openai.Client
+	model        string
+	temperature  float32
+	instruction  string
+	db           db.Database
+	timeout      time.Duration
+}
+
+// Service defines AI service interface
+type Service interface {
+	Generate(ctx context.Context, userID int64, userName string, userMsg string) (string, error)
+}
+
+type Config struct {
+	Token       string        `yaml:"token"`
+	BaseURL     string        `yaml:"base_url"`
+	Model       string        `yaml:"model"`
+	Temperature float32       `yaml:"temperature"`
+	Instruction string        `yaml:"instruction"`
+	Timeout     time.Duration `yaml:"timeout"`
 }
