@@ -56,6 +56,11 @@ jobs:
           release_branches: master
           tag_prefix: ''
 
+      # Fetch the newly created tag
+      - name: Fetch tags
+        if: steps.tag_version.outputs.new_tag
+        run: git fetch --tags origin
+
       # Only run release if a new version was created
       - name: Set up QEMU
         if: steps.tag_version.outputs.new_tag
