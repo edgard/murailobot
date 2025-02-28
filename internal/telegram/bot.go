@@ -67,7 +67,9 @@ func (b *bot) Start(ctx context.Context) error {
 		return fmt.Errorf("failed to set bot commands: %w", err)
 	}
 
-	slog.Info("bot started successfully")
+	slog.Info("bot started successfully",
+		"bot_username", b.api.Self.UserName,
+		"admin_id", b.cfg.AdminID)
 
 	for {
 		select {

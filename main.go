@@ -14,6 +14,14 @@ import (
 	"github.com/edgard/murailobot/internal/utils"
 )
 
+// Add build information variables
+var (
+	version = "dev"
+	commit  = "none"
+	date    = "unknown"
+	builtBy = "unknown"
+)
+
 func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stderr, nil))
 	slog.SetDefault(logger)
@@ -52,7 +60,11 @@ func main() {
 		os.Exit(1)
 	}
 
-	slog.Info("application initialized successfully")
+	slog.Info("application initialized successfully",
+		"version", version,
+		"commit", commit,
+		"build_date", date,
+		"built_by", builtBy)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
