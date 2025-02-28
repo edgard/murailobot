@@ -5,18 +5,27 @@ before:
   hooks:
     - go mod tidy
     - go mod download
+    - go generate ./...
+    - go vet ./...
+    - golangci-lint run
+    - go test ./...
 
 builds:
   - main: .
     binary: murailobot
     env:
-      - GO111MODULE=on
+      - CGO_ENABLED=1
     goos:
       - linux
     goarch:
       - amd64
+      - arm64
     ldflags:
       - -s -w
+      - -X main.version={{.Version}}
+      - -X main.commit={{.Commit}}
+      - -X main.date={{.Date}}
+      - -X main.builtBy=goreleaser
 
 archives:
   - name_template: "{{ .ProjectName }}-{{ .Version }}.{{ .Os }}-{{ .Arch }}{{ if .Arm }}v{{ .Arm }}{{ end }}"
@@ -26,6 +35,11 @@ archives:
         format: zip
     files:
       - LICENSE
+      - README.md
+
+checksum:
+  name_template: "checksums.txt"
+  algorithm: sha256
 
 dockers:
   - use: buildx
@@ -39,7 +53,7 @@ dockers:
       - ghcr.io/edgard/{{ .ProjectName }}:latest
     build_flag_templates:
       - --pull
-      - --platform=linux/amd64
+      - --platform=linux/amd64,linux/arm64
       - --label=org.opencontainers.image.created={{ .Date }}
       - --label=org.opencontainers.image.title={{ .ProjectName }}
       - --label=org.opencontainers.image.description={{ .ProjectName }} {{ .Version }} {{ .Date }}
@@ -61,15 +75,30 @@ dockers:
       - --annotation=index:org.opencontainers.image.vendor="edgard"
       - --annotation=index:org.opencontainers.image.base.name="scratch"
 
-checksum:
-  name_template: "sha256sums.txt"
-  algorithm: sha256
+release:
+  github:
+    owner: edgard
+    name: murailobot
+  draft: false
+  prerelease: auto
+  discussion_category_name: Releases
 
 changelog:
   sort: asc
+  use: github
+  groups:
+    - title: Features
+      regexp: '^.*?feat(\([[:word:]]+\))??!?:.+$'
+      order: 0
+    - title: Bug fixes
+      regexp: '^.*?fix(\([[:word:]]+\))??!?:.+$'
+      order: 1
+    - title: Others
+      order: 999
   filters:
     exclude:
       - "^docs:"
       - "^test:"
+      - "^chore:"
       - Merge pull request
       - Merge branch
