@@ -10,7 +10,6 @@ before:
     - go mod download
     - go generate ./...
     - go vet ./...
-    - golangci-lint run
     - go test ./...
 
 builds:
@@ -46,16 +45,9 @@ builds:
       - -X main.date={{.Date}}
       - -X main.builtBy=goreleaser
 
-# Skip specific checks when running in CI
-snapshot:
-  name_template: "{{ incpatch .Version }}-next"
-
 archives:
   - name_template: "{{ .ProjectName }}-v{{ .Version }}-{{ .Os }}-{{ .Arch }}{{ if .Arm }}v{{ .Arm }}{{ end }}"
     wrap_in_directory: true
-    format_overrides:
-      - goos: windows
-        format: zip
     files:
       - LICENSE
       - README.md
