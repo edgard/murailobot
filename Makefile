@@ -5,7 +5,7 @@ COMMIT=$(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 DATE=$(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
 LDFLAGS=-s -w -X main.version=${VERSION} -X main.commit=${COMMIT} -X main.date=${DATE} -X main.builtBy=makefile
 
-.PHONY: all default build clean test lint vet mod generate release snapshot docker-build help
+.PHONY: all default build clean test lint vet mod generate release snapshot help
 
 default: all
 
@@ -23,7 +23,6 @@ help:
 	@echo "  generate      - Run go generate"
 	@echo "  release       - Create a new release using goreleaser"
 	@echo "  snapshot      - Create a snapshot release using goreleaser"
-	@echo "  docker-build  - Build Docker image locally"
 
 build:
 	CGO_ENABLED=1 go build -ldflags "${LDFLAGS}" -o ${BINARY_NAME} .
@@ -53,6 +52,3 @@ release:
 
 snapshot:
 	goreleaser release --snapshot --clean
-
-docker-build:
-	docker build -t ghcr.io/edgard/${BINARY_NAME}:latest .

@@ -11,9 +11,9 @@ before:
     - go test ./...
 
 builds:
-  - id: amd64
+  - id: "{{ .ProjectName }}-amd64"
     main: .
-    binary: murailobot
+    binary: "{{ .ProjectName }}"
     env:
       - CGO_ENABLED=1
     goos:
@@ -26,9 +26,9 @@ builds:
       - -X main.commit={{.Commit}}
       - -X main.date={{.Date}}
       - -X main.builtBy=goreleaser
-  - id: arm64
+  - id: "{{ .ProjectName }}-arm64"
     main: .
-    binary: murailobot
+    binary: "{{ .ProjectName }}"
     env:
       - CGO_ENABLED=1
       - CC=aarch64-linux-gnu-gcc
@@ -44,7 +44,7 @@ builds:
       - -X main.builtBy=goreleaser
 
 archives:
-  - name_template: "{{ .ProjectName }}-{{ .Version }}.{{ .Os }}-{{ .Arch }}{{ if .Arm }}v{{ .Arm }}{{ end }}"
+  - name_template: "{{ .ProjectName }}-v{{ .Version }}-{{ .Os }}-{{ .Arch }}{{ if .Arm }}v{{ .Arm }}{{ end }}"
     wrap_in_directory: true
     format_overrides:
       - goos: windows
@@ -54,7 +54,7 @@ archives:
       - README.md
 
 checksum:
-  name_template: "checksums.txt"
+  name_template: "{{ .ProjectName }}-v{{ .Version }}_checksums.txt"
   algorithm: sha256
 
 dockers:
@@ -62,17 +62,13 @@ dockers:
     goos: linux
     goarch: amd64
     ids:
-      - amd64
-      - arm64
-    dockerfile: Dockerfile
+      - "{{ .ProjectName }}-amd64"
+    dockerfile: Dockerfile.amd64
     image_templates:
-      - ghcr.io/edgard/{{ .ProjectName }}:{{ .Tag }}
-      - ghcr.io/edgard/{{ .ProjectName }}:{{ .Major }}
-      - ghcr.io/edgard/{{ .ProjectName }}:{{ .Major }}.{{ .Minor }}
-      - ghcr.io/edgard/{{ .ProjectName }}:latest
+      - ghcr.io/edgard/{{ .ProjectName }}:v{{ .Version }}-amd64
     build_flag_templates:
       - --pull
-      - --platform=linux/amd64,linux/arm64
+      - --platform=linux/amd64
       - --label=org.opencontainers.image.created={{ .Date }}
       - --label=org.opencontainers.image.title={{ .ProjectName }}
       - --label=org.opencontainers.image.description={{ .ProjectName }} {{ .Version }} {{ .Date }}
@@ -94,10 +90,63 @@ dockers:
       - --annotation=index:org.opencontainers.image.vendor="edgard"
       - --annotation=index:org.opencontainers.image.base.name="scratch"
 
+  - use: buildx
+    goos: linux
+    goarch: arm64
+    ids:
+      - "{{ .ProjectName }}-arm64"
+    dockerfile: Dockerfile.arm64
+    image_templates:
+      - ghcr.io/edgard/{{ .ProjectName }}:v{{ .Version }}-arm64
+    build_flag_templates:
+      - --pull
+      - --platform=linux/arm64
+      - --label=org.opencontainers.image.created={{ .Date }}
+      - --label=org.opencontainers.image.title={{ .ProjectName }}
+      - --label=org.opencontainers.image.description={{ .ProjectName }} {{ .Version }} {{ .Date }}
+      - --label=org.opencontainers.image.revision={{ .FullCommit }}
+      - --label=org.opencontainers.image.version={{ .Version }}
+      - --label=org.opencontainers.image.source=https://github.com/edgard/{{ .ProjectName }}
+      - --label=org.opencontainers.image.url=https://github.com/edgard/{{ .ProjectName }}
+      - --label=org.opencontainers.image.licenses=MIT
+      - --label=org.opencontainers.image.vendor=edgard
+      - --label=org.opencontainers.image.base.name=scratch
+      - --annotation=index:org.opencontainers.image.created="{{ .Date }}"
+      - --annotation=index:org.opencontainers.image.title="{{ .ProjectName }}"
+      - --annotation=index:org.opencontainers.image.description="{{ .ProjectName }} {{ .Version }} {{ .Date }}"
+      - --annotation=index:org.opencontainers.image.revision="{{ .FullCommit }}"
+      - --annotation=index:org.opencontainers.image.version="{{ .Version }}"
+      - --annotation=index:org.opencontainers.image.source="https://github.com/edgard/{{ .ProjectName }}"
+      - --annotation=index:org.opencontainers.image.url="https://github.com/edgard/{{ .ProjectName }}"
+      - --annotation=index:org.opencontainers.image.licenses="MIT"
+      - --annotation=index:org.opencontainers.image.vendor="edgard"
+      - --annotation=index:org.opencontainers.image.base.name="scratch"
+
+docker_manifests:
+  - name_template: ghcr.io/edgard/{{ .ProjectName }}:v{{ .Version }}
+    image_templates:
+      - ghcr.io/edgard/{{ .ProjectName }}:v{{ .Version }}-amd64
+      - ghcr.io/edgard/{{ .ProjectName }}:v{{ .Version }}-arm64
+
+  - name_template: ghcr.io/edgard/{{ .ProjectName }}:v{{ .Major }}
+    image_templates:
+      - ghcr.io/edgard/{{ .ProjectName }}:v{{ .Version }}-amd64
+      - ghcr.io/edgard/{{ .ProjectName }}:v{{ .Version }}-arm64
+
+  - name_template: ghcr.io/edgard/{{ .ProjectName }}:v{{ .Major }}.{{ .Minor }}
+    image_templates:
+      - ghcr.io/edgard/{{ .ProjectName }}:v{{ .Version }}-amd64
+      - ghcr.io/edgard/{{ .ProjectName }}:v{{ .Version }}-arm64
+
+  - name_template: ghcr.io/edgard/{{ .ProjectName }}:latest
+    image_templates:
+      - ghcr.io/edgard/{{ .ProjectName }}:v{{ .Version }}-amd64
+      - ghcr.io/edgard/{{ .ProjectName }}:v{{ .Version }}-arm64
+
 release:
   github:
     owner: edgard
-    name: murailobot
+    name: "{{ .ProjectName }}"
   draft: false
   prerelease: auto
   discussion_category_name: Releases
