@@ -82,6 +82,42 @@ Environment variables follow the pattern `BOT_SECTION_KEY` where section and key
 - `/mrl <message>` - Generate AI response
 - `/mrl_reset` - Clear chat history (admin only)
 
+## Release Process
+
+This project uses an automated release workflow. Here's how it works:
+
+### Automated Releases
+
+When code is pushed to the `main` branch, the following happens automatically:
+
+1. The CI workflow detects changes in the codebase
+2. Version is automatically bumped based on commit messages:
+   - `fix:` or `fix(scope):` → patch bump
+   - `feat:` or `feat(scope):` → minor bump
+   - `BREAKING CHANGE:` in commit body → major bump
+3. A new git tag is created with the new version
+4. A GitHub release is generated with release notes
+5. Binary artifacts are built for multiple platforms
+6. Docker images are built and pushed to GitHub Container Registry
+
+### For Contributors
+
+- No need to manually create version tags or releases
+- Use [Conventional Commits](https://www.conventionalcommits.org/) format for your commit messages
+- The release type (patch, minor, major) is determined by your commit messages
+
+### Manual Releases
+
+If you need to trigger a release manually or specify a particular version bump:
+
+1. Go to GitHub Actions
+2. Select the "Automated Release" workflow
+3. Click "Run workflow"
+4. Select the branch (usually `main`)
+5. Submit to trigger the workflow
+
+All releases are available on the [Releases](https://github.com/yourusername/murailobot/releases) page.
+
 ## License
 
 MIT License - see [LICENSE](LICENSE) file
