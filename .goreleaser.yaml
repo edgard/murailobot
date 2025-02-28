@@ -44,14 +44,14 @@ builds:
       - -X main.builtBy=goreleaser
 
 archives:
-  - name_template: "{{ .ProjectName }}-v{{ .Version }}-{{ .Os }}-{{ .Arch }}{{ if .Arm }}v{{ .Arm }}{{ end }}"
+  - name_template: "{{ .ProjectName }}-{{ .Version }}-{{ .Os }}-{{ .Arch }}{{ if .Arm }}v{{ .Arm }}{{ end }}"
     wrap_in_directory: true
     files:
       - LICENSE
       - README.md
 
 checksum:
-  name_template: "{{ .ProjectName }}-v{{ .Version }}_checksums.txt"
+  name_template: "{{ .ProjectName }}-{{ .Version }}_checksums.txt"
   algorithm: sha256
 
 dockers:
@@ -62,7 +62,7 @@ dockers:
       - "{{ .ProjectName }}-amd64"
     dockerfile: Dockerfile.amd64
     image_templates:
-      - ghcr.io/edgard/{{ .ProjectName }}:v{{ .Version }}-amd64
+      - ghcr.io/edgard/{{ .ProjectName }}:{{ .Version }}-amd64
     build_flag_templates:
       - --pull
       - --platform=linux/amd64
@@ -84,7 +84,7 @@ dockers:
       - "{{ .ProjectName }}-arm64"
     dockerfile: Dockerfile.arm64
     image_templates:
-      - ghcr.io/edgard/{{ .ProjectName }}:v{{ .Version }}-arm64
+      - ghcr.io/edgard/{{ .ProjectName }}:{{ .Version }}-arm64
     build_flag_templates:
       - --pull
       - --platform=linux/arm64
@@ -100,25 +100,25 @@ dockers:
       - --label=org.opencontainers.image.base.name=arm64v8/debian:bullseye-slim
 
 docker_manifests:
-  - name_template: ghcr.io/edgard/{{ .ProjectName }}:v{{ .Version }}
+  - name_template: ghcr.io/edgard/{{ .ProjectName }}:{{ .Version }}
     image_templates:
-      - ghcr.io/edgard/{{ .ProjectName }}:v{{ .Version }}-amd64
-      - ghcr.io/edgard/{{ .ProjectName }}:v{{ .Version }}-arm64
+      - ghcr.io/edgard/{{ .ProjectName }}:{{ .Version }}-amd64
+      - ghcr.io/edgard/{{ .ProjectName }}:{{ .Version }}-arm64
 
-  - name_template: ghcr.io/edgard/{{ .ProjectName }}:v{{ .Major }}
+  - name_template: ghcr.io/edgard/{{ .ProjectName }}:{{ .Major }}
     image_templates:
-      - ghcr.io/edgard/{{ .ProjectName }}:v{{ .Version }}-amd64
-      - ghcr.io/edgard/{{ .ProjectName }}:v{{ .Version }}-arm64
+      - ghcr.io/edgard/{{ .ProjectName }}:{{ .Version }}-amd64
+      - ghcr.io/edgard/{{ .ProjectName }}:{{ .Version }}-arm64
 
-  - name_template: ghcr.io/edgard/{{ .ProjectName }}:v{{ .Major }}.{{ .Minor }}
+  - name_template: ghcr.io/edgard/{{ .ProjectName }}:{{ .Major }}.{{ .Minor }}
     image_templates:
-      - ghcr.io/edgard/{{ .ProjectName }}:v{{ .Version }}-amd64
-      - ghcr.io/edgard/{{ .ProjectName }}:v{{ .Version }}-arm64
+      - ghcr.io/edgard/{{ .ProjectName }}:{{ .Version }}-amd64
+      - ghcr.io/edgard/{{ .ProjectName }}:{{ .Version }}-arm64
 
   - name_template: ghcr.io/edgard/{{ .ProjectName }}:latest
     image_templates:
-      - ghcr.io/edgard/{{ .ProjectName }}:v{{ .Version }}-amd64
-      - ghcr.io/edgard/{{ .ProjectName }}:v{{ .Version }}-arm64
+      - ghcr.io/edgard/{{ .ProjectName }}:{{ .Version }}-amd64
+      - ghcr.io/edgard/{{ .ProjectName }}:{{ .Version }}-arm64
 
 release:
   github:
@@ -127,7 +127,7 @@ release:
   draft: false
   prerelease: auto
   header: |
-    ## {{ .ProjectName }} v{{ .Version }} ({{ .Date }})
+    ## {{ .ProjectName }} {{ .Version }} ({{ .Date }})
 
     Welcome to this new release!
   footer: |
