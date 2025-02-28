@@ -45,7 +45,7 @@ updates:
         update-types: ["version-update:semver-major"]
 
   - package-ecosystem: "docker"
-    directory: "/"
+    directory: "/docker/amd64"
     schedule:
       interval: "weekly"
     labels:
@@ -68,11 +68,9 @@ updates:
     ignore:
       - dependency-name: "*"
         update-types: ["version-update:semver-major"]
-    updater-options:
-      dockerfile-to-scan: "Dockerfile.amd64"
 
   - package-ecosystem: "docker"
-    directory: "/"
+    directory: "/docker/arm64"
     schedule:
       interval: "weekly"
     labels:
@@ -95,5 +93,3 @@ updates:
     ignore:
       - dependency-name: "*"
         update-types: ["version-update:semver-major"]
-    updater-options:
-      dockerfile-to-scan: "Dockerfile.arm64"

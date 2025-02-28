@@ -8,7 +8,7 @@ on:
       - '**.go'
       - 'go.mod'
       - 'go.sum'
-      - 'Dockerfile.*'
+      - 'docker/*/Dockerfile'
       - 'config.yaml.example'
 
 permissions:
