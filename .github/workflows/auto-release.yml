@@ -10,33 +10,25 @@ permissions:
   packages: write
 
 jobs:
-  validate-and-release:
+  validate:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
           go-version: stable
+          cache: true
 
-      # Code validation and testing steps
-      - name: Tidy and verify modules
+      - name: Validate code
         run: |
           go mod tidy
           go mod verify
-
-      - name: Download dependencies
-        run: go mod download
-
-      - name: Run go generate
-        run: go generate ./...
-
-      - name: Run vet
-        run: go vet ./...
+          go mod download
+          go generate ./...
+          go vet ./...
 
       - name: Lint
         uses: golangci/golangci-lint-action@v6
@@ -46,7 +38,15 @@ jobs:
       - name: Run unit tests
         run: go test -race ./...
 
-      # Create version tag if needed
+  release:
+    needs: validate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
       - name: Bump version and push tag
         id: tag_version
         uses: mathieudutour/github-tag-action@v6.2
@@ -56,37 +56,36 @@ jobs:
           release_branches: master
           tag_prefix: ''
 
-      # Fetch the newly created tag
-      - name: Fetch tags
-        if: steps.tag_version.outputs.new_tag
-        run: git fetch --tags origin
+      # Remaining steps only run if a new tag was created
+      - name: Set up Go
+        if: steps.tag_version.outputs.new_tag != ''
+        uses: actions/setup-go@v5
+        with:
+          go-version: stable
+          cache: true
 
-      # Only run release if a new version was created
-      - name: Set up QEMU
-        if: steps.tag_version.outputs.new_tag
-        uses: docker/setup-qemu-action@v3
-
-      - name: Set up Docker Buildx
-        if: steps.tag_version.outputs.new_tag
+      - name: Set up container build environment
+        if: steps.tag_version.outputs.new_tag != ''
         uses: docker/setup-buildx-action@v3
+        with:
+          platforms: linux/amd64,linux/arm64
 
       - name: Login to GitHub Container Registry
-        if: steps.tag_version.outputs.new_tag
+        if: steps.tag_version.outputs.new_tag != ''
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Install dependencies
-        if: steps.tag_version.outputs.new_tag
+      - name: Install cross-compile dependencies
+        if: steps.tag_version.outputs.new_tag != ''
         run: |
           sudo apt-get update
           sudo apt-get install -y gcc-aarch64-linux-gnu
 
-      # Run GoReleaser with the new tag
       - name: Run GoReleaser
-        if: steps.tag_version.outputs.new_tag
+        if: steps.tag_version.outputs.new_tag != ''
         uses: goreleaser/goreleaser-action@v6
         with:
           distribution: goreleaser
