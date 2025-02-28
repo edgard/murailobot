@@ -1,6 +1,9 @@
 version: 2
 project_name: murailobot
 
+env:
+  - GO111MODULE=on
+
 before:
   hooks:
     - go mod tidy
@@ -42,6 +45,10 @@ builds:
       - -X main.commit={{.Commit}}
       - -X main.date={{.Date}}
       - -X main.builtBy=goreleaser
+
+# Skip specific checks when running in CI
+snapshot:
+  name_template: "{{ incpatch .Version }}-next"
 
 archives:
   - name_template: "{{ .ProjectName }}-v{{ .Version }}-{{ .Os }}-{{ .Arch }}{{ if .Arm }}v{{ .Arm }}{{ end }}"
@@ -130,6 +137,14 @@ release:
   draft: false
   prerelease: auto
   discussion_category_name: Releases
+  header: |
+    ## {{ .ProjectName }} v{{ .Version }} ({{ .Date }})
+
+    Welcome to this new release!
+  footer: |
+    ## Thanks!
+
+    These changes were made possible by our contributors.
 
 changelog:
   sort: asc

@@ -20,6 +20,8 @@ jobs:
 
       - name: Set up Go
         uses: actions/setup-go@v5
+        with:
+          go-version: stable
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -45,7 +47,28 @@ jobs:
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           default_bump: patch
-          release_branches: main
+          release_branches: master
+
+      - name: Verify tag
+        run: |
+          git fetch --tags
+          CURRENT_TAG=${{ steps.tag_version.outputs.new_tag }}
+          CURRENT_COMMIT=$(git rev-parse HEAD)
+          TAG_COMMIT=$(git rev-list -n 1 $CURRENT_TAG || echo "")
+
+          echo "Current Tag: $CURRENT_TAG"
+          echo "Current Commit: $CURRENT_COMMIT"
+          echo "Tag Commit: $TAG_COMMIT"
+
+          if [ "$TAG_COMMIT" != "$CURRENT_COMMIT" ]; then
+            echo "Tag $CURRENT_TAG was not properly attached to current commit $CURRENT_COMMIT"
+            exit 1
+          fi
+
+      - name: Set environment variables for GoReleaser
+        run: |
+          echo "GITHUB_REPOSITORY_OWNER=$(echo $GITHUB_REPOSITORY | cut -d '/' -f 1)" >> $GITHUB_ENV
+          echo "GITHUB_REPOSITORY_NAME=$(echo $GITHUB_REPOSITORY | cut -d '/' -f 2)" >> $GITHUB_ENV
 
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v6
