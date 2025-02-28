@@ -1,6 +1,6 @@
 module github.com/edgard/murailobot
 
-go 1.21
+go 1.21.7
 
 require (
 	github.com/go-playground/validator/v10 v10.25.0
