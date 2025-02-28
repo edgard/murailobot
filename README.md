@@ -106,16 +106,6 @@ When code is pushed to the `main` branch, the following happens automatically:
 - Use [Conventional Commits](https://www.conventionalcommits.org/) format for your commit messages
 - The release type (patch, minor, major) is determined by your commit messages
 
-### Manual Releases
-
-If you need to trigger a release manually or specify a particular version bump:
-
-1. Go to GitHub Actions
-2. Select the "Automated Release" workflow
-3. Click "Run workflow"
-4. Select the branch (usually `main`)
-5. Submit to trigger the workflow
-
 All releases are available on the [Releases](https://github.com/yourusername/murailobot/releases) page.
 
 ## License
