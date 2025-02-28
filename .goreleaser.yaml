@@ -20,7 +20,7 @@ builds:
     ldflags:
       - -s -w
       - -X main.version={{.Version}}
-      - -X main.commit={{.Commit}}
+      - -X main.commit={{.ShortCommit}}
       - -X main.date={{.Date}}
       - -X main.builtBy=goreleaser
   - id: "{{ .ProjectName }}-arm64"
@@ -35,7 +35,7 @@ builds:
     ldflags:
       - -s -w
       - -X main.version={{.Version}}
-      - -X main.commit={{.Commit}}
+      - -X main.commit={{.ShortCommit}}
       - -X main.date={{.Date}}
       - -X main.builtBy=goreleaser
 
