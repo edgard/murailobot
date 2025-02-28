@@ -1,4 +1,4 @@
-FROM arm64v8/debian:bullseye-slim
+FROM --platform=linux/arm64 arm64v8/debian:bullseye-slim
 
 RUN apt-get update && apt-get install -y \
     libsqlite3-0 \

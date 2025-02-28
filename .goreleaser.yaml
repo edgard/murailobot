@@ -78,17 +78,7 @@ dockers:
       - --label=org.opencontainers.image.url=https://github.com/edgard/{{ .ProjectName }}
       - --label=org.opencontainers.image.licenses=MIT
       - --label=org.opencontainers.image.vendor=edgard
-      - --label=org.opencontainers.image.base.name=scratch
-      - --annotation=index:org.opencontainers.image.created="{{ .Date }}"
-      - --annotation=index:org.opencontainers.image.title="{{ .ProjectName }}"
-      - --annotation=index:org.opencontainers.image.description="{{ .ProjectName }} {{ .Version }} {{ .Date }}"
-      - --annotation=index:org.opencontainers.image.revision="{{ .FullCommit }}"
-      - --annotation=index:org.opencontainers.image.version="{{ .Version }}"
-      - --annotation=index:org.opencontainers.image.source="https://github.com/edgard/{{ .ProjectName }}"
-      - --annotation=index:org.opencontainers.image.url="https://github.com/edgard/{{ .ProjectName }}"
-      - --annotation=index:org.opencontainers.image.licenses="MIT"
-      - --annotation=index:org.opencontainers.image.vendor="edgard"
-      - --annotation=index:org.opencontainers.image.base.name="scratch"
+      - --label=org.opencontainers.image.base.name=debian:bullseye-slim
 
   - use: buildx
     goos: linux
@@ -110,17 +100,7 @@ dockers:
       - --label=org.opencontainers.image.url=https://github.com/edgard/{{ .ProjectName }}
       - --label=org.opencontainers.image.licenses=MIT
       - --label=org.opencontainers.image.vendor=edgard
-      - --label=org.opencontainers.image.base.name=scratch
-      - --annotation=index:org.opencontainers.image.created="{{ .Date }}"
-      - --annotation=index:org.opencontainers.image.title="{{ .ProjectName }}"
-      - --annotation=index:org.opencontainers.image.description="{{ .ProjectName }} {{ .Version }} {{ .Date }}"
-      - --annotation=index:org.opencontainers.image.revision="{{ .FullCommit }}"
-      - --annotation=index:org.opencontainers.image.version="{{ .Version }}"
-      - --annotation=index:org.opencontainers.image.source="https://github.com/edgard/{{ .ProjectName }}"
-      - --annotation=index:org.opencontainers.image.url="https://github.com/edgard/{{ .ProjectName }}"
-      - --annotation=index:org.opencontainers.image.licenses="MIT"
-      - --annotation=index:org.opencontainers.image.vendor="edgard"
-      - --annotation=index:org.opencontainers.image.base.name="scratch"
+      - --label=org.opencontainers.image.base.name=arm64v8/debian:bullseye-slim
 
 docker_manifests:
   - name_template: ghcr.io/edgard/{{ .ProjectName }}:v{{ .Version }}
