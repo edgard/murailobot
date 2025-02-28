@@ -106,7 +106,7 @@ When code is pushed to the `main` branch, the following happens automatically:
 - Use [Conventional Commits](https://www.conventionalcommits.org/) format for your commit messages
 - The release type (patch, minor, major) is determined by your commit messages
 
-All releases are available on the [Releases](https://github.com/yourusername/murailobot/releases) page.
+All releases are available on the [Releases](https://github.com/edgard/murailobot/releases) page.
 
 ## License
 
