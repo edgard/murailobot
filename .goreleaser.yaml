@@ -11,7 +11,8 @@ before:
     - go test ./...
 
 builds:
-  - main: .
+  - id: amd64
+    main: .
     binary: murailobot
     env:
       - CGO_ENABLED=1
@@ -19,6 +20,21 @@ builds:
       - linux
     goarch:
       - amd64
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+      - -X main.commit={{.Commit}}
+      - -X main.date={{.Date}}
+      - -X main.builtBy=goreleaser
+  - id: arm64
+    main: .
+    binary: murailobot
+    env:
+      - CGO_ENABLED=1
+      - CC=aarch64-linux-gnu-gcc
+    goos:
+      - linux
+    goarch:
       - arm64
     ldflags:
       - -s -w
@@ -45,6 +61,9 @@ dockers:
   - use: buildx
     goos: linux
     goarch: amd64
+    ids:
+      - amd64
+      - arm64
     dockerfile: Dockerfile
     image_templates:
       - ghcr.io/edgard/{{ .ProjectName }}:{{ .Tag }}
