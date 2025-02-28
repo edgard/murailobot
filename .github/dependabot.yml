@@ -11,16 +11,28 @@ updates:
       prefix: "chore(ci)"
       include: "scope"
     open-pull-requests-limit: 10
+    groups:
+      github-actions:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: "gomod"
     directory: "/"
-    schedule: "weekly"
+    schedule:
+      interval: "weekly"
     labels:
       - "dependencies"
       - "go"
     commit-message:
       prefix: "chore(deps)"
       include: "scope"
+    open-pull-requests-limit: 10
     groups:
       go-minor-patch:
         patterns:
@@ -43,11 +55,19 @@ updates:
     commit-message:
       prefix: "chore(docker)"
       include: "scope"
+    open-pull-requests-limit: 10
+    groups:
+      docker-amd64:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
     allow:
       - dependency-type: "direct"
     ignore:
       - dependency-name: "*"
-        update-types: ["version-update:semver-patch"]
+        update-types: ["version-update:semver-major"]
     updater-options:
       dockerfile-to-scan: "Dockerfile.amd64"
 
@@ -62,10 +82,18 @@ updates:
     commit-message:
       prefix: "chore(docker)"
       include: "scope"
+    open-pull-requests-limit: 10
+    groups:
+      docker-arm64:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
     allow:
       - dependency-type: "direct"
     ignore:
       - dependency-name: "*"
-        update-types: ["version-update:semver-patch"]
+        update-types: ["version-update:semver-major"]
     updater-options:
       dockerfile-to-scan: "Dockerfile.arm64"
