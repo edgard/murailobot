@@ -51,7 +51,7 @@ archives:
       - README.md
 
 checksum:
-  name_template: "{{ .ProjectName }}-{{ .Version }}_checksums.txt"
+  name_template: "sha256sums.txt"
   algorithm: sha256
 
 dockers:
