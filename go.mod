@@ -11,7 +11,7 @@ require (
 	github.com/knadh/koanf/providers/file v1.1.2
 	github.com/knadh/koanf/v2 v2.1.2
 	github.com/microcosm-cc/bluemonday v1.0.27
-	github.com/sashabaranov/go-openai v1.37.0
+	github.com/sashabaranov/go-openai v1.38.0
 	github.com/yuin/goldmark v1.7.8
 	gorm.io/driver/sqlite v1.5.7
 	gorm.io/gorm v1.25.12
