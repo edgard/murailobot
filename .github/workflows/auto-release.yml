@@ -39,20 +39,12 @@ jobs:
         run: go vet ./...
 
       - name: Lint
-        uses: golangci/golangci-lint-action@v3
+        uses: golangci/golangci-lint-action@v6
         with:
           version: latest
-          skip-pkg-cache: true
-          skip-build-cache: true
 
       - name: Run unit tests
-        run: go test -race -coverprofile=coverage.txt -covermode=atomic ./...
-
-      - name: Upload coverage report
-        uses: codecov/codecov-action@v3
-        with:
-          file: ./coverage.txt
-          fail_ci_if_error: false
+        run: go test -race ./...
 
       # Create version tag if needed
       - name: Bump version and push tag
