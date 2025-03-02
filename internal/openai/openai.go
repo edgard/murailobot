@@ -1,4 +1,4 @@
-package ai
+package openai
 
 import (
 	"context"
@@ -13,47 +13,47 @@ import (
 	"github.com/sashabaranov/go-openai"
 )
 
-// New creates a new AI client instance.
+// New creates a new OpenAI client instance.
 func New(cfg *config.Config, db db.Database) (*Client, error) {
 	if cfg == nil {
 		return nil, ErrNilConfig
 	}
 
-	config := openai.DefaultConfig(cfg.AIToken)
-	config.BaseURL = cfg.AIBaseURL
-	httpClientTimeout := max(cfg.AITimeout/httpClientTimeoutDivisor, minHTTPClientTimeout)
-	config.HTTPClient = &http.Client{
+	openAICfg := openai.DefaultConfig(cfg.OpenAIToken)
+	openAICfg.BaseURL = cfg.OpenAIBaseURL
+	httpClientTimeout := max(cfg.OpenAITimeout/HTTPClientTimeoutDivisor, MinHTTPClientTimeout)
+	openAICfg.HTTPClient = &http.Client{
 		Timeout: httpClientTimeout,
 	}
 
 	c := &Client{
-		openaiClient: openai.NewClientWithConfig(config),
-		model:        cfg.AIModel,
-		temperature:  cfg.AITemperature,
-		instruction:  cfg.AIInstruction,
+		openAIClient: openai.NewClientWithConfig(openAICfg),
+		model:        cfg.OpenAIModel,
+		temperature:  cfg.OpenAITemperature,
+		instruction:  cfg.OpenAIInstruction,
 		db:           db,
-		timeout:      cfg.AITimeout,
+		timeout:      cfg.OpenAITimeout,
 	}
 
 	return c, nil
 }
 
-// Generate implements the Service interface.
+// Generate implements the OpenAIService interface.
 func (c *Client) Generate(ctx context.Context, userID int64, userName string, userMsg string) (string, error) {
 	userMsg = strings.TrimSpace(userMsg)
 	if userMsg == "" {
 		return "", ErrEmptyUserMessage
 	}
 
-	historyCtx, cancel := context.WithTimeout(ctx, chatHistoryTimeout)
+	historyCtx, cancel := context.WithTimeout(ctx, ChatHistoryTimeout)
 	defer cancel()
 
-	history, err := c.db.GetRecent(historyCtx, recentHistoryCount)
+	history, err := c.db.GetRecent(historyCtx, RecentHistoryCount)
 	if err != nil {
 		return "", fmt.Errorf("failed to retrieve chat history: %w", err)
 	}
 
-	messages := make([]openai.ChatCompletionMessage, 0, messagesSliceCapacity)
+	messages := make([]openai.ChatCompletionMessage, 0, MessagesSliceCapacity)
 	messages = append(messages, openai.ChatCompletionMessage{
 		Role:    "system",
 		Content: c.instruction,
@@ -84,7 +84,7 @@ func (c *Client) Generate(ctx context.Context, userID int64, userName string, us
 	})
 
 	return retryWithBackoff(ctx, func() (string, error) {
-		resp, err := c.openaiClient.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
+		resp, err := c.openAIClient.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
 			Model:       c.model,
 			Messages:    messages,
 			Temperature: c.temperature,
@@ -94,7 +94,7 @@ func (c *Client) Generate(ctx context.Context, userID int64, userName string, us
 		}
 
 		if len(resp.Choices) == 0 {
-			return "", ErrNoResponseChoices
+			return "", ErrNoChoices
 		}
 
 		response := utils.Sanitize(resp.Choices[0].Message.Content)
@@ -106,7 +106,7 @@ func (c *Client) Generate(ctx context.Context, userID int64, userName string, us
 	})
 }
 
-// formatHistory formats chat history for AI context.
+// formatHistory formats chat history for OpenAI context.
 func (c *Client) formatHistory(history []db.ChatHistory) []openai.ChatCompletionMessage {
 	if len(history) == 0 {
 		return nil
@@ -130,7 +130,7 @@ func (c *Client) formatHistory(history []db.ChatHistory) []openai.ChatCompletion
 		return nil
 	}
 
-	messages := make([]openai.ChatCompletionMessage, 0, len(validMsgs)*messagesPerHistory)
+	messages := make([]openai.ChatCompletionMessage, 0, len(validMsgs)*MessagesPerHistory)
 
 	for i := len(validMsgs) - 1; i >= 0; i-- {
 		msg := validMsgs[i]
@@ -171,7 +171,7 @@ func isPermanentAPIError(err error) (bool, error) {
 	}
 
 	errStr := err.Error()
-	for _, errType := range invalidRequestErrors {
+	for _, errType := range InvalidRequestErrors {
 		if strings.Contains(errStr, errType) {
 			return true, fmt.Errorf("permanent API error: %w", err)
 		}
@@ -186,9 +186,9 @@ func retryWithBackoff(ctx context.Context, op func() (string, error)) (string, e
 
 	var lastErr error
 
-	backoff := initialBackoffDuration
+	backoff := InitialBackoffDuration
 
-	for attempt < retryMaxAttempts {
+	for attempt < RetryMaxAttempts {
 		select {
 		case <-ctx.Done():
 			return "", fmt.Errorf("context error: %w", ctx.Err())
@@ -208,7 +208,7 @@ func retryWithBackoff(ctx context.Context, op func() (string, error)) (string, e
 		lastErr = err
 		attempt++
 
-		if attempt < retryMaxAttempts {
+		if attempt < RetryMaxAttempts {
 			timer := time.NewTimer(backoff)
 			select {
 			case <-ctx.Done():
@@ -221,5 +221,5 @@ func retryWithBackoff(ctx context.Context, op func() (string, error)) (string, e
 		}
 	}
 
-	return "", fmt.Errorf("all %d API attempts failed: %w", retryMaxAttempts, lastErr)
+	return "", fmt.Errorf("all %d API attempts failed: %w", RetryMaxAttempts, lastErr)
 }

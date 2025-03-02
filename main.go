@@ -8,9 +8,9 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/edgard/murailobot/internal/ai"
 	"github.com/edgard/murailobot/internal/config"
 	"github.com/edgard/murailobot/internal/db"
+	"github.com/edgard/murailobot/internal/openai"
 	"github.com/edgard/murailobot/internal/telegram"
 	"github.com/edgard/murailobot/internal/utils"
 )
@@ -61,14 +61,14 @@ func run() int {
 		}
 	}()
 
-	aiClient, err := ai.New(cfg, database)
+	openAIClient, err := openai.New(cfg, database)
 	if err != nil {
-		slog.Error("failed to initialize AI client", "error", err)
+		slog.Error("failed to initialize OpenAI client", "error", err)
 
 		return 1
 	}
 
-	bot, err := telegram.New(cfg, database, aiClient)
+	bot, err := telegram.New(cfg, database, openAIClient)
 	if err != nil {
 		slog.Error("failed to initialize Telegram bot", "error", err)
 

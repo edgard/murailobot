@@ -54,9 +54,9 @@ func (b *Bot) handleMessage(ctx context.Context, msg *tgbotapi.Message) error {
 
 	go b.SendContinuousTyping(ctx, msg.Chat.ID)
 
-	response, err := b.ai.Generate(ctx, msg.From.ID, userName, text)
+	response, err := b.openAI.Generate(ctx, msg.From.ID, userName, text)
 	if err != nil {
-		slog.Error("failed to generate AI response",
+		slog.Error("failed to generate OpenAI response",
 			"error", err,
 			"user_id", msg.From.ID,
 			"chat_id", msg.Chat.ID)
@@ -73,7 +73,7 @@ func (b *Bot) handleMessage(ctx context.Context, msg *tgbotapi.Message) error {
 				"user_id", msg.From.ID)
 		}
 
-		return fmt.Errorf("AI generation failed: %w", err)
+		return fmt.Errorf("OpenAI generation failed: %w", err)
 	}
 
 	// Save history but continue if save fails
@@ -84,12 +84,12 @@ func (b *Bot) handleMessage(ctx context.Context, msg *tgbotapi.Message) error {
 	}
 
 	reply := tgbotapi.NewMessage(msg.Chat.ID, response)
-	if err := b.sendMessage(reply, "failed to send AI response"); err != nil {
-		slog.Error("failed to send AI response",
+	if err := b.sendMessage(reply, "failed to send OpenAI response"); err != nil {
+		slog.Error("failed to send OpenAI response",
 			"error", err,
 			"user_id", msg.From.ID)
 
-		return fmt.Errorf("failed to send AI response: %w", err)
+		return fmt.Errorf("failed to send OpenAI response: %w", err)
 	}
 
 	return nil

@@ -57,31 +57,31 @@ var (
 	horizontalRuleRegex   = regexp.MustCompile("^[\\*\\-_]{" + strconv.Itoa(minHorizontalRuleLength) + ",}$")
 
 	// Code block patterns.
-	regexFencedCodeBlocks = regexp.MustCompile("```[\\s\\S]*?```")
-	regexInlineCode       = regexp.MustCompile("`[^`]+`")
+	fencedCodeBlocksRegex = regexp.MustCompile("```[\\s\\S]*?```")
+	inlineCodeRegex       = regexp.MustCompile("`[^`]+`")
 
 	// Link patterns.
-	regexImages = regexp.MustCompile(`!\[(.*?)\]\(([^)]+)\)`)
-	regexLinks  = regexp.MustCompile(`\[(.*?)\]\(([^)]+)\)`)
+	imagesRegex = regexp.MustCompile(`!\[(.*?)\]\(([^)]+)\)`)
+	linksRegex  = regexp.MustCompile(`\[(.*?)\]\(([^)]+)\)`)
 
 	// Text formatting patterns.
-	regexHeaders = regexp.MustCompile("(?m)^#{" + strconv.Itoa(markdownHeaderMinLevel) + "," + strconv.Itoa(markdownHeaderMaxLevel) + "} (.+)$")
-	regexBold    = regexp.MustCompile(`\*\*(.*?)\*\*`)
-	regexBold2   = regexp.MustCompile(`__(.+?)__`)
-	regexItalic  = regexp.MustCompile(`\*([^*]+)\*`)
-	regexItalic2 = regexp.MustCompile(`_([^_]+)_`)
-	regexStrike  = regexp.MustCompile(`~~(.+?)~~`)
+	headersRegex   = regexp.MustCompile("(?m)^#{" + strconv.Itoa(markdownHeaderMinLevel) + "," + strconv.Itoa(markdownHeaderMaxLevel) + "} (.+)$")
+	boldRegex      = regexp.MustCompile(`\*\*(.*?)\*\*`)
+	boldAltRegex   = regexp.MustCompile(`__(.+?)__`)
+	italicRegex    = regexp.MustCompile(`\*([^*]+)\*`)
+	italicAltRegex = regexp.MustCompile(`_([^_]+)_`)
+	strikeRegex    = regexp.MustCompile(`~~(.+?)~~`)
 
 	// List patterns.
-	regexOrderedList  = regexp.MustCompile(`^\s*\d+\.\s+`)
-	regexNumberedList = regexp.MustCompile(`^\d+\.\s+`)
-	regexBlockquotes  = regexp.MustCompile(`(?m)^>\s*(.+)$`)
+	orderedListRegex  = regexp.MustCompile(`^\s*\d+\.\s+`)
+	numberedListRegex = regexp.MustCompile(`^\d+\.\s+`)
+	blockquotesRegex  = regexp.MustCompile(`(?m)^>\s*(.+)$`)
 
 	// HTML and additional patterns.
-	regexHTMLTags = regexp.MustCompile(`<[^>]*>`)
+	htmlTagsRegex = regexp.MustCompile(`<[^>]*>`)
 
 	// Markdown detection patterns.
-	markdownRegexes = []*regexp.Regexp{
+	markdownRegexps = []*regexp.Regexp{
 		regexp.MustCompile(`\*\*.+?\*\*`),                 // Bold with **.
 		regexp.MustCompile(`__.+?__`),                     // Bold with __.
 		regexp.MustCompile(`\*.+?\*`),                     // Italics with *.
@@ -163,11 +163,11 @@ func processMarkdownStructures(md string) string {
 		if strings.HasPrefix(trim, "* ") || strings.HasPrefix(trim, "- ") || strings.HasPrefix(trim, "+ ") {
 			indent := l[:len(l)-len(trim)]
 			l = indent + strings.TrimSpace(strings.TrimPrefix(strings.TrimPrefix(strings.TrimPrefix(trim, "* "), "- "), "+ "))
-		} else if regexOrderedList.MatchString(l) {
+		} else if orderedListRegex.MatchString(l) {
 			// Normalize ordered list markers.
 			trim = strings.TrimSpace(l)
 			indent := l[:len(l)-len(trim)]
-			l = indent + regexNumberedList.ReplaceAllString(trim, "")
+			l = indent + numberedListRegex.ReplaceAllString(trim, "")
 		}
 
 		// Normalize table rows.
@@ -206,7 +206,7 @@ func processMarkdownStructures(md string) string {
 
 // Public markdown functions.
 func IsMarkdown(text string) bool {
-	for _, re := range markdownRegexes {
+	for _, re := range markdownRegexps {
 		if re.MatchString(text) {
 			// Special case: differentiate escaped asterisks.
 			if strings.Contains(re.String(), `\*`) && strings.Contains(text, `\*`) {
@@ -232,22 +232,22 @@ func StripMarkdown(md string) string {
 		re   *regexp.Regexp
 		repl string
 	}{
-		{regexFencedCodeBlocks, "\n"},
-		{regexInlineCode, ""},
-		{regexImages, "$2"},
-		{regexHeaders, "$1"},
-		{regexBold, "$1"},
-		{regexBold2, "$1"},
-		{regexItalic, "$1"},
-		{regexItalic2, "$1"},
-		{regexStrike, "$1"},
-		{regexBlockquotes, "$1"},
+		{fencedCodeBlocksRegex, "\n"},
+		{inlineCodeRegex, ""},
+		{imagesRegex, "$2"},
+		{headersRegex, "$1"},
+		{boldRegex, "$1"},
+		{boldAltRegex, "$1"},
+		{italicRegex, "$1"},
+		{italicAltRegex, "$1"},
+		{strikeRegex, "$1"},
+		{blockquotesRegex, "$1"},
 	}
 
 	md = applyRegexReplacements(md, rules)
 	// Custom replacement for markdown links
-	md = regexLinks.ReplaceAllStringFunc(md, func(match string) string {
-		groups := regexLinks.FindStringSubmatch(match)
+	md = linksRegex.ReplaceAllStringFunc(md, func(match string) string {
+		groups := linksRegex.FindStringSubmatch(match)
 		if len(groups) < minMarkdownLinkGroups {
 			return match
 		}
@@ -260,7 +260,7 @@ func StripMarkdown(md string) string {
 	})
 
 	md = processMarkdownStructures(md)
-	md = regexHTMLTags.ReplaceAllString(md, "")
+	md = htmlTagsRegex.ReplaceAllString(md, "")
 	md = multipleNewlinesRegex.ReplaceAllString(md, "\n\n")
 
 	return restoreReplacer.Replace(md)

@@ -6,13 +6,13 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/edgard/murailobot/internal/ai"
 	"github.com/edgard/murailobot/internal/config"
 	"github.com/edgard/murailobot/internal/db"
+	"github.com/edgard/murailobot/internal/openai"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
-func New(cfg *config.Config, database db.Database, aiService ai.Service) (*Bot, error) {
+func New(cfg *config.Config, database db.Database, openAIService openai.Service) (*Bot, error) {
 	if cfg == nil {
 		return nil, ErrNilConfig
 	}
@@ -22,9 +22,9 @@ func New(cfg *config.Config, database db.Database, aiService ai.Service) (*Bot, 
 		return nil, ErrNilDatabase
 	}
 
-	ai := aiService
-	if ai == nil {
-		return nil, ErrNilAIService
+	openAI := openAIService
+	if openAI == nil {
+		return nil, ErrNilOpenAIService
 	}
 
 	api, err := tgbotapi.NewBotAPI(cfg.TelegramToken)
@@ -33,19 +33,19 @@ func New(cfg *config.Config, database db.Database, aiService ai.Service) (*Bot, 
 	}
 
 	bot := &Bot{
-		api: api,
-		db:  database,
-		ai:  aiService,
+		api:    api,
+		db:     database,
+		openAI: openAIService,
 		cfg: &Config{
 			Token:   cfg.TelegramToken,
 			AdminID: cfg.TelegramAdminID,
 			Messages: Messages{
 				Welcome:      cfg.TelegramWelcomeMessage,
-				Unauthorized: cfg.TelegramNotAuthMessage,
+				Unauthorized: cfg.TelegramNotAuthorizedMessage,
 				Provide:      cfg.TelegramProvideMessage,
-				AIError:      cfg.TelegramAIErrorMessage,
-				GeneralError: cfg.TelegramGeneralError,
-				HistoryReset: cfg.TelegramHistoryReset,
+				OpenAIError:  cfg.TelegramAIErrorMessage,
+				GeneralError: cfg.TelegramGeneralErrorMessage,
+				HistoryReset: cfg.TelegramHistoryResetMessage,
 				Timeout:      cfg.TelegramAIErrorMessage,
 			},
 		},
@@ -62,7 +62,7 @@ func (b *Bot) Start(ctx context.Context) error {
 
 	commands := []tgbotapi.BotCommand{
 		{Command: "start", Description: "Start conversation with the bot"},
-		{Command: "mrl", Description: "Generate AI response"},
+		{Command: "mrl", Description: "Generate OpenAI response"},
 		{Command: "mrl_reset", Description: "Reset chat history (admin only)"},
 	}
 

@@ -54,7 +54,7 @@ docker run -v $(pwd)/config.yaml:/app/config.yaml ghcr.io/edgard/murailobot:late
 
 Minimal config.yaml example:
 ```yaml
-ai:
+openai:
   token: "sk-your-token-here"         # OpenAI API token
 
 telegram:
@@ -69,7 +69,7 @@ For a complete configuration with all options, see [config.yaml.example](config.
 Configuration can also be provided through environment variables:
 
 ```bash
-export BOT_AI_TOKEN="your-openai-token"
+export BOT_OPENAI_TOKEN="your-openai-token"
 export BOT_TELEGRAM_TOKEN="your-telegram-token"
 export BOT_TELEGRAM_ADMIN_ID="123456789"
 ```

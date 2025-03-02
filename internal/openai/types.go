@@ -1,4 +1,4 @@
-package ai
+package openai
 
 import (
 	"context"
@@ -9,7 +9,7 @@ import (
 	"github.com/sashabaranov/go-openai"
 )
 
-// Service defines the AI response generation interface.
+// Service defines the OpenAI response generation interface.
 type Service interface {
 	Generate(ctx context.Context, userID int64, userName string, userMsg string) (string, error)
 }
@@ -26,7 +26,7 @@ type Config struct {
 
 // Client represents the OpenAI client.
 type Client struct {
-	openaiClient *openai.Client
+	openAIClient *openai.Client
 	model        string
 	temperature  float32
 	instruction  string
@@ -36,18 +36,18 @@ type Client struct {
 
 // Operation timeouts and retry settings.
 const (
-	chatHistoryTimeout       = 5 * time.Second
-	httpClientTimeoutDivisor = 4
-	initialBackoffDuration   = 1 * time.Second
-	messagesPerHistory       = 2
-	messagesSliceCapacity    = 20
-	minHTTPClientTimeout     = 10 * time.Second
-	recentHistoryCount       = 10
-	retryMaxAttempts         = 3
+	ChatHistoryTimeout       = 5 * time.Second
+	HTTPClientTimeoutDivisor = 4
+	InitialBackoffDuration   = 1 * time.Second
+	MessagesPerHistory       = 2
+	MessagesSliceCapacity    = 20
+	MinHTTPClientTimeout     = 10 * time.Second
+	RecentHistoryCount       = 10
+	RetryMaxAttempts         = 3
 )
 
 // Known non-retryable OpenAI API error types.
-var invalidRequestErrors = []string{
+var InvalidRequestErrors = []string{
 	"invalid_request_error",
 	"context_length_exceeded",
 	"rate_limit_exceeded",
@@ -57,9 +57,8 @@ var invalidRequestErrors = []string{
 
 // Error definitions.
 var (
-	ErrNilConfig         = errors.New("config is nil")
-	ErrEmptyResponse     = errors.New("empty response received")
-	ErrEmptyUserMessage  = errors.New("user message is empty")
-	ErrNoChoices         = errors.New("no response choices available")
-	ErrNoResponseChoices = errors.New("no response choices available")
+	ErrNilConfig        = errors.New("config is nil")
+	ErrEmptyResponse    = errors.New("empty response received")
+	ErrEmptyUserMessage = errors.New("user message is empty")
+	ErrNoChoices        = errors.New("no response choices available")
 )

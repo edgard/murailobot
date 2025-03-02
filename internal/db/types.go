@@ -9,11 +9,11 @@ import (
 
 // Database configuration defaults.
 const (
-	DefaultTempStore    = "MEMORY"
-	DefaultCacheSizeKB  = 4000
-	DefaultOpTimeout    = 15 * time.Second
-	DSNTimeoutMS        = 5000
-	DefaultMaxOpenConns = 1
+	DefaultTempStore   = "MEMORY"
+	DefaultCacheSizeKB = 4000
+	DefaultOpTimeout   = 15 * time.Second
+	DefaultDSNTimeout  = 5000
+	DefaultMaxOpenConn = 1
 )
 
 // Database defines the interface for chat history storage operations.

@@ -27,8 +27,8 @@ const (
 
 // Error definitions.
 var (
-	ErrInvalidLogLevel  = errors.New("invalid log level")
-	ErrInvalidLogFormat = errors.New("invalid log format")
+	ErrInvalidLogLevel  = errors.New("invalid log level")  // exported errors use PascalCase
+	ErrInvalidLogFormat = errors.New("invalid log format") // exported errors use PascalCase
 )
 
 // SetupLogger configures application logging.

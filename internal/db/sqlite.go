@@ -21,16 +21,16 @@ func New(cfg *Config) (*SQLiteDB, error) {
 		}
 	}
 
-	gormConfig := &gorm.Config{
+	gormCfg := &gorm.Config{
 		Logger: logger.Default.LogMode(logger.Silent),
 	}
 
 	dsn := "storage.db?_journal=WAL" +
-		"&_timeout=" + strconv.Itoa(DSNTimeoutMS) +
+		"&_timeout=" + strconv.Itoa(DefaultDSNTimeout) +
 		"&_temp_store=" + cfg.TempStore +
 		"&_cache_size=-" + strconv.Itoa(cfg.CacheSizeKB)
 
-	db, err := gorm.Open(sqlite.Open(dsn), gormConfig)
+	db, err := gorm.Open(sqlite.Open(dsn), gormCfg)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open database: %w", err)
 	}
@@ -40,7 +40,7 @@ func New(cfg *Config) (*SQLiteDB, error) {
 		return nil, fmt.Errorf("failed to get database instance: %w", err)
 	}
 
-	sqlDB.SetMaxOpenConns(DefaultMaxOpenConns)
+	sqlDB.SetMaxOpenConns(DefaultMaxOpenConn)
 
 	if err := db.AutoMigrate(&ChatHistory{}); err != nil {
 		return nil, fmt.Errorf("failed to run migrations: %w", err)
