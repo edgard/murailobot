@@ -119,13 +119,11 @@ func applyRegexReplacements(s string, rules []struct {
 	repl string
 },
 ) string {
-	return func() string {
-		for _, rule := range rules {
-			s = rule.re.ReplaceAllString(s, rule.repl)
-		}
+	for _, rule := range rules {
+		s = rule.re.ReplaceAllString(s, rule.repl)
+	}
 
-		return s
-	}()
+	return s
 }
 
 // normalizeLineWhitespace normalizes whitespace within a single line of text:
@@ -160,60 +158,76 @@ func normalizeLineWhitespace(line string) string {
 	return strings.TrimSpace(b.String())
 }
 
-// processMarkdownStructures handles structural markdown elements:
-// - Removes list markers while preserving indentation
-// - Normalizes table formatting
-// - Removes horizontal rules
-// - Preserves meaningful whitespace.
+// processListLine removes markdown list markers from a line while preserving indentation.
+func processListLine(l string) string {
+	trim := strings.TrimSpace(l)
+	if strings.HasPrefix(trim, "* ") || strings.HasPrefix(trim, "- ") || strings.HasPrefix(trim, "+ ") {
+		indent := l[:len(l)-len(trim)]
+
+		return indent + strings.TrimSpace(strings.TrimPrefix(strings.TrimPrefix(strings.TrimPrefix(trim, "* "), "- "), "+ "))
+	} else if orderedListRegex.MatchString(l) {
+		trim = strings.TrimSpace(l)
+		indent := l[:len(l)-len(trim)]
+
+		return indent + numberedListRegex.ReplaceAllString(trim, "")
+	}
+
+	return l
+}
+
+// processTableRowAndRule handles markdown table rows and separator lines.
+func processTableRowAndRule(lines []string, i int) (int, string, bool) {
+	l := lines[i]
+	if strings.HasPrefix(l, "|") && strings.HasSuffix(l, "|") {
+		if i+1 < len(lines) && strings.HasPrefix(lines[i+1], "|") &&
+			strings.HasSuffix(lines[i+1], "|") && strings.Contains(lines[i+1], "---") {
+			s := strings.Trim(l, "|")
+			s = strings.ReplaceAll(s, "|", " ")
+			i++
+
+			return i, strings.TrimSpace(s), true
+		} else if strings.Contains(l, "---") && i > 0 && strings.HasPrefix(lines[i-1], "|") {
+			return i, "", true
+		}
+
+		s := strings.Trim(l, "|")
+		s = strings.ReplaceAll(s, "|", " ")
+
+		return i, strings.TrimSpace(s), true
+	}
+
+	return i, "", false
+}
+
+// processMarkdownStructures handles structural markdown elements including lists,
+// tables, and horizontal rules.
 func processMarkdownStructures(md string) string {
 	lines := strings.Split(md, "\n")
 
 	var out []string
 
-	for i := 0; i < len(lines); i++ {
-		l := lines[i]
-		trim := strings.TrimSpace(l)
-
-		// Remove marker characters for unordered lists
-		if strings.HasPrefix(trim, "* ") || strings.HasPrefix(trim, "- ") || strings.HasPrefix(trim, "+ ") {
-			indent := l[:len(l)-len(trim)]
-			l = indent + strings.TrimSpace(strings.TrimPrefix(strings.TrimPrefix(strings.TrimPrefix(trim, "* "), "- "), "+ "))
-		} else if orderedListRegex.MatchString(l) {
-			// Normalize ordered list markers
-			trim = strings.TrimSpace(l)
-			indent := l[:len(l)-len(trim)]
-			l = indent + numberedListRegex.ReplaceAllString(trim, "")
-		}
-
-		// Normalize table rows
-		if strings.HasPrefix(l, "|") && strings.HasSuffix(l, "|") {
-			if i+1 < len(lines) && strings.HasPrefix(lines[i+1], "|") &&
-				strings.HasSuffix(lines[i+1], "|") && strings.Contains(lines[i+1], "---") {
-				var s string
-				s = strings.Trim(l, "|")
-				s = strings.ReplaceAll(s, "|", " ")
-				out = append(out, strings.TrimSpace(s))
-				i++
-
-				continue
-			} else if strings.Contains(l, "---") && i > 0 && strings.HasPrefix(lines[i-1], "|") {
-				continue
+	for i := 0; i < len(lines); {
+		newIndex, processed, handled := processTableRowAndRule(lines, i)
+		if handled {
+			if processed != "" {
+				out = append(out, processed)
 			}
 
-			var s string
-			s = strings.Trim(l, "|")
-			s = strings.ReplaceAll(s, "|", " ")
-			out = append(out, strings.TrimSpace(s))
+			i = newIndex + 1
 
 			continue
 		}
 
-		// Skip horizontal rules
+		l := processListLine(lines[i])
+
 		if horizontalRuleRegex.MatchString(strings.TrimSpace(l)) {
+			i++
+
 			continue
 		}
 
 		out = append(out, l)
+		i++
 	}
 
 	return strings.Join(out, "\n")
@@ -317,8 +331,8 @@ func Sanitize(input string) string {
 	s = controlCharsRegex.ReplaceAllString(s, " ")
 
 	parts := strings.Split(s, "\n")
-	for i, p := range parts {
-		parts[i] = normalizeLineWhitespace(p)
+	for i := range parts {
+		parts[i] = normalizeLineWhitespace(parts[i])
 	}
 
 	s = strings.Join(parts, "\n")
