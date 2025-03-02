@@ -40,7 +40,7 @@ type Config struct {
 	LogFormat string `koanf:"log.format" validate:"required,oneof=json text"`
 }
 
-var defaults = map[string]interface{}{
+var defaults = map[string]any{
 	"ai.base_url":                       "https://api.openai.com/v1",
 	"ai.model":                          "gpt-4o",
 	"ai.temperature":                    1.0,

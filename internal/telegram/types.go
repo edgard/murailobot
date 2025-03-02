@@ -9,14 +9,12 @@ import (
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
-const defaultTypingInterval = 5 * time.Second
-
-// BotService defines telegram bot operations.
-type BotService interface {
-	Start(ctx context.Context) error
-	Stop() error
-	SendContinuousTyping(ctx context.Context, chatID int64)
-}
+// Magic number constants.
+const (
+	DefaultTypingInterval = 5 * time.Second
+	DefaultUpdateOffset   = 0
+	DefaultUpdateTimeout  = 30
+)
 
 // Messages stores bot response templates.
 type Messages struct {
@@ -36,9 +34,17 @@ type Config struct {
 	Messages Messages `yaml:"messages"`
 }
 
+// Bot represents a telegram bot.
 type Bot struct {
 	api *tgbotapi.BotAPI
 	db  db.Database
 	ai  ai.Service
 	cfg *Config
+}
+
+// Service defines telegram bot operations.
+type Service interface {
+	Start(ctx context.Context) error
+	Stop() error
+	SendContinuousTyping(ctx context.Context, chatID int64)
 }

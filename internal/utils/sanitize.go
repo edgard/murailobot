@@ -2,8 +2,18 @@ package utils
 
 import (
 	"regexp"
+	"strconv"
 	"strings"
 	"unicode"
+)
+
+// Define magic number constants.
+const (
+	minNewlinesThreshold    = 3
+	minHorizontalRuleLength = 3
+	markdownHeaderMinLevel  = 1
+	markdownHeaderMaxLevel  = 6
+	minMarkdownLinkGroups   = 3
 )
 
 var (
@@ -39,9 +49,9 @@ var (
 )
 
 var (
-	controlCharsRegex     = regexp.MustCompile(`[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]`) // Matches control characters (non-printable ranges).
-	multipleNewlinesRegex = regexp.MustCompile("\n{3,}")                           // Matches sequences of 3 or more newlines.
-	horizontalRuleRegex   = regexp.MustCompile(`^[\*\-_]{3,}$`)                    // Matches a horizontal rule made entirely of *, -, or _.
+	controlCharsRegex     = regexp.MustCompile(`[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]`)                            // Matches control characters (non-printable ranges).
+	multipleNewlinesRegex = regexp.MustCompile("\n{" + strconv.Itoa(minNewlinesThreshold) + ",}")             // Matches sequences of 3 or more newlines.
+	horizontalRuleRegex   = regexp.MustCompile("^[\\*\\-_]{" + strconv.Itoa(minHorizontalRuleLength) + ",}$") // Matches a horizontal rule made entirely of *, -, or _.
 
 	regexFencedCodeBlocks = regexp.MustCompile("```[\\s\\S]*?```") // Matches fenced code blocks.
 	regexInlineCode       = regexp.MustCompile("`[^`]+`")          // Matches inline code delimited by backticks.
@@ -49,12 +59,12 @@ var (
 	regexImages = regexp.MustCompile(`!\[(.*?)\]\(([^)]+)\)`) // Matches markdown image syntax.
 	regexLinks  = regexp.MustCompile(`\[(.*?)\]\(([^)]+)\)`)  // Matches markdown link syntax.
 
-	regexHeaders = regexp.MustCompile(`(?m)^#{1,6} (.+)$`) // Matches markdown headers (lines starting with 1-6 '#' and a space).
-	regexBold    = regexp.MustCompile(`\*\*(.*?)\*\*`)     // Matches bold text enclosed in **.
-	regexBold2   = regexp.MustCompile(`__(.+?)__`)         // Matches bold text enclosed in __.
-	regexItalic  = regexp.MustCompile(`\*([^*]+)\*`)       // Matches italic text enclosed in *.
-	regexItalic2 = regexp.MustCompile(`_([^_]+)_`)         // Matches italic text enclosed in _.
-	regexStrike  = regexp.MustCompile(`~~(.+?)~~`)         // Matches strikethrough text enclosed in ~~.
+	regexHeaders = regexp.MustCompile("(?m)^#{" + strconv.Itoa(markdownHeaderMinLevel) + "," + strconv.Itoa(markdownHeaderMaxLevel) + "} (.+)$") // Matches markdown headers (lines starting with 1-6 '#' and a space).
+	regexBold    = regexp.MustCompile(`\*\*(.*?)\*\*`)                                                                                           // Matches bold text enclosed in **.
+	regexBold2   = regexp.MustCompile(`__(.+?)__`)                                                                                               // Matches bold text enclosed in __.
+	regexItalic  = regexp.MustCompile(`\*([^*]+)\*`)                                                                                             // Matches italic text enclosed in *.
+	regexItalic2 = regexp.MustCompile(`_([^_]+)_`)                                                                                               // Matches italic text enclosed in _.
+	regexStrike  = regexp.MustCompile(`~~(.+?)~~`)                                                                                               // Matches strikethrough text enclosed in ~~.
 
 	regexOrderedList  = regexp.MustCompile(`^\s*\d+\.\s+`)   // Matches unordered list markers (optional whitespace, number, dot, and space).
 	regexNumberedList = regexp.MustCompile(`^\d+\.\s+`)      // Matches numbered list markers at the beginning of a line.
@@ -218,7 +228,7 @@ func StripMarkdown(md string) string {
 	// Custom replacement for markdown links
 	md = regexLinks.ReplaceAllStringFunc(md, func(match string) string {
 		groups := regexLinks.FindStringSubmatch(match)
-		if len(groups) < 3 {
+		if len(groups) < minMarkdownLinkGroups {
 			return match
 		}
 		// If link text equals the URL, display just the URL.

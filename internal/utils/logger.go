@@ -9,21 +9,32 @@ import (
 	"github.com/edgard/murailobot/internal/config"
 )
 
+// Constants for magic values.
+const (
+	defaultLogLevel = slog.LevelInfo
+	logLevelDebug   = "debug"
+	logLevelWarn    = "warn"
+	logLevelError   = "error"
+	logLevelInfo    = "info"
+	logFormatText   = "text"
+	logFormatJSON   = "json"
+)
+
 // SetupLogger configures application logging.
 func SetupLogger(cfg *config.Config) error {
 	if cfg == nil {
 		return nil
 	}
 
-	level := slog.LevelInfo // default
+	level := defaultLogLevel
 	switch strings.ToLower(cfg.LogLevel) {
-	case "debug":
+	case logLevelDebug:
 		level = slog.LevelDebug
-	case "warn":
+	case logLevelWarn:
 		level = slog.LevelWarn
-	case "error":
+	case logLevelError:
 		level = slog.LevelError
-	case "info":
+	case logLevelInfo:
 		// Already set to default
 	default:
 		return fmt.Errorf("invalid log level: %s", cfg.LogLevel)
@@ -33,9 +44,9 @@ func SetupLogger(cfg *config.Config) error {
 	var handler slog.Handler
 
 	switch strings.ToLower(cfg.LogFormat) {
-	case "text":
+	case logFormatText:
 		handler = slog.NewTextHandler(os.Stderr, opts)
-	case "json":
+	case logFormatJSON:
 		handler = slog.NewJSONHandler(os.Stderr, opts)
 	default:
 		return fmt.Errorf("invalid log format: %s", cfg.LogFormat)

@@ -8,6 +8,17 @@ import (
 	"github.com/sashabaranov/go-openai"
 )
 
+// Constants for magic numbers.
+const (
+	httpClientTimeoutDivisor = 2
+	minHTTPClientTimeout     = 30 * time.Second
+	retryMaxAttempts         = 3
+	initialBackoffDuration   = 100 * time.Millisecond
+	chatHistoryTimeout       = 5 * time.Second
+	recentHistoryCount       = 10
+	messagesSliceCapacity    = 21
+)
+
 // Non-retryable OpenAI API errors.
 var invalidRequestErrors = []string{
 	"invalid_request_error",
@@ -17,11 +28,7 @@ var invalidRequestErrors = []string{
 	"organization_not_found",
 }
 
-// Service defines AI service interface.
-type Service interface {
-	Generate(ctx context.Context, userID int64, userName string, userMsg string) (string, error)
-}
-
+// Config defines OpenAI settings.
 type Config struct {
 	Token       string        `yaml:"token"`
 	BaseURL     string        `yaml:"base_url"`
@@ -31,6 +38,7 @@ type Config struct {
 	Timeout     time.Duration `yaml:"timeout"`
 }
 
+// Client represents the OpenAI client.
 type Client struct {
 	openaiClient *openai.Client
 	model        string
@@ -38,4 +46,9 @@ type Client struct {
 	instruction  string
 	db           db.Database
 	timeout      time.Duration
+}
+
+// Service defines AI service interface.
+type Service interface {
+	Generate(ctx context.Context, userID int64, userName string, userMsg string) (string, error)
 }

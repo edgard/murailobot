@@ -52,8 +52,8 @@ func New(cfg *config.Config, database db.Database, aiService ai.Service) (*Bot, 
 }
 
 func (b *Bot) Start(ctx context.Context) error {
-	updateConfig := tgbotapi.NewUpdate(0)
-	updateConfig.Timeout = 30
+	updateConfig := tgbotapi.NewUpdate(DefaultUpdateOffset)
+	updateConfig.Timeout = DefaultUpdateTimeout
 
 	updates := b.api.GetUpdatesChan(updateConfig)
 
@@ -135,7 +135,7 @@ func (b *Bot) SendContinuousTyping(ctx context.Context, chatID int64) {
 		slog.Error("failed to send initial typing action", "error", err, "chat_id", chatID)
 	}
 
-	ticker := time.NewTicker(defaultTypingInterval)
+	ticker := time.NewTicker(DefaultTypingInterval)
 	defer ticker.Stop()
 
 	for {

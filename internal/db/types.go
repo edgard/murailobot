@@ -7,6 +7,15 @@ import (
 	"gorm.io/gorm"
 )
 
+// New constants for database configuration.
+const (
+	DefaultTempStore    = "MEMORY"
+	DefaultCacheSizeKB  = 4000
+	DefaultOpTimeout    = 15 * time.Second
+	DSNTimeoutMS        = 5000
+	DefaultMaxOpenConns = 1
+)
+
 // Config defines database settings.
 type Config struct {
 	TempStore   string
@@ -24,8 +33,8 @@ type ChatHistory struct {
 	Timestamp time.Time `gorm:"not null;index"`
 }
 
-// SQLite represents the concrete implementation of the Database interface.
-type SQLite struct {
+// SQLiteDB represents a SQLite database connection.
+type SQLiteDB struct {
 	db  *gorm.DB
 	cfg *Config
 }

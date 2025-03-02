@@ -21,7 +21,7 @@ func New(cfg *config.Config, db db.Database) (*Client, error) {
 
 	config := openai.DefaultConfig(cfg.AIToken)
 	config.BaseURL = cfg.AIBaseURL
-	httpClientTimeout := max(cfg.AITimeout/2, 30*time.Second)
+	httpClientTimeout := max(cfg.AITimeout/httpClientTimeoutDivisor, minHTTPClientTimeout)
 	config.HTTPClient = &http.Client{
 		Timeout: httpClientTimeout,
 	}
@@ -57,11 +57,10 @@ func isPermanentAPIError(err error) (bool, error) {
 // Retries operation with exponential backoff.
 func retryWithBackoff(ctx context.Context, op func() (string, error)) (string, error) {
 	attempt := 0
-	maxAttempts := 3
 	var lastErr error
-	backoff := 100 * time.Millisecond
+	backoff := initialBackoffDuration
 
-	for attempt < maxAttempts {
+	for attempt < retryMaxAttempts {
 		select {
 		case <-ctx.Done():
 			return "", fmt.Errorf("context error: %w", ctx.Err())
@@ -81,7 +80,7 @@ func retryWithBackoff(ctx context.Context, op func() (string, error)) (string, e
 		lastErr = err
 		attempt++
 
-		if attempt < maxAttempts {
+		if attempt < retryMaxAttempts {
 			timer := time.NewTimer(backoff)
 			select {
 			case <-ctx.Done():
@@ -94,7 +93,7 @@ func retryWithBackoff(ctx context.Context, op func() (string, error)) (string, e
 		}
 	}
 
-	return "", fmt.Errorf("all %d API attempts failed: %w", maxAttempts, lastErr)
+	return "", fmt.Errorf("all %d API attempts failed: %w", retryMaxAttempts, lastErr)
 }
 
 // Formats chat history for AI context.
@@ -158,15 +157,15 @@ func (c *Client) Generate(ctx context.Context, userID int64, userName string, us
 		return "", errors.New("user message is empty")
 	}
 
-	historyCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	historyCtx, cancel := context.WithTimeout(ctx, chatHistoryTimeout)
 	defer cancel()
 
-	history, err := c.db.GetRecent(historyCtx, 10)
+	history, err := c.db.GetRecent(historyCtx, recentHistoryCount)
 	if err != nil {
 		return "", fmt.Errorf("failed to retrieve chat history: %w", err)
 	}
 
-	messages := make([]openai.ChatCompletionMessage, 0, 21)
+	messages := make([]openai.ChatCompletionMessage, 0, messagesSliceCapacity)
 	messages = append(messages, openai.ChatCompletionMessage{
 		Role:    "system",
 		Content: c.instruction,

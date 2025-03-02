@@ -11,12 +11,12 @@ import (
 	"gorm.io/gorm/logger"
 )
 
-func New(cfg *Config) (*SQLite, error) {
+func New(cfg *Config) (*SQLiteDB, error) {
 	if cfg == nil {
 		cfg = &Config{
-			TempStore:   "MEMORY",
-			CacheSizeKB: 4000,
-			OpTimeout:   15 * time.Second,
+			TempStore:   DefaultTempStore,
+			CacheSizeKB: DefaultCacheSizeKB,
+			OpTimeout:   DefaultOpTimeout,
 		}
 	}
 
@@ -24,7 +24,9 @@ func New(cfg *Config) (*SQLite, error) {
 		Logger: logger.Default.LogMode(logger.Silent),
 	}
 
-	dsn := "storage.db?_journal=WAL&_timeout=5000&_temp_store=" + cfg.TempStore +
+	dsn := "storage.db?_journal=WAL" +
+		"&_timeout=" + strconv.Itoa(DSNTimeoutMS) +
+		"&_temp_store=" + cfg.TempStore +
 		"&_cache_size=-" + strconv.Itoa(cfg.CacheSizeKB)
 
 	db, err := gorm.Open(sqlite.Open(dsn), gormConfig)
@@ -36,19 +38,19 @@ func New(cfg *Config) (*SQLite, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to get database instance: %w", err)
 	}
-	sqlDB.SetMaxOpenConns(1)
+	sqlDB.SetMaxOpenConns(DefaultMaxOpenConns)
 
 	if err := db.AutoMigrate(&ChatHistory{}); err != nil {
 		return nil, fmt.Errorf("failed to run migrations: %w", err)
 	}
 
-	return &SQLite{
+	return &SQLiteDB{
 		db:  db,
 		cfg: cfg,
 	}, nil
 }
 
-func (d *SQLite) Save(ctx context.Context, userID int64, userName string, userMsg, botMsg string) error {
+func (d *SQLiteDB) Save(ctx context.Context, userID int64, userName string, userMsg, botMsg string) error {
 	history := ChatHistory{
 		UserID:    userID,
 		UserName:  userName,
@@ -67,7 +69,7 @@ func (d *SQLite) Save(ctx context.Context, userID int64, userName string, userMs
 	return nil
 }
 
-func (d *SQLite) GetRecent(ctx context.Context, limit int) ([]ChatHistory, error) {
+func (d *SQLiteDB) GetRecent(ctx context.Context, limit int) ([]ChatHistory, error) {
 	var history []ChatHistory
 	timeoutCtx, cancel := context.WithTimeout(ctx, d.cfg.OpTimeout)
 	defer cancel()
@@ -82,7 +84,7 @@ func (d *SQLite) GetRecent(ctx context.Context, limit int) ([]ChatHistory, error
 	return history, nil
 }
 
-func (d *SQLite) DeleteAll(ctx context.Context) error {
+func (d *SQLiteDB) DeleteAll(ctx context.Context) error {
 	timeoutCtx, cancel := context.WithTimeout(ctx, d.cfg.OpTimeout)
 	defer cancel()
 
@@ -93,7 +95,7 @@ func (d *SQLite) DeleteAll(ctx context.Context) error {
 	return nil
 }
 
-func (d *SQLite) Close() error {
+func (d *SQLiteDB) Close() error {
 	sqlDB, err := d.db.DB()
 	if err != nil {
 		return fmt.Errorf("failed to get database instance: %w", err)
