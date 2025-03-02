@@ -9,10 +9,9 @@ import (
 	"github.com/edgard/murailobot/internal/config"
 )
 
-// Setup configures application logging
-func Setup(cfg *config.Config) error {
+// SetupLogger configures application logging
+func SetupLogger(cfg *config.Config) error {
 	if cfg == nil {
-		slog.Info("logger setup using default configuration")
 		return nil
 	}
 
@@ -45,6 +44,5 @@ func Setup(cfg *config.Config) error {
 	logger := slog.New(handler)
 	slog.SetDefault(logger)
 
-	slog.Info("logger initialized", "level", cfg.LogLevel, "format", cfg.LogFormat)
 	return nil
 }

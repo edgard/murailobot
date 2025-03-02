@@ -2,7 +2,6 @@ package config
 
 import (
 	"fmt"
-	"log/slog"
 	"os"
 	"strings"
 	"time"
@@ -63,14 +62,10 @@ func LoadConfig() (*Config, error) {
 		return nil, fmt.Errorf("error loading defaults: %w", err)
 	}
 
-	configFileLoaded := false
 	if err := k.Load(file.Provider("config.yaml"), yaml.Parser()); err != nil {
 		if !os.IsNotExist(err) {
 			return nil, fmt.Errorf("error reading config file: %w", err)
 		}
-		slog.Info("config file not found, using defaults and environment")
-	} else {
-		configFileLoaded = true
 	}
 
 	if err := k.Load(env.Provider("BOT", ".", func(s string) string {
@@ -99,8 +94,6 @@ func LoadConfig() (*Config, error) {
 		}
 		return nil, fmt.Errorf("validation error: %w", err)
 	}
-
-	slog.Info("configuration loaded", "config_file", configFileLoaded)
 
 	return &config, nil
 }

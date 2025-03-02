@@ -32,10 +32,13 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err := utils.Setup(cfg); err != nil {
+	if err := utils.SetupLogger(cfg); err != nil {
 		slog.Error("failed to setup logger", "error", err)
 		os.Exit(1)
 	}
+
+	slog.Info("configuration loaded successfully")
+	slog.Info("logger initialized", "level", cfg.LogLevel, "format", cfg.LogFormat)
 
 	database, err := db.New(nil) // Use db package defaults
 	if err != nil {
