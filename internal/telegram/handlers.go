@@ -10,6 +10,14 @@ import (
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
+// handleStart processes the /start command, sending a welcome message to new users.
+// This is typically the first interaction users have with the bot.
+//
+// Parameters:
+//   - ctx: Context for timeout/cancellation (unused but kept for consistency)
+//   - msg: The message containing the command
+//
+// Returns an error if the message is nil or sending the welcome message fails.
 func (b *Bot) handleStart(_ context.Context, msg *tgbotapi.Message) error {
 	if msg == nil {
 		return ErrNilMessage
@@ -20,6 +28,15 @@ func (b *Bot) handleStart(_ context.Context, msg *tgbotapi.Message) error {
 	return b.sendMessage(reply, "failed to send welcome message")
 }
 
+// handleMessage processes the /mrl command, which generates AI responses to user messages.
+// It manages the complete flow of:
+//  1. Extracting and validating the user's message
+//  2. Showing typing indicator during processing
+//  3. Generating AI response
+//  4. Saving conversation history
+//  5. Sending response back to user
+//
+// The function handles various error conditions and provides appropriate user feedback.
 func (b *Bot) handleMessage(ctx context.Context, msg *tgbotapi.Message) error {
 	if msg == nil {
 		return ErrNilMessage
@@ -95,6 +112,19 @@ func (b *Bot) handleMessage(ctx context.Context, msg *tgbotapi.Message) error {
 	return nil
 }
 
+// handleReset processes the /mrl_reset command, which clears all conversation history.
+// This is an admin-only command that requires authorization checking.
+//
+// The function:
+//  1. Validates the message and user authorization
+//  2. Deletes all conversation history
+//  3. Sends confirmation or error message to user
+//
+// Returns an error if:
+//   - Message is nil
+//   - User is not authorized
+//   - Database operation fails
+//   - Sending response fails
 func (b *Bot) handleReset(ctx context.Context, msg *tgbotapi.Message) error {
 	if msg == nil {
 		return ErrNilMessage
@@ -145,11 +175,20 @@ func (b *Bot) handleReset(ctx context.Context, msg *tgbotapi.Message) error {
 	return nil
 }
 
+// isUserAuthorized checks if a user has admin privileges by comparing
+// their user ID with the configured admin ID.
 func (b *Bot) isUserAuthorized(userID int64) bool {
 	return userID == b.cfg.AdminID
 }
 
-// Helper function to reduce code duplication.
+// sendMessage is a helper function that sends a message via the Telegram API
+// and wraps any errors with a descriptive message.
+//
+// Parameters:
+//   - msg: The message configuration to send
+//   - errMsg: Description to prepend to any error that occurs
+//
+// Returns an error if the API call fails.
 func (b *Bot) sendMessage(msg tgbotapi.MessageConfig, errMsg string) error {
 	_, err := b.api.Send(msg)
 	if err != nil {

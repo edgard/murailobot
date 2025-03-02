@@ -12,6 +12,16 @@ import (
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
+// New creates a new Telegram bot instance with the provided configuration
+// and dependencies. It validates the configuration and initializes the
+// Telegram Bot API client.
+//
+// Parameters:
+//   - cfg: Configuration containing bot token and settings
+//   - database: Database interface for conversation history
+//   - openAIService: OpenAI service for generating responses
+//
+// Returns an error if any required dependency is nil or initialization fails.
 func New(cfg *config.Config, database db.Database, openAIService openai.Service) (*Bot, error) {
 	if cfg == nil {
 		return nil, ErrNilConfig
@@ -54,6 +64,17 @@ func New(cfg *config.Config, database db.Database, openAIService openai.Service)
 	return bot, nil
 }
 
+// Start begins the bot's operation, setting up command handlers and
+// processing incoming updates. It runs until the context is cancelled
+// or an error occurs.
+//
+// The bot supports the following commands:
+//   - /start: Initiates conversation with welcome message
+//   - /mrl: Generates AI response to user message
+//   - /mrl_reset: Clears chat history (admin only)
+//
+// The function handles updates asynchronously and manages error reporting
+// through channels.
 func (b *Bot) Start(ctx context.Context) error {
 	updateConfig := tgbotapi.NewUpdate(DefaultUpdateOffset)
 	updateConfig.Timeout = DefaultUpdateTimeout
@@ -129,12 +150,20 @@ func (b *Bot) Start(ctx context.Context) error {
 	}
 }
 
+// Stop gracefully shuts down the bot by stopping the update receiver.
+// This method should be called when terminating the bot's operation.
 func (b *Bot) Stop() error {
 	b.api.StopReceivingUpdates()
 
 	return nil
 }
 
+// SendContinuousTyping sends periodic typing indicators to indicate the bot
+// is processing a request. This provides visual feedback during long-running
+// operations like AI response generation.
+//
+// The function runs until the context is cancelled, sending typing indicators
+// at DefaultTypingInterval intervals.
 func (b *Bot) SendContinuousTyping(ctx context.Context, chatID int64) {
 	action := tgbotapi.NewChatAction(chatID, tgbotapi.ChatTyping)
 	if _, err := b.api.Request(action); err != nil {

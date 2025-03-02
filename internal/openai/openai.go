@@ -13,7 +13,15 @@ import (
 	"github.com/sashabaranov/go-openai"
 )
 
-// New creates a new OpenAI client instance.
+// New creates a new OpenAI client instance with the provided configuration.
+// It configures the underlying HTTP client with appropriate timeouts and
+// initializes the client with the specified model settings.
+//
+// Parameters:
+//   - cfg: Configuration containing API settings and model parameters
+//   - db: Database interface for conversation history management
+//
+// Returns an error if configuration is nil or invalid.
 func New(cfg *config.Config, db db.Database) (*Client, error) {
 	if cfg == nil {
 		return nil, ErrNilConfig
@@ -39,6 +47,14 @@ func New(cfg *config.Config, db db.Database) (*Client, error) {
 }
 
 // Generate implements the OpenAIService interface.
+// It creates an AI response for a user message by:
+//  1. Retrieving recent conversation history
+//  2. Formatting messages with user context
+//  3. Making API request with retry logic
+//  4. Sanitizing and validating the response
+//
+// The function includes conversation history to maintain context and
+// formats messages with timestamps and user information.
 func (c *Client) Generate(ctx context.Context, userID int64, userName string, userMsg string) (string, error) {
 	userMsg = strings.TrimSpace(userMsg)
 	if userMsg == "" {
@@ -106,7 +122,15 @@ func (c *Client) Generate(ctx context.Context, userID int64, userName string, us
 	})
 }
 
-// formatHistory formats chat history for OpenAI context.
+// formatHistory formats chat history entries into OpenAI message format.
+// It processes the history in reverse chronological order and includes
+// only valid message pairs (user message + bot response).
+//
+// The function adds context to user messages by including:
+//   - Timestamp in RFC3339 format
+//   - User ID for tracking
+//   - Username for display
+//   - Original message content
 func (c *Client) formatHistory(history []db.ChatHistory) []openai.ChatCompletionMessage {
 	if len(history) == 0 {
 		return nil
@@ -164,7 +188,9 @@ func (c *Client) formatHistory(history []db.ChatHistory) []openai.ChatCompletion
 	return messages
 }
 
-// isPermanentAPIError identifies permanent API errors.
+// isPermanentAPIError identifies non-retryable API errors by checking
+// the error message against known error types. These errors indicate
+// issues that won't be resolved by retrying (e.g., invalid API key).
 func isPermanentAPIError(err error) (bool, error) {
 	if err == nil {
 		return false, nil
@@ -180,7 +206,15 @@ func isPermanentAPIError(err error) (bool, error) {
 	return false, err
 }
 
-// retryWithBackoff retries operation with exponential backoff.
+// retryWithBackoff implements exponential backoff retry logic for API calls.
+// It will retry operations that fail with transient errors up to RetryMaxAttempts
+// times, with exponentially increasing delays between attempts.
+//
+// The function handles:
+//   - Context cancellation
+//   - Permanent vs transient errors
+//   - Exponential backoff timing
+//   - Maximum retry attempts
 func retryWithBackoff(ctx context.Context, op func() (string, error)) (string, error) {
 	attempt := 0
 

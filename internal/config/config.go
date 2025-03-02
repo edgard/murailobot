@@ -14,7 +14,20 @@ import (
 	"github.com/knadh/koanf/v2"
 )
 
-// LoadConfig loads and validates configuration from multiple sources.
+// LoadConfig loads and validates configuration from multiple sources in the following order:
+//  1. Default values (lowest priority)
+//  2. Configuration file (config.yaml)
+//  3. Environment variables (highest priority)
+//
+// Environment variables should be prefixed with BOT_ and use underscore as separator.
+// For example, BOT_OPENAI_TOKEN will set the OpenAIToken field.
+//
+// Example usage:
+//
+//	cfg, err := config.LoadConfig()
+//	if err != nil {
+//	    log.Fatal(err)
+//	}
 func LoadConfig() (*Config, error) {
 	k := koanf.New(".")
 
@@ -52,7 +65,9 @@ func LoadConfig() (*Config, error) {
 	return &config, nil
 }
 
-// validateConfig performs validation of the config struct.
+// validateConfig performs validation of the config struct using the validator tags.
+// It returns a formatted error message containing all validation failures when validation fails.
+// For example: "validation error: OpenAIToken: required, OpenAIModel: required".
 func validateConfig(config *Config) error {
 	v := validator.New()
 	if err := v.Struct(config); err != nil {

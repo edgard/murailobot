@@ -1,3 +1,6 @@
+// Package config provides configuration management for the Telegram bot application.
+// It handles loading and validating configuration from multiple sources including
+// environment variables, configuration files, and default values.
 package config
 
 import (
@@ -5,19 +8,20 @@ import (
 	"time"
 )
 
-// Validation constants.
+// Validation constants define the acceptable ranges for various configuration parameters.
 const (
-	MinTemperature       = 0.0
-	MaxTemperature       = 2.0
-	MinTimeout           = time.Second
-	MaxTimeout           = 10 * time.Minute
-	DefaultOpenAITimeout = 2 * time.Minute
+	MinTemperature       = 0.0              // Minimum value for OpenAI temperature parameter
+	MaxTemperature       = 2.0              // Maximum value for OpenAI temperature parameter
+	MinTimeout           = time.Second      // Minimum timeout duration for API calls
+	MaxTimeout           = 10 * time.Minute // Maximum timeout duration for API calls
+	DefaultOpenAITimeout = 2 * time.Minute  // Default timeout for OpenAI API calls
 )
 
-// Error definitions.
+// ErrValidation is returned when configuration validation fails.
 var ErrValidation = errors.New("validation error")
 
-// Default configuration values.
+// Default configuration values used when no override is provided.
+// These values can be overridden through config.yaml or environment variables.
 var defaults = map[string]any{
 	"openai.base_url":    "https://api.openai.com/v1",
 	"openai.model":       "gpt-4",
@@ -37,15 +41,28 @@ var defaults = map[string]any{
 }
 
 // Config defines the complete application configuration.
-// Each field is validated using validator tags.
+// Configuration can be provided through environment variables prefixed with BOT_
+// or through a config.yaml file. Environment variables take precedence over
+// config file values.
+//
+// Example environment variables:
+//
+//	BOT_OPENAI_TOKEN=sk-xxx
+//	BOT_TELEGRAM_TOKEN=123456:xxx
+//	BOT_TELEGRAM_ADMIN_ID=123456789
 type Config struct {
 	// OpenAI service configuration
-	OpenAIToken       string        `koanf:"openai.token"       validate:"required"`
-	OpenAIBaseURL     string        `koanf:"openai.base_url"    validate:"required,url"`
-	OpenAIModel       string        `koanf:"openai.model"       validate:"required"`
-	OpenAITemperature float32       `koanf:"openai.temperature" validate:"required,min=0,max=2"`
-	OpenAIInstruction string        `koanf:"openai.instruction" validate:"required,min=1"`
-	OpenAITimeout     time.Duration `koanf:"openai.timeout"     validate:"required,min=1s,max=10m"`
+	OpenAIToken string `koanf:"openai.token" validate:"required"`
+	// Base URL for OpenAI API, defaults to https://api.openai.com/v1
+	OpenAIBaseURL string `koanf:"openai.base_url" validate:"required,url"`
+	// Model identifier (e.g., "gpt-4")
+	OpenAIModel string `koanf:"openai.model" validate:"required"`
+	// Temperature controls response randomness (0.0-2.0)
+	OpenAITemperature float32 `koanf:"openai.temperature" validate:"required,min=0,max=2"`
+	// System instruction defining assistant behavior
+	OpenAIInstruction string `koanf:"openai.instruction" validate:"required,min=1"`
+	// Timeout for OpenAI API calls (1s-10m)
+	OpenAITimeout time.Duration `koanf:"openai.timeout" validate:"required,min=1s,max=10m"`
 
 	// Logging Settings
 	LogLevel  string `koanf:"log.level"  validate:"required,oneof=debug info warn error"`

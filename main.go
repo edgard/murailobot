@@ -1,3 +1,6 @@
+// Package main implements a Telegram bot that integrates with OpenAI's API.
+// It provides a conversational interface through Telegram, processing messages
+// using OpenAI's language models and maintaining conversation history in a local database.
 package main
 
 import (
@@ -15,12 +18,14 @@ import (
 	"github.com/edgard/murailobot/internal/utils"
 )
 
-// Build information.
+// Build information injected at compile time through linker flags.
+// These values provide version tracking and build provenance information
+// that can be logged during runtime.
 var (
-	version = "dev"
-	commit  = "none"
-	date    = "unknown"
-	builtBy = "unknown"
+	version = "dev"     // Semantic version of the build
+	commit  = "none"    // Git commit hash
+	date    = "unknown" // Build timestamp
+	builtBy = "unknown" // Builder identifier
 )
 
 func main() {
@@ -28,6 +33,16 @@ func main() {
 	os.Exit(code)
 }
 
+// run initializes and starts the application components in the following order:
+//  1. Sets up structured logging
+//  2. Loads configuration from file/environment
+//  3. Initializes the database connection
+//  4. Creates OpenAI client
+//  5. Creates and starts Telegram bot
+//
+// The function handles graceful shutdown on SIGINT/SIGTERM signals.
+// It returns an exit code (0 for success, 1 for error) that can be used
+// by the main function to terminate the program.
 func run() int {
 	logger := slog.New(slog.NewJSONHandler(os.Stderr, nil))
 	slog.SetDefault(logger)
