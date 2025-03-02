@@ -7,7 +7,7 @@ import (
 	"gorm.io/gorm"
 )
 
-// New constants for database configuration.
+// Database configuration defaults.
 const (
 	DefaultTempStore    = "MEMORY"
 	DefaultCacheSizeKB  = 4000
@@ -16,21 +16,19 @@ const (
 	DefaultMaxOpenConns = 1
 )
 
+// Database defines the interface for chat history storage operations.
+type Database interface {
+	GetRecent(ctx context.Context, limit int) ([]ChatHistory, error)
+	Save(ctx context.Context, userID int64, userName string, userMsg, botMsg string) error
+	DeleteAll(ctx context.Context) error
+	Close() error
+}
+
 // Config defines database settings.
 type Config struct {
 	TempStore   string
 	CacheSizeKB int
 	OpTimeout   time.Duration
-}
-
-// ChatHistory stores a chat interaction record.
-type ChatHistory struct {
-	gorm.Model
-	UserID    int64     `gorm:"not null;index"`
-	UserName  string    `gorm:"type:text"`
-	UserMsg   string    `gorm:"not null;type:text"`
-	BotMsg    string    `gorm:"not null;type:text"`
-	Timestamp time.Time `gorm:"not null;index"`
 }
 
 // SQLiteDB represents a SQLite database connection.
@@ -39,10 +37,12 @@ type SQLiteDB struct {
 	cfg *Config
 }
 
-// Database interface for chat history operations.
-type Database interface {
-	GetRecent(ctx context.Context, limit int) ([]ChatHistory, error)
-	Save(ctx context.Context, userID int64, userName string, userMsg, botMsg string) error
-	DeleteAll(ctx context.Context) error
-	Close() error
+// ChatHistory represents a single chat interaction record.
+type ChatHistory struct {
+	gorm.Model
+	UserID    int64     `gorm:"not null;index"`
+	UserName  string    `gorm:"type:text"`
+	UserMsg   string    `gorm:"not null;type:text"`
+	BotMsg    string    `gorm:"not null;type:text"`
+	Timestamp time.Time `gorm:"not null;index"`
 }

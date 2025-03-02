@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -9,15 +10,25 @@ import (
 	"github.com/edgard/murailobot/internal/config"
 )
 
-// Constants for magic values.
+// Default log level used when none is specified.
 const (
 	defaultLogLevel = slog.LevelInfo
 	logLevelDebug   = "debug"
 	logLevelWarn    = "warn"
 	logLevelError   = "error"
 	logLevelInfo    = "info"
-	logFormatText   = "text"
-	logFormatJSON   = "json"
+)
+
+// Supported log output formats.
+const (
+	logFormatText = "text"
+	logFormatJSON = "json"
+)
+
+// Error definitions.
+var (
+	ErrInvalidLogLevel  = errors.New("invalid log level")
+	ErrInvalidLogFormat = errors.New("invalid log format")
 )
 
 // SetupLogger configures application logging.
@@ -27,6 +38,7 @@ func SetupLogger(cfg *config.Config) error {
 	}
 
 	level := defaultLogLevel
+
 	switch strings.ToLower(cfg.LogLevel) {
 	case logLevelDebug:
 		level = slog.LevelDebug
@@ -37,10 +49,11 @@ func SetupLogger(cfg *config.Config) error {
 	case logLevelInfo:
 		// Already set to default
 	default:
-		return fmt.Errorf("invalid log level: %s", cfg.LogLevel)
+		return fmt.Errorf("%w: %s", ErrInvalidLogLevel, cfg.LogLevel)
 	}
 
 	opts := &slog.HandlerOptions{Level: level}
+
 	var handler slog.Handler
 
 	switch strings.ToLower(cfg.LogFormat) {
@@ -49,7 +62,7 @@ func SetupLogger(cfg *config.Config) error {
 	case logFormatJSON:
 		handler = slog.NewJSONHandler(os.Stderr, opts)
 	default:
-		return fmt.Errorf("invalid log format: %s", cfg.LogFormat)
+		return fmt.Errorf("%w: %s", ErrInvalidLogFormat, cfg.LogFormat)
 	}
 
 	logger := slog.New(handler)

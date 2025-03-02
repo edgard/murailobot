@@ -2,7 +2,6 @@ package telegram
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
 	"time"
@@ -15,13 +14,17 @@ import (
 
 func New(cfg *config.Config, database db.Database, aiService ai.Service) (*Bot, error) {
 	if cfg == nil {
-		return nil, errors.New("config is nil")
+		return nil, ErrNilConfig
 	}
-	if database == nil {
-		return nil, errors.New("database is nil")
+
+	db := database
+	if db == nil {
+		return nil, ErrNilDatabase
 	}
-	if aiService == nil {
-		return nil, errors.New("AI service is nil")
+
+	ai := aiService
+	if ai == nil {
+		return nil, ErrNilAIService
 	}
 
 	api, err := tgbotapi.NewBotAPI(cfg.TelegramToken)
@@ -86,8 +89,11 @@ func (b *Bot) Start(ctx context.Context) error {
 			errCh := make(chan error, 1)
 
 			go func(ctx context.Context, msg *tgbotapi.Message, errCh chan<- error) {
+				cmd := msg.Command()
+
 				var err error
-				switch msg.Command() {
+
+				switch cmd {
 				case "start":
 					err = b.handleStart(ctx, msg)
 				case "mrl":

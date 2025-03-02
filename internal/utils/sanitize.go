@@ -7,17 +7,18 @@ import (
 	"unicode"
 )
 
-// Define magic number constants.
+// Threshold constants.
 const (
 	minNewlinesThreshold    = 3
 	minHorizontalRuleLength = 3
+	minMarkdownLinkGroups   = 3
 	markdownHeaderMinLevel  = 1
 	markdownHeaderMaxLevel  = 6
-	minMarkdownLinkGroups   = 3
 )
 
+// Replacer groups.
 var (
-	// Group: Unicode replacers - Replaces Unicode control and formatting characters that affect markdown rendering.
+	// Unicode control/formatting character replacer.
 	unicodeReplacer = strings.NewReplacer(
 		"\u2060", "", "\u180E", "",
 		"\u2028", "\n", "\u2029", "\n\n",
@@ -28,7 +29,7 @@ var (
 		"\u202C", "", "\u202D", "", "\u202E", "",
 	)
 
-	// Group: Escaped character replacers - Temporarily substitutes escaped markdown symbols with placeholder characters.
+	// Escaped markdown symbol replacer.
 	escapedReplacer = strings.NewReplacer(
 		"\\*", "\u0001", "\\_", "\u0002",
 		"\\`", "\u0003", "\\~", "\u0004",
@@ -38,7 +39,7 @@ var (
 		"\\!", "\u0010",
 	)
 
-	// Group: Restoration replacers - Converts placeholder characters back to their original markdown symbols.
+	// Original symbol restoration replacer.
 	restoreReplacer = strings.NewReplacer(
 		"\u0001", "*", "\u0002", "_",
 		"\u0003", "`", "\u0004", "~",
@@ -48,30 +49,38 @@ var (
 	)
 )
 
+// Regex pattern groups.
 var (
-	controlCharsRegex     = regexp.MustCompile(`[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]`)                            // Matches control characters (non-printable ranges).
-	multipleNewlinesRegex = regexp.MustCompile("\n{" + strconv.Itoa(minNewlinesThreshold) + ",}")             // Matches sequences of 3 or more newlines.
-	horizontalRuleRegex   = regexp.MustCompile("^[\\*\\-_]{" + strconv.Itoa(minHorizontalRuleLength) + ",}$") // Matches a horizontal rule made entirely of *, -, or _.
+	// Basic character patterns.
+	controlCharsRegex     = regexp.MustCompile(`[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]`)
+	multipleNewlinesRegex = regexp.MustCompile("\n{" + strconv.Itoa(minNewlinesThreshold) + ",}")
+	horizontalRuleRegex   = regexp.MustCompile("^[\\*\\-_]{" + strconv.Itoa(minHorizontalRuleLength) + ",}$")
 
-	regexFencedCodeBlocks = regexp.MustCompile("```[\\s\\S]*?```") // Matches fenced code blocks.
-	regexInlineCode       = regexp.MustCompile("`[^`]+`")          // Matches inline code delimited by backticks.
+	// Code block patterns.
+	regexFencedCodeBlocks = regexp.MustCompile("```[\\s\\S]*?```")
+	regexInlineCode       = regexp.MustCompile("`[^`]+`")
 
-	regexImages = regexp.MustCompile(`!\[(.*?)\]\(([^)]+)\)`) // Matches markdown image syntax.
-	regexLinks  = regexp.MustCompile(`\[(.*?)\]\(([^)]+)\)`)  // Matches markdown link syntax.
+	// Link patterns.
+	regexImages = regexp.MustCompile(`!\[(.*?)\]\(([^)]+)\)`)
+	regexLinks  = regexp.MustCompile(`\[(.*?)\]\(([^)]+)\)`)
 
-	regexHeaders = regexp.MustCompile("(?m)^#{" + strconv.Itoa(markdownHeaderMinLevel) + "," + strconv.Itoa(markdownHeaderMaxLevel) + "} (.+)$") // Matches markdown headers (lines starting with 1-6 '#' and a space).
-	regexBold    = regexp.MustCompile(`\*\*(.*?)\*\*`)                                                                                           // Matches bold text enclosed in **.
-	regexBold2   = regexp.MustCompile(`__(.+?)__`)                                                                                               // Matches bold text enclosed in __.
-	regexItalic  = regexp.MustCompile(`\*([^*]+)\*`)                                                                                             // Matches italic text enclosed in *.
-	regexItalic2 = regexp.MustCompile(`_([^_]+)_`)                                                                                               // Matches italic text enclosed in _.
-	regexStrike  = regexp.MustCompile(`~~(.+?)~~`)                                                                                               // Matches strikethrough text enclosed in ~~.
+	// Text formatting patterns.
+	regexHeaders = regexp.MustCompile("(?m)^#{" + strconv.Itoa(markdownHeaderMinLevel) + "," + strconv.Itoa(markdownHeaderMaxLevel) + "} (.+)$")
+	regexBold    = regexp.MustCompile(`\*\*(.*?)\*\*`)
+	regexBold2   = regexp.MustCompile(`__(.+?)__`)
+	regexItalic  = regexp.MustCompile(`\*([^*]+)\*`)
+	regexItalic2 = regexp.MustCompile(`_([^_]+)_`)
+	regexStrike  = regexp.MustCompile(`~~(.+?)~~`)
 
-	regexOrderedList  = regexp.MustCompile(`^\s*\d+\.\s+`)   // Matches unordered list markers (optional whitespace, number, dot, and space).
-	regexNumberedList = regexp.MustCompile(`^\d+\.\s+`)      // Matches numbered list markers at the beginning of a line.
-	regexBlockquotes  = regexp.MustCompile(`(?m)^>\s*(.+)$`) // Matches blockquote lines (starting with '>').
+	// List patterns.
+	regexOrderedList  = regexp.MustCompile(`^\s*\d+\.\s+`)
+	regexNumberedList = regexp.MustCompile(`^\d+\.\s+`)
+	regexBlockquotes  = regexp.MustCompile(`(?m)^>\s*(.+)$`)
 
-	regexHTMLTags = regexp.MustCompile(`<[^>]*>`) // Matches any HTML tag.
+	// HTML and additional patterns.
+	regexHTMLTags = regexp.MustCompile(`<[^>]*>`)
 
+	// Markdown detection patterns.
 	markdownRegexes = []*regexp.Regexp{
 		regexp.MustCompile(`\*\*.+?\*\*`),                 // Bold with **.
 		regexp.MustCompile(`__.+?__`),                     // Bold with __.
@@ -97,7 +106,7 @@ var (
 	}
 )
 
-// applyRegexReplacements applies a series of regex replacement rules to s.
+// Regular functions.
 func applyRegexReplacements(s string, rules []struct {
 	re   *regexp.Regexp
 	repl string
@@ -113,24 +122,27 @@ func applyRegexReplacements(s string, rules []struct {
 	}()
 }
 
-// normalizeLineWhitespace collapses multiple whitespace characters in a line,
-// preserving fullwidth spaces.
+// String processing functions.
 func normalizeLineWhitespace(line string) string {
 	var b strings.Builder
-	space := false
+
+	var space bool // space default false
 
 	for _, r := range line {
 		switch {
 		case r == '\u3000':
 			b.WriteRune(r)
+
 			space = false
 		case unicode.IsSpace(r) || r == '\u00A0':
 			if !space {
 				b.WriteRune(' ')
+
 				space = true
 			}
 		default:
 			b.WriteRune(r)
+
 			space = false
 		}
 	}
@@ -138,9 +150,9 @@ func normalizeLineWhitespace(line string) string {
 	return strings.TrimSpace(b.String())
 }
 
-// processMarkdownStructures normalizes Markdown list markers, tables, and horizontal rules.
 func processMarkdownStructures(md string) string {
 	lines := strings.Split(md, "\n")
+
 	var out []string
 
 	for i := 0; i < len(lines); i++ {
@@ -162,14 +174,21 @@ func processMarkdownStructures(md string) string {
 		if strings.HasPrefix(l, "|") && strings.HasSuffix(l, "|") {
 			if i+1 < len(lines) && strings.HasPrefix(lines[i+1], "|") &&
 				strings.HasSuffix(lines[i+1], "|") && strings.Contains(lines[i+1], "---") {
-				out = append(out, strings.TrimSpace(strings.ReplaceAll(strings.Trim(l, "|"), "|", " ")))
+				var s string
+				s = strings.Trim(l, "|")
+				s = strings.ReplaceAll(s, "|", " ")
+				out = append(out, strings.TrimSpace(s))
 				i++
 
 				continue
 			} else if strings.Contains(l, "---") && i > 0 && strings.HasPrefix(lines[i-1], "|") {
 				continue
 			}
-			out = append(out, strings.TrimSpace(strings.ReplaceAll(strings.Trim(l, "|"), "|", " ")))
+
+			var s string
+			s = strings.Trim(l, "|")
+			s = strings.ReplaceAll(s, "|", " ")
+			out = append(out, strings.TrimSpace(s))
 
 			continue
 		}
@@ -185,7 +204,7 @@ func processMarkdownStructures(md string) string {
 	return strings.Join(out, "\n")
 }
 
-// IsMarkdown checks if the given text contains Markdown formatting.
+// Public markdown functions.
 func IsMarkdown(text string) bool {
 	for _, re := range markdownRegexes {
 		if re.MatchString(text) {
@@ -193,6 +212,7 @@ func IsMarkdown(text string) bool {
 			if strings.Contains(re.String(), `\*`) && strings.Contains(text, `\*`) {
 				esc := regexp.MustCompile(`\\[\*]`)
 				unesc := regexp.MustCompile(`[^\\]\*`)
+
 				if esc.FindAllString(text, -1) != nil && unesc.FindAllString(text, -1) == nil {
 					continue
 				}
@@ -266,6 +286,7 @@ func Sanitize(input string) string {
 	for i, p := range parts {
 		parts[i] = normalizeLineWhitespace(p)
 	}
+
 	s = strings.Join(parts, "\n")
 	s = multipleNewlinesRegex.ReplaceAllString(s, "\n\n")
 

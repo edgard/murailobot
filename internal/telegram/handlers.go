@@ -12,32 +12,24 @@ import (
 
 func (b *Bot) handleStart(_ context.Context, msg *tgbotapi.Message) error {
 	if msg == nil {
-		return errors.New("message is nil")
+		return ErrNilMessage
 	}
 
 	reply := tgbotapi.NewMessage(msg.Chat.ID, b.cfg.Messages.Welcome)
-	_, err := b.api.Send(reply)
-	if err != nil {
-		return fmt.Errorf("failed to send welcome message: %w", err)
-	}
 
-	return nil
+	return b.sendMessage(reply, "failed to send welcome message")
 }
 
 func (b *Bot) handleMessage(ctx context.Context, msg *tgbotapi.Message) error {
 	if msg == nil {
-		return errors.New("message is nil")
+		return ErrNilMessage
 	}
 
 	text := strings.TrimSpace(strings.TrimPrefix(msg.Text, "/mrl"))
 	if text == "" {
 		reply := tgbotapi.NewMessage(msg.Chat.ID, b.cfg.Messages.Provide)
-		_, err := b.api.Send(reply)
-		if err != nil {
-			return fmt.Errorf("failed to send prompt message: %w", err)
-		}
 
-		return nil
+		return b.sendMessage(reply, "failed to send prompt message")
 	}
 
 	userName := ""
@@ -75,8 +67,10 @@ func (b *Bot) handleMessage(ctx context.Context, msg *tgbotapi.Message) error {
 		}
 
 		reply := tgbotapi.NewMessage(msg.Chat.ID, errMsg)
-		if _, replyErr := b.api.Send(reply); replyErr != nil {
-			return fmt.Errorf("failed to send error message (%w) after AI error: %w", replyErr, err)
+		if err := b.sendMessage(reply, "failed to send error message"); err != nil {
+			slog.Error("failed to send error message to user",
+				"error", err,
+				"user_id", msg.From.ID)
 		}
 
 		return fmt.Errorf("AI generation failed: %w", err)
@@ -90,7 +84,11 @@ func (b *Bot) handleMessage(ctx context.Context, msg *tgbotapi.Message) error {
 	}
 
 	reply := tgbotapi.NewMessage(msg.Chat.ID, response)
-	if _, err := b.api.Send(reply); err != nil {
+	if err := b.sendMessage(reply, "failed to send AI response"); err != nil {
+		slog.Error("failed to send AI response",
+			"error", err,
+			"user_id", msg.From.ID)
+
 		return fmt.Errorf("failed to send AI response: %w", err)
 	}
 
@@ -99,12 +97,23 @@ func (b *Bot) handleMessage(ctx context.Context, msg *tgbotapi.Message) error {
 
 func (b *Bot) handleReset(ctx context.Context, msg *tgbotapi.Message) error {
 	if msg == nil {
-		return errors.New("message is nil")
+		return ErrNilMessage
 	}
 
 	userID := msg.From.ID
 	if !b.isUserAuthorized(userID) {
-		return b.sendUnauthorizedMsg(msg)
+		slog.Warn("unauthorized access attempt",
+			"user_id", msg.From.ID,
+			"action", "reset_history")
+
+		reply := tgbotapi.NewMessage(msg.Chat.ID, b.cfg.Messages.Unauthorized)
+		if err := b.sendMessage(reply, "failed to send unauthorized message"); err != nil {
+			slog.Error("failed to send unauthorized message",
+				"error", err,
+				"user_id", msg.From.ID)
+		}
+
+		return ErrUnauthorized
 	}
 
 	slog.Info("resetting chat history", "user_id", userID)
@@ -115,16 +124,22 @@ func (b *Bot) handleReset(ctx context.Context, msg *tgbotapi.Message) error {
 			"user_id", userID)
 
 		reply := tgbotapi.NewMessage(msg.Chat.ID, b.cfg.Messages.GeneralError)
-		if _, replyErr := b.api.Send(reply); replyErr != nil {
-			return fmt.Errorf("failed to send error message (%w) after history reset error: %w", replyErr, err)
+		if err := b.sendMessage(reply, "failed to send error message"); err != nil {
+			slog.Error("failed to send error message to user",
+				"error", err,
+				"user_id", userID)
 		}
 
 		return fmt.Errorf("history reset failed: %w", err)
 	}
 
 	reply := tgbotapi.NewMessage(msg.Chat.ID, b.cfg.Messages.HistoryReset)
-	if _, err := b.api.Send(reply); err != nil {
-		return fmt.Errorf("failed to send history reset confirmation: %w", err)
+	if err := b.sendMessage(reply, "failed to send reset confirmation"); err != nil {
+		slog.Error("failed to send reset confirmation",
+			"error", err,
+			"user_id", userID)
+
+		return fmt.Errorf("history reset succeeded but failed to confirm: %w", err)
 	}
 
 	return nil
@@ -134,15 +149,11 @@ func (b *Bot) isUserAuthorized(userID int64) bool {
 	return userID == b.cfg.AdminID
 }
 
-func (b *Bot) sendUnauthorizedMsg(msg *tgbotapi.Message) error {
-	slog.Warn("unauthorized access attempt",
-		"user_id", msg.From.ID,
-		"action", "reset_history")
-
-	reply := tgbotapi.NewMessage(msg.Chat.ID, b.cfg.Messages.Unauthorized)
-	_, err := b.api.Send(reply)
+// Helper function to reduce code duplication.
+func (b *Bot) sendMessage(msg tgbotapi.MessageConfig, errMsg string) error {
+	_, err := b.api.Send(msg)
 	if err != nil {
-		return fmt.Errorf("failed to send unauthorized message: %w", err)
+		return fmt.Errorf("%s: %w", errMsg, err)
 	}
 
 	return nil

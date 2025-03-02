@@ -15,7 +15,7 @@ import (
 	"github.com/edgard/murailobot/internal/utils"
 )
 
-// Add build information variables.
+// Build information.
 var (
 	version = "dev"
 	commit  = "none"
@@ -54,6 +54,7 @@ func run() int {
 
 		return 1
 	}
+
 	defer func() {
 		if err := database.Close(); err != nil {
 			slog.Error("failed to close database", "error", err)
@@ -97,6 +98,7 @@ func run() int {
 
 			return 1
 		}
+
 		slog.Info("bot stopped due to context cancellation")
 	}
 

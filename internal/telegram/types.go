@@ -1,7 +1,7 @@
 package telegram
 
 import (
-	"context"
+	"errors"
 	"time"
 
 	"github.com/edgard/murailobot/internal/ai"
@@ -9,32 +9,32 @@ import (
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
-// Magic number constants.
+// Default telegram bot configuration values.
 const (
-	DefaultTypingInterval = 5 * time.Second
 	DefaultUpdateOffset   = 0
-	DefaultUpdateTimeout  = 30
+	DefaultUpdateTimeout  = 60
+	DefaultTypingInterval = 5 * time.Second
 )
 
-// Messages stores bot response templates.
+// Messages defines configurable bot response templates.
 type Messages struct {
-	Welcome      string `yaml:"welcome"`
-	Unauthorized string `yaml:"unauthorized"`
-	GeneralError string `yaml:"general_error"`
-	AIError      string `yaml:"ai_error"`
-	HistoryReset string `yaml:"history_reset"`
-	Provide      string `yaml:"provide_message"`
-	Timeout      string `yaml:"timeout"`
+	Welcome      string
+	Unauthorized string
+	Provide      string
+	AIError      string
+	GeneralError string
+	HistoryReset string
+	Timeout      string
 }
 
-// Config holds bot settings.
+// Config holds bot configuration.
 type Config struct {
-	Token    string   `yaml:"token"`
-	AdminID  int64    `yaml:"admin_id"`
-	Messages Messages `yaml:"messages"`
+	Token    string
+	AdminID  int64
+	Messages Messages
 }
 
-// Bot represents a telegram bot.
+// Bot implements a Telegram bot with AI capabilities.
 type Bot struct {
 	api *tgbotapi.BotAPI
 	db  db.Database
@@ -42,9 +42,10 @@ type Bot struct {
 	cfg *Config
 }
 
-// Service defines telegram bot operations.
-type Service interface {
-	Start(ctx context.Context) error
-	Stop() error
-	SendContinuousTyping(ctx context.Context, chatID int64)
-}
+var (
+	ErrNilConfig    = errors.New("config is nil")
+	ErrNilDatabase  = errors.New("database is nil")
+	ErrNilAIService = errors.New("AI service is nil")
+	ErrNilMessage   = errors.New("message is nil")
+	ErrUnauthorized = errors.New("unauthorized access")
+)

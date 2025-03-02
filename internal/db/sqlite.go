@@ -11,6 +11,7 @@ import (
 	"gorm.io/gorm/logger"
 )
 
+// New creates a new SQLite database connection.
 func New(cfg *Config) (*SQLiteDB, error) {
 	if cfg == nil {
 		cfg = &Config{
@@ -38,6 +39,7 @@ func New(cfg *Config) (*SQLiteDB, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to get database instance: %w", err)
 	}
+
 	sqlDB.SetMaxOpenConns(DefaultMaxOpenConns)
 
 	if err := db.AutoMigrate(&ChatHistory{}); err != nil {
@@ -48,6 +50,24 @@ func New(cfg *Config) (*SQLiteDB, error) {
 		db:  db,
 		cfg: cfg,
 	}, nil
+}
+
+// Core database operations
+
+func (d *SQLiteDB) GetRecent(ctx context.Context, limit int) ([]ChatHistory, error) {
+	var history []ChatHistory
+
+	timeoutCtx, cancel := context.WithTimeout(ctx, d.cfg.OpTimeout)
+	defer cancel()
+
+	if err := d.db.WithContext(timeoutCtx).
+		Order("timestamp desc").
+		Limit(limit).
+		Find(&history).Error; err != nil {
+		return nil, fmt.Errorf("failed to get recent history: %w", err)
+	}
+
+	return history, nil
 }
 
 func (d *SQLiteDB) Save(ctx context.Context, userID int64, userName string, userMsg, botMsg string) error {
@@ -69,20 +89,7 @@ func (d *SQLiteDB) Save(ctx context.Context, userID int64, userName string, user
 	return nil
 }
 
-func (d *SQLiteDB) GetRecent(ctx context.Context, limit int) ([]ChatHistory, error) {
-	var history []ChatHistory
-	timeoutCtx, cancel := context.WithTimeout(ctx, d.cfg.OpTimeout)
-	defer cancel()
-
-	if err := d.db.WithContext(timeoutCtx).
-		Order("timestamp desc").
-		Limit(limit).
-		Find(&history).Error; err != nil {
-		return nil, fmt.Errorf("failed to get recent history: %w", err)
-	}
-
-	return history, nil
-}
+// Maintenance operations
 
 func (d *SQLiteDB) DeleteAll(ctx context.Context) error {
 	timeoutCtx, cancel := context.WithTimeout(ctx, d.cfg.OpTimeout)
