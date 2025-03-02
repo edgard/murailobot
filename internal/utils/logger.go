@@ -9,7 +9,7 @@ import (
 	"github.com/edgard/murailobot/internal/config"
 )
 
-// SetupLogger configures application logging
+// SetupLogger configures application logging.
 func SetupLogger(cfg *config.Config) error {
 	if cfg == nil {
 		return nil

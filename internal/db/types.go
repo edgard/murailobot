@@ -7,19 +7,14 @@ import (
 	"gorm.io/gorm"
 )
 
-type database struct {
-	db  *gorm.DB
-	cfg *Config
-}
-
-// Config defines database settings
+// Config defines database settings.
 type Config struct {
 	TempStore   string
 	CacheSizeKB int
 	OpTimeout   time.Duration
 }
 
-// ChatHistory stores a chat interaction record
+// ChatHistory stores a chat interaction record.
 type ChatHistory struct {
 	gorm.Model
 	UserID    int64     `gorm:"not null;index"`
@@ -29,7 +24,13 @@ type ChatHistory struct {
 	Timestamp time.Time `gorm:"not null;index"`
 }
 
-// Database interface for chat history operations
+// SQLite represents the concrete implementation of the Database interface.
+type SQLite struct {
+	db  *gorm.DB
+	cfg *Config
+}
+
+// Database interface for chat history operations.
 type Database interface {
 	GetRecent(ctx context.Context, limit int) ([]ChatHistory, error)
 	Save(ctx context.Context, userID int64, userName string, userMsg, botMsg string) error

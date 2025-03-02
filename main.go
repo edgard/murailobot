@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -14,7 +15,7 @@ import (
 	"github.com/edgard/murailobot/internal/utils"
 )
 
-// Add build information variables
+// Add build information variables.
 var (
 	version = "dev"
 	commit  = "none"
@@ -23,18 +24,25 @@ var (
 )
 
 func main() {
+	code := run()
+	os.Exit(code)
+}
+
+func run() int {
 	logger := slog.New(slog.NewJSONHandler(os.Stderr, nil))
 	slog.SetDefault(logger)
 
 	cfg, err := config.LoadConfig()
 	if err != nil {
 		slog.Error("failed to load configuration", "error", err)
-		os.Exit(1)
+
+		return 1
 	}
 
 	if err := utils.SetupLogger(cfg); err != nil {
 		slog.Error("failed to setup logger", "error", err)
-		os.Exit(1)
+
+		return 1
 	}
 
 	slog.Info("configuration loaded successfully")
@@ -43,7 +51,8 @@ func main() {
 	database, err := db.New(nil) // Use db package defaults
 	if err != nil {
 		slog.Error("failed to initialize database", "error", err)
-		os.Exit(1)
+
+		return 1
 	}
 	defer func() {
 		if err := database.Close(); err != nil {
@@ -54,13 +63,15 @@ func main() {
 	aiClient, err := ai.New(cfg, database)
 	if err != nil {
 		slog.Error("failed to initialize AI client", "error", err)
-		os.Exit(1)
+
+		return 1
 	}
 
 	bot, err := telegram.New(cfg, database, aiClient)
 	if err != nil {
 		slog.Error("failed to initialize Telegram bot", "error", err)
-		os.Exit(1)
+
+		return 1
 	}
 
 	slog.Info("application initialized successfully",
@@ -81,13 +92,15 @@ func main() {
 	}()
 
 	if err := bot.Start(ctx); err != nil {
-		if err != context.Canceled {
+		if !errors.Is(err, context.Canceled) {
 			slog.Error("bot stopped with error", "error", err)
-			os.Exit(1)
-		} else {
-			slog.Info("bot stopped due to context cancellation")
+
+			return 1
 		}
+		slog.Info("bot stopped due to context cancellation")
 	}
 
 	slog.Info("application shutdown complete")
+
+	return 0
 }

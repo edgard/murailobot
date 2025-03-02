@@ -3,6 +3,7 @@ package db
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"time"
 
 	"gorm.io/driver/sqlite"
@@ -10,7 +11,7 @@ import (
 	"gorm.io/gorm/logger"
 )
 
-func New(cfg *Config) (Database, error) {
+func New(cfg *Config) (*SQLite, error) {
 	if cfg == nil {
 		cfg = &Config{
 			TempStore:   "MEMORY",
@@ -24,7 +25,7 @@ func New(cfg *Config) (Database, error) {
 	}
 
 	dsn := "storage.db?_journal=WAL&_timeout=5000&_temp_store=" + cfg.TempStore +
-		"&_cache_size=-" + fmt.Sprintf("%d", cfg.CacheSizeKB)
+		"&_cache_size=-" + strconv.Itoa(cfg.CacheSizeKB)
 
 	db, err := gorm.Open(sqlite.Open(dsn), gormConfig)
 	if err != nil {
@@ -41,13 +42,13 @@ func New(cfg *Config) (Database, error) {
 		return nil, fmt.Errorf("failed to run migrations: %w", err)
 	}
 
-	return &database{
+	return &SQLite{
 		db:  db,
 		cfg: cfg,
 	}, nil
 }
 
-func (d *database) Save(ctx context.Context, userID int64, userName string, userMsg, botMsg string) error {
+func (d *SQLite) Save(ctx context.Context, userID int64, userName string, userMsg, botMsg string) error {
 	history := ChatHistory{
 		UserID:    userID,
 		UserName:  userName,
@@ -66,7 +67,7 @@ func (d *database) Save(ctx context.Context, userID int64, userName string, user
 	return nil
 }
 
-func (d *database) GetRecent(ctx context.Context, limit int) ([]ChatHistory, error) {
+func (d *SQLite) GetRecent(ctx context.Context, limit int) ([]ChatHistory, error) {
 	var history []ChatHistory
 	timeoutCtx, cancel := context.WithTimeout(ctx, d.cfg.OpTimeout)
 	defer cancel()
@@ -81,7 +82,7 @@ func (d *database) GetRecent(ctx context.Context, limit int) ([]ChatHistory, err
 	return history, nil
 }
 
-func (d *database) DeleteAll(ctx context.Context) error {
+func (d *SQLite) DeleteAll(ctx context.Context) error {
 	timeoutCtx, cancel := context.WithTimeout(ctx, d.cfg.OpTimeout)
 	defer cancel()
 
@@ -92,7 +93,7 @@ func (d *database) DeleteAll(ctx context.Context) error {
 	return nil
 }
 
-func (d *database) Close() error {
+func (d *SQLite) Close() error {
 	sqlDB, err := d.db.DB()
 	if err != nil {
 		return fmt.Errorf("failed to get database instance: %w", err)

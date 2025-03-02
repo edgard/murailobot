@@ -11,14 +11,14 @@ import (
 
 const defaultTypingInterval = 5 * time.Second
 
-// BotService defines telegram bot operations
+// BotService defines telegram bot operations.
 type BotService interface {
 	Start(ctx context.Context) error
 	Stop() error
 	SendContinuousTyping(ctx context.Context, chatID int64)
 }
 
-// Messages stores bot response templates
+// Messages stores bot response templates.
 type Messages struct {
 	Welcome      string `yaml:"welcome"`
 	Unauthorized string `yaml:"unauthorized"`
@@ -29,14 +29,14 @@ type Messages struct {
 	Timeout      string `yaml:"timeout"`
 }
 
-// Config holds bot settings
+// Config holds bot settings.
 type Config struct {
 	Token    string   `yaml:"token"`
 	AdminID  int64    `yaml:"admin_id"`
 	Messages Messages `yaml:"messages"`
 }
 
-type bot struct {
+type Bot struct {
 	api *tgbotapi.BotAPI
 	db  db.Database
 	ai  ai.Service

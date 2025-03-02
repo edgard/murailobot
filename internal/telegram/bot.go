@@ -2,6 +2,7 @@ package telegram
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"time"
@@ -12,15 +13,15 @@ import (
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
-func New(cfg *config.Config, database db.Database, aiService ai.Service) (BotService, error) {
+func New(cfg *config.Config, database db.Database, aiService ai.Service) (*Bot, error) {
 	if cfg == nil {
-		return nil, fmt.Errorf("config is nil")
+		return nil, errors.New("config is nil")
 	}
 	if database == nil {
-		return nil, fmt.Errorf("database is nil")
+		return nil, errors.New("database is nil")
 	}
 	if aiService == nil {
-		return nil, fmt.Errorf("AI service is nil")
+		return nil, errors.New("AI service is nil")
 	}
 
 	api, err := tgbotapi.NewBotAPI(cfg.TelegramToken)
@@ -28,7 +29,7 @@ func New(cfg *config.Config, database db.Database, aiService ai.Service) (BotSer
 		return nil, fmt.Errorf("failed to create telegram bot: %w", err)
 	}
 
-	bot := &bot{
+	bot := &Bot{
 		api: api,
 		db:  database,
 		ai:  aiService,
@@ -50,7 +51,7 @@ func New(cfg *config.Config, database db.Database, aiService ai.Service) (BotSer
 	return bot, nil
 }
 
-func (b *bot) Start(ctx context.Context) error {
+func (b *Bot) Start(ctx context.Context) error {
 	updateConfig := tgbotapi.NewUpdate(0)
 	updateConfig.Timeout = 30
 
@@ -75,7 +76,8 @@ func (b *bot) Start(ctx context.Context) error {
 		select {
 		case <-ctx.Done():
 			slog.Info("bot stopping due to context cancellation")
-			return ctx.Err()
+
+			return fmt.Errorf("context canceled: %w", ctx.Err())
 		case update := <-updates:
 			if update.Message == nil || !update.Message.IsCommand() {
 				continue
@@ -83,15 +85,15 @@ func (b *bot) Start(ctx context.Context) error {
 
 			errCh := make(chan error, 1)
 
-			go func(msg *tgbotapi.Message, errCh chan<- error) {
+			go func(ctx context.Context, msg *tgbotapi.Message, errCh chan<- error) {
 				var err error
 				switch msg.Command() {
 				case "start":
-					err = b.handleStart(msg)
+					err = b.handleStart(ctx, msg)
 				case "mrl":
-					err = b.handleMessage(msg)
+					err = b.handleMessage(ctx, msg)
 				case "mrl_reset":
-					err = b.handleReset(msg)
+					err = b.handleReset(ctx, msg)
 				}
 
 				if err != nil {
@@ -108,7 +110,7 @@ func (b *bot) Start(ctx context.Context) error {
 				}
 
 				close(errCh)
-			}(update.Message, errCh)
+			}(ctx, update.Message, errCh)
 
 			go func(errCh <-chan error) {
 				for err := range errCh {
@@ -121,12 +123,13 @@ func (b *bot) Start(ctx context.Context) error {
 	}
 }
 
-func (b *bot) Stop() error {
+func (b *Bot) Stop() error {
 	b.api.StopReceivingUpdates()
+
 	return nil
 }
 
-func (b *bot) SendContinuousTyping(ctx context.Context, chatID int64) {
+func (b *Bot) SendContinuousTyping(ctx context.Context, chatID int64) {
 	action := tgbotapi.NewChatAction(chatID, tgbotapi.ChatTyping)
 	if _, err := b.api.Request(action); err != nil {
 		slog.Error("failed to send initial typing action", "error", err, "chat_id", chatID)

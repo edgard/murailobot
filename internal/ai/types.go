@@ -8,7 +8,7 @@ import (
 	"github.com/sashabaranov/go-openai"
 )
 
-// Non-retryable OpenAI API errors
+// Non-retryable OpenAI API errors.
 var invalidRequestErrors = []string{
 	"invalid_request_error",
 	"context_length_exceeded",
@@ -17,16 +17,7 @@ var invalidRequestErrors = []string{
 	"organization_not_found",
 }
 
-type client struct {
-	openaiClient *openai.Client
-	model        string
-	temperature  float32
-	instruction  string
-	db           db.Database
-	timeout      time.Duration
-}
-
-// Service defines AI service interface
+// Service defines AI service interface.
 type Service interface {
 	Generate(ctx context.Context, userID int64, userName string, userMsg string) (string, error)
 }
@@ -38,4 +29,13 @@ type Config struct {
 	Temperature float32       `yaml:"temperature"`
 	Instruction string        `yaml:"instruction"`
 	Timeout     time.Duration `yaml:"timeout"`
+}
+
+type Client struct {
+	openaiClient *openai.Client
+	model        string
+	temperature  float32
+	instruction  string
+	db           db.Database
+	timeout      time.Duration
 }

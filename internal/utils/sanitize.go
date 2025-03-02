@@ -60,7 +60,7 @@ var (
 	regexNumberedList = regexp.MustCompile(`^\d+\.\s+`)      // Matches numbered list markers at the beginning of a line.
 	regexBlockquotes  = regexp.MustCompile(`(?m)^>\s*(.+)$`) // Matches blockquote lines (starting with '>').
 
-	regexHtmlTags = regexp.MustCompile(`<[^>]*>`) // Matches any HTML tag.
+	regexHTMLTags = regexp.MustCompile(`<[^>]*>`) // Matches any HTML tag.
 
 	markdownRegexes = []*regexp.Regexp{
 		regexp.MustCompile(`\*\*.+?\*\*`),                 // Bold with **.
@@ -91,12 +91,14 @@ var (
 func applyRegexReplacements(s string, rules []struct {
 	re   *regexp.Regexp
 	repl string
-}) string {
+},
+) string {
 	// Execute each rule sequentially.
 	return func() string {
 		for _, rule := range rules {
 			s = rule.re.ReplaceAllString(s, rule.repl)
 		}
+
 		return s
 	}()
 }
@@ -108,19 +110,21 @@ func normalizeLineWhitespace(line string) string {
 	space := false
 
 	for _, r := range line {
-		if r == '\u3000' {
+		switch {
+		case r == '\u3000':
 			b.WriteRune(r)
 			space = false
-		} else if unicode.IsSpace(r) || r == '\u00A0' {
+		case unicode.IsSpace(r) || r == '\u00A0':
 			if !space {
 				b.WriteRune(' ')
 				space = true
 			}
-		} else {
+		default:
 			b.WriteRune(r)
 			space = false
 		}
 	}
+
 	return strings.TrimSpace(b.String())
 }
 
@@ -150,11 +154,13 @@ func processMarkdownStructures(md string) string {
 				strings.HasSuffix(lines[i+1], "|") && strings.Contains(lines[i+1], "---") {
 				out = append(out, strings.TrimSpace(strings.ReplaceAll(strings.Trim(l, "|"), "|", " ")))
 				i++
+
 				continue
 			} else if strings.Contains(l, "---") && i > 0 && strings.HasPrefix(lines[i-1], "|") {
 				continue
 			}
 			out = append(out, strings.TrimSpace(strings.ReplaceAll(strings.Trim(l, "|"), "|", " ")))
+
 			continue
 		}
 
@@ -165,6 +171,7 @@ func processMarkdownStructures(md string) string {
 
 		out = append(out, l)
 	}
+
 	return strings.Join(out, "\n")
 }
 
@@ -180,9 +187,11 @@ func IsMarkdown(text string) bool {
 					continue
 				}
 			}
+
 			return true
 		}
 	}
+
 	return false
 }
 
@@ -216,12 +225,14 @@ func StripMarkdown(md string) string {
 		if groups[1] == groups[2] {
 			return groups[2]
 		}
+
 		return groups[1] + " (" + groups[2] + ")"
 	})
 
 	md = processMarkdownStructures(md)
-	md = regexHtmlTags.ReplaceAllString(md, "")
+	md = regexHTMLTags.ReplaceAllString(md, "")
 	md = multipleNewlinesRegex.ReplaceAllString(md, "\n\n")
+
 	return restoreReplacer.Replace(md)
 }
 
@@ -247,5 +258,6 @@ func Sanitize(input string) string {
 	}
 	s = strings.Join(parts, "\n")
 	s = multipleNewlinesRegex.ReplaceAllString(s, "\n\n")
+
 	return strings.TrimSpace(s)
 }

@@ -2,6 +2,7 @@ package ai
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -13,22 +14,19 @@ import (
 	"github.com/sashabaranov/go-openai"
 )
 
-func New(cfg *config.Config, db db.Database) (Service, error) {
+func New(cfg *config.Config, db db.Database) (*Client, error) {
 	if cfg == nil {
-		return nil, fmt.Errorf("configuration is nil")
+		return nil, errors.New("configuration is nil")
 	}
 
 	config := openai.DefaultConfig(cfg.AIToken)
 	config.BaseURL = cfg.AIBaseURL
-	httpClientTimeout := cfg.AITimeout / 2
-	if httpClientTimeout < 30*time.Second {
-		httpClientTimeout = 30 * time.Second // Minimum timeout
-	}
+	httpClientTimeout := max(cfg.AITimeout/2, 30*time.Second)
 	config.HTTPClient = &http.Client{
 		Timeout: httpClientTimeout,
 	}
 
-	c := &client{
+	c := &Client{
 		openaiClient: openai.NewClientWithConfig(config),
 		model:        cfg.AIModel,
 		temperature:  cfg.AITemperature,
@@ -40,7 +38,7 @@ func New(cfg *config.Config, db db.Database) (Service, error) {
 	return c, nil
 }
 
-// Identifies permanent API errors
+// Identifies permanent API errors.
 func isPermanentAPIError(err error) (bool, error) {
 	if err == nil {
 		return false, nil
@@ -52,10 +50,11 @@ func isPermanentAPIError(err error) (bool, error) {
 			return true, fmt.Errorf("permanent API error: %w", err)
 		}
 	}
+
 	return false, err
 }
 
-// Retries operation with exponential backoff
+// Retries operation with exponential backoff.
 func retryWithBackoff(ctx context.Context, op func() (string, error)) (string, error) {
 	attempt := 0
 	maxAttempts := 3
@@ -65,7 +64,7 @@ func retryWithBackoff(ctx context.Context, op func() (string, error)) (string, e
 	for attempt < maxAttempts {
 		select {
 		case <-ctx.Done():
-			return "", ctx.Err()
+			return "", fmt.Errorf("context error: %w", ctx.Err())
 		default:
 		}
 
@@ -87,17 +86,19 @@ func retryWithBackoff(ctx context.Context, op func() (string, error)) (string, e
 			select {
 			case <-ctx.Done():
 				timer.Stop()
-				return "", ctx.Err()
+
+				return "", fmt.Errorf("context error: %w", ctx.Err())
 			case <-timer.C:
 				backoff *= 2
 			}
 		}
 	}
+
 	return "", fmt.Errorf("all %d API attempts failed: %w", maxAttempts, lastErr)
 }
 
-// Formats chat history for AI context
-func (c *client) formatHistory(history []db.ChatHistory) []openai.ChatCompletionMessage {
+// Formats chat history for AI context.
+func (c *Client) formatHistory(history []db.ChatHistory) []openai.ChatCompletionMessage {
 	if len(history) == 0 {
 		return nil
 	}
@@ -151,10 +152,10 @@ func (c *client) formatHistory(history []db.ChatHistory) []openai.ChatCompletion
 	return messages
 }
 
-func (c *client) Generate(ctx context.Context, userID int64, userName string, userMsg string) (string, error) {
+func (c *Client) Generate(ctx context.Context, userID int64, userName string, userMsg string) (string, error) {
 	userMsg = strings.TrimSpace(userMsg)
 	if userMsg == "" {
-		return "", fmt.Errorf("user message is empty")
+		return "", errors.New("user message is empty")
 	}
 
 	historyCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
@@ -201,18 +202,17 @@ func (c *client) Generate(ctx context.Context, userID int64, userName string, us
 			Messages:    messages,
 			Temperature: c.temperature,
 		})
-
 		if err != nil {
-			return "", err
+			return "", fmt.Errorf("chat completion failed: %w", err)
 		}
 
 		if len(resp.Choices) == 0 {
-			return "", fmt.Errorf("no response choices available")
+			return "", errors.New("no response choices available")
 		}
 
 		response := utils.Sanitize(resp.Choices[0].Message.Content)
 		if response == "" {
-			return "", fmt.Errorf("empty response after sanitization")
+			return "", errors.New("empty response after sanitization")
 		}
 
 		return response, nil

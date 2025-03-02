@@ -1,10 +1,13 @@
-package utils
+package utils_test
 
 import (
 	"testing"
+
+	"github.com/edgard/murailobot/internal/utils"
 )
 
 func TestSanitizePlaintext(t *testing.T) {
+	t.Parallel()
 	testCases := []struct {
 		name     string
 		input    string
@@ -238,8 +241,10 @@ func TestSanitizePlaintext(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
+		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
-			actual := Sanitize(tc.input)
+			t.Parallel()
+			actual := utils.Sanitize(tc.input)
 			if actual != tc.expected {
 				t.Errorf("input: %q, expected: %q, actual: %q", tc.input, tc.expected, actual)
 			}
@@ -248,6 +253,7 @@ func TestSanitizePlaintext(t *testing.T) {
 }
 
 func TestSanitizeMarkdown(t *testing.T) {
+	t.Parallel()
 	testCases := []struct {
 		name     string
 		input    string
@@ -341,8 +347,10 @@ func TestSanitizeMarkdown(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
+		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
-			actual := Sanitize(tc.input)
+			t.Parallel()
+			actual := utils.Sanitize(tc.input)
 			if actual != tc.expected {
 				t.Errorf("input: %q, expected: %q, actual: %q", tc.input, tc.expected, actual)
 			}
@@ -350,8 +358,8 @@ func TestSanitizeMarkdown(t *testing.T) {
 	}
 }
 
-// Add this new test function
 func TestIsMarkdown(t *testing.T) {
+	t.Parallel()
 	testCases := []struct {
 		name     string
 		input    string
@@ -430,8 +438,10 @@ func TestIsMarkdown(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
+		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
-			actual := IsMarkdown(tc.input)
+			t.Parallel()
+			actual := utils.IsMarkdown(tc.input)
 			if actual != tc.expected {
 				t.Errorf("IsMarkdown(%q) = %v, expected %v", tc.input, actual, tc.expected)
 			}

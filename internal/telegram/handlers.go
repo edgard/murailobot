@@ -10,7 +10,7 @@ import (
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
-func (b *bot) handleStart(msg *tgbotapi.Message) error {
+func (b *Bot) handleStart(_ context.Context, msg *tgbotapi.Message) error {
 	if msg == nil {
 		return errors.New("message is nil")
 	}
@@ -20,10 +20,11 @@ func (b *bot) handleStart(msg *tgbotapi.Message) error {
 	if err != nil {
 		return fmt.Errorf("failed to send welcome message: %w", err)
 	}
+
 	return nil
 }
 
-func (b *bot) handleMessage(msg *tgbotapi.Message) error {
+func (b *Bot) handleMessage(ctx context.Context, msg *tgbotapi.Message) error {
 	if msg == nil {
 		return errors.New("message is nil")
 	}
@@ -35,6 +36,7 @@ func (b *bot) handleMessage(msg *tgbotapi.Message) error {
 		if err != nil {
 			return fmt.Errorf("failed to send prompt message: %w", err)
 		}
+
 		return nil
 	}
 
@@ -55,7 +57,7 @@ func (b *bot) handleMessage(msg *tgbotapi.Message) error {
 		"username", displayName,
 		"message_length", len(text))
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
 	go b.SendContinuousTyping(ctx, msg.Chat.ID)
@@ -81,7 +83,7 @@ func (b *bot) handleMessage(msg *tgbotapi.Message) error {
 	}
 
 	// Save history but continue if save fails
-	if err := b.db.Save(context.Background(), msg.From.ID, userName, text, response); err != nil {
+	if err := b.db.Save(ctx, msg.From.ID, userName, text, response); err != nil {
 		slog.Warn("failed to save chat history",
 			"error", err,
 			"user_id", msg.From.ID)
@@ -95,7 +97,7 @@ func (b *bot) handleMessage(msg *tgbotapi.Message) error {
 	return nil
 }
 
-func (b *bot) handleReset(msg *tgbotapi.Message) error {
+func (b *Bot) handleReset(ctx context.Context, msg *tgbotapi.Message) error {
 	if msg == nil {
 		return errors.New("message is nil")
 	}
@@ -107,7 +109,7 @@ func (b *bot) handleReset(msg *tgbotapi.Message) error {
 
 	slog.Info("resetting chat history", "user_id", userID)
 
-	if err := b.db.DeleteAll(context.Background()); err != nil {
+	if err := b.db.DeleteAll(ctx); err != nil {
 		slog.Error("failed to reset chat history",
 			"error", err,
 			"user_id", userID)
@@ -128,11 +130,11 @@ func (b *bot) handleReset(msg *tgbotapi.Message) error {
 	return nil
 }
 
-func (b *bot) isUserAuthorized(userID int64) bool {
+func (b *Bot) isUserAuthorized(userID int64) bool {
 	return userID == b.cfg.AdminID
 }
 
-func (b *bot) sendUnauthorizedMsg(msg *tgbotapi.Message) error {
+func (b *Bot) sendUnauthorizedMsg(msg *tgbotapi.Message) error {
 	slog.Warn("unauthorized access attempt",
 		"user_id", msg.From.ID,
 		"action", "reset_history")
