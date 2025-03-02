@@ -1,7 +1,7 @@
 # MurailoBot 🤖
 
 [![Go Report Card](https://goreportcard.com/badge/github.com/edgard/murailobot)](https://goreportcard.com/report/github.com/edgard/murailobot)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![License: CC0-1.0](https://img.shields.io/badge/License-CC0--1.0-lightgrey.svg)](http://creativecommons.org/publicdomain/zero/1.0/)
 [![Go Version](https://img.shields.io/badge/go-1.21-blue.svg)](https://golang.org)
 [![GitHub Release](https://img.shields.io/github/v/release/edgard/murailobot)](https://github.com/edgard/murailobot/releases/latest)
 
@@ -110,7 +110,7 @@ All releases are available on the [Releases](https://github.com/edgard/murailobo
 
 ## License
 
-MIT License - see [LICENSE](LICENSE) file
+CC0 1.0 Universal - see [LICENSE](LICENSE) file
 
 ## Links
 

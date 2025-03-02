@@ -74,7 +74,7 @@ dockers:
       - --label=org.opencontainers.image.issues=https://github.com/edgard/{{ .ProjectName }}/issues
       - --label=org.opencontainers.image.vendor=edgard
       - --label=org.opencontainers.image.authors=edgard
-      - --label=org.opencontainers.image.licenses=MIT
+      - --label=org.opencontainers.image.licenses=CC0-1.0
       - --label=org.opencontainers.image.base.name=gcr.io/distroless/cc-debian12:latest
       - --label=org.opencontainers.image.registry=ghcr.io
       - --label=com.github.package.type=container
@@ -91,7 +91,7 @@ dockers:
       - --annotation=org.opencontainers.image.issues="https://github.com/edgard/{{ .ProjectName }}/issues"
       - --annotation=org.opencontainers.image.vendor="edgard"
       - --annotation=org.opencontainers.image.authors="edgard"
-      - --annotation=org.opencontainers.image.licenses="MIT"
+      - --annotation=org.opencontainers.image.licenses="CC0-1.0"
       - --annotation=org.opencontainers.image.base.name="gcr.io/distroless/cc-debian12:latest"
       - --annotation=org.opencontainers.image.registry="ghcr.io"
       - --annotation=com.github.package.type="container"
@@ -120,7 +120,7 @@ dockers:
       - --label=org.opencontainers.image.issues=https://github.com/edgard/{{ .ProjectName }}/issues
       - --label=org.opencontainers.image.vendor=edgard
       - --label=org.opencontainers.image.authors=edgard
-      - --label=org.opencontainers.image.licenses=MIT
+      - --label=org.opencontainers.image.licenses=CC0-1.0
       - --label=org.opencontainers.image.base.name=gcr.io/distroless/cc-debian12:latest
       - --label=org.opencontainers.image.registry=ghcr.io
       - --label=com.github.package.type=container
@@ -137,7 +137,7 @@ dockers:
       - --annotation=org.opencontainers.image.issues="https://github.com/edgard/{{ .ProjectName }}/issues"
       - --annotation=org.opencontainers.image.vendor="edgard"
       - --annotation=org.opencontainers.image.authors="edgard"
-      - --annotation=org.opencontainers.image.licenses="MIT"
+      - --annotation=org.opencontainers.image.licenses="CC0-1.0"
       - --annotation=org.opencontainers.image.base.name="gcr.io/distroless/cc-debian12:latest"
       - --annotation=org.opencontainers.image.registry="ghcr.io"
       - --annotation=com.github.package.type="container"
