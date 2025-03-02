@@ -196,7 +196,6 @@ func StripMarkdown(md string) string {
 		{regexFencedCodeBlocks, "\n"},
 		{regexInlineCode, ""},
 		{regexImages, "$2"},
-		{regexLinks, "$1 ($2)"},
 		{regexHeaders, "$1"},
 		{regexBold, "$1"},
 		{regexBold2, "$1"},
@@ -207,6 +206,19 @@ func StripMarkdown(md string) string {
 	}
 
 	md = applyRegexReplacements(md, rules)
+	// Custom replacement for markdown links
+	md = regexLinks.ReplaceAllStringFunc(md, func(match string) string {
+		groups := regexLinks.FindStringSubmatch(match)
+		if len(groups) < 3 {
+			return match
+		}
+		// If link text equals the URL, display just the URL.
+		if groups[1] == groups[2] {
+			return groups[2]
+		}
+		return groups[1] + " (" + groups[2] + ")"
+	})
+
 	md = processMarkdownStructures(md)
 	md = regexHtmlTags.ReplaceAllString(md, "")
 	md = multipleNewlinesRegex.ReplaceAllString(md, "\n\n")

@@ -333,6 +333,11 @@ func TestSanitizeMarkdown(t *testing.T) {
 			input:    "This \\*is not italic\\* and this \\`is not code\\`",
 			expected: "This *is not italic* and this `is not code`",
 		},
+		{
+			name:     "markdown link with same text and url",
+			input:    "Click here: [https://example.com](https://example.com)",
+			expected: "Click here: https://example.com",
+		},
 	}
 
 	for _, tc := range testCases {
