@@ -266,12 +266,12 @@ func TestSanitizeMarkdown(t *testing.T) {
 		{
 			name:     "text with markdown links",
 			input:    "Visit [this website](https://example.com) for more information",
-			expected: "Visit this website for more information",
+			expected: "Visit this website (https://example.com) for more information",
 		},
 		{
 			name:     "text with markdown images",
 			input:    "Here's an image: ![alt text](https://example.com/image.jpg)",
-			expected: "Here's an image: alt text",
+			expected: "Here's an image: https://example.com/image.jpg",
 		},
 		{
 			name:     "text with markdown headers",
@@ -306,7 +306,7 @@ func TestSanitizeMarkdown(t *testing.T) {
 		{
 			name:     "text with complex markdown",
 			input:    "# Project README\n\n## Features\n* **Bold item** with _emphasis_\n* [Link](https://example.com)\n\n```\nSample code\n```\n\n> Note: This is important",
-			expected: "Project README\n\nFeatures\nBold item with emphasis\nLink\n\nNote: This is important",
+			expected: "Project README\n\nFeatures\nBold item with emphasis\nLink (https://example.com)\n\nNote: This is important",
 		},
 		{
 			name:     "text with markdown strikethrough",
@@ -391,6 +391,36 @@ func TestIsMarkdown(t *testing.T) {
 			name:     "escaped markdown",
 			input:    "This \\*is not markdown\\*",
 			expected: false,
+		},
+		{
+			name:     "setext header markdown",
+			input:    "Header Text\n---",
+			expected: true,
+		},
+		{
+			name:     "task list markdown detection",
+			input:    "- [ ] Incomplete task",
+			expected: true,
+		},
+		{
+			name:     "footnote markdown detection",
+			input:    "[^1]: This is a footnote",
+			expected: true,
+		},
+		{
+			name:     "indented code block detection",
+			input:    "    func main() { }",
+			expected: true,
+		},
+		{
+			name:     "inline math detection",
+			input:    "The equation is $E=mc^2$ which is famous.",
+			expected: true,
+		},
+		{
+			name:     "display math detection",
+			input:    "$$\nE=mc^2\n$$",
+			expected: true,
 		},
 	}
 

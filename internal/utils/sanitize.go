@@ -46,8 +46,8 @@ var (
 	regexFencedCodeBlocks = regexp.MustCompile("```[\\s\\S]*?```") // Matches fenced code blocks.
 	regexInlineCode       = regexp.MustCompile("`[^`]+`")          // Matches inline code delimited by backticks.
 
-	regexImages = regexp.MustCompile(`!\[(.*?)\]\([^)]+\)`) // Matches markdown image syntax.
-	regexLinks  = regexp.MustCompile(`\[(.*?)\]\([^)]+\)`)  // Matches markdown link syntax.
+	regexImages = regexp.MustCompile(`!\[(.*?)\]\(([^)]+)\)`) // Matches markdown image syntax.
+	regexLinks  = regexp.MustCompile(`\[(.*?)\]\(([^)]+)\)`)  // Matches markdown link syntax.
 
 	regexHeaders = regexp.MustCompile(`(?m)^#{1,6} (.+)$`) // Matches markdown headers (lines starting with 1-6 '#' and a space).
 	regexBold    = regexp.MustCompile(`\*\*(.*?)\*\*`)     // Matches bold text enclosed in **.
@@ -63,21 +63,27 @@ var (
 	regexHtmlTags = regexp.MustCompile(`<[^>]*>`) // Matches any HTML tag.
 
 	markdownRegexes = []*regexp.Regexp{
-		regexp.MustCompile(`\*\*.+?\*\*`),       // Bold with **.
-		regexp.MustCompile(`__.+?__`),           // Bold with __.
-		regexp.MustCompile(`\*.+?\*`),           // Italics with *.
-		regexp.MustCompile(`_.+?_`),             // Italics with _.
-		regexp.MustCompile(`~~.+?~~`),           // Strikethrough.
-		regexp.MustCompile(`\[.+?\]\(.+?\)`),    // Markdown links.
-		regexp.MustCompile(`!\[.+?\]\(.+?\)`),   // Markdown images.
-		regexp.MustCompile("```[\\s\\S]+?```"),  // Fenced code blocks.
-		regexp.MustCompile("`[^`]+`"),           // Inline code.
-		regexp.MustCompile(`(?m)^#{1,6} .+$`),   // Markdown headers detection.
-		regexp.MustCompile(`(?m)^> .+$`),        // Blockquotes detection.
-		regexp.MustCompile(`(?m)^[\*\-\+] .+$`), // Unordered list detection.
-		regexp.MustCompile(`(?m)^\d+\. .+$`),    // Ordered list detection.
-		regexp.MustCompile(`(?m)^[\*\-_]{3,}$`), // Horizontal rule detection.
-		regexp.MustCompile(`(?m)^\|.+\|$`),      // Table row detection.
+		regexp.MustCompile(`\*\*.+?\*\*`),                 // Bold with **.
+		regexp.MustCompile(`__.+?__`),                     // Bold with __.
+		regexp.MustCompile(`\*.+?\*`),                     // Italics with *.
+		regexp.MustCompile(`_.+?_`),                       // Italics with _.
+		regexp.MustCompile(`~~.+?~~`),                     // Strikethrough.
+		regexp.MustCompile(`\[.+?\]\(.+?\)`),              // Markdown links.
+		regexp.MustCompile(`!\[.+?\]\(.+?\)`),             // Markdown images.
+		regexp.MustCompile("```[\\s\\S]+?```"),            // Fenced code blocks.
+		regexp.MustCompile("`[^`]+`"),                     // Inline code.
+		regexp.MustCompile(`(?m)^#{1,6} .+$`),             // Markdown headers detection.
+		regexp.MustCompile(`(?m)^> .+$`),                  // Blockquotes detection.
+		regexp.MustCompile(`(?m)^[\*\-\+] .+$`),           // Unordered list detection.
+		regexp.MustCompile(`(?m)^\d+\. .+$`),              // Ordered list detection.
+		regexp.MustCompile(`(?m)^[\*\-_]{3,}$`),           // Horizontal rule detection.
+		regexp.MustCompile(`(?m)^\|.+\|$`),                // Table row detection.
+		regexp.MustCompile(`(?m)^.+\r?\n(=+|-+)\s*$`),     // Setext-style headers detection.
+		regexp.MustCompile(`(?m)^[-*] \[(?: |x|X)\] .+$`), // Task list detection.
+		regexp.MustCompile(`(?m)^\[\^.+\]:\s+.+$`),        // Footnote detection.
+		regexp.MustCompile(`(?m)^( {4}|\t).+`),            // Indented code block detection.
+		regexp.MustCompile(`(?m)\$[^$\n]+\$`),             // Inline math detection.
+		regexp.MustCompile(`(?m)\$\$[\s\S]+\$\$`),         // Display math detection.
 	}
 )
 
@@ -189,8 +195,8 @@ func StripMarkdown(md string) string {
 	}{
 		{regexFencedCodeBlocks, "\n"},
 		{regexInlineCode, ""},
-		{regexImages, "$1"},
-		{regexLinks, "$1"},
+		{regexImages, "$2"},
+		{regexLinks, "$1 ($2)"},
 		{regexHeaders, "$1"},
 		{regexBold, "$1"},
 		{regexBold2, "$1"},
