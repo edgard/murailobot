@@ -10,11 +10,7 @@ import (
 
 // Validation constants define the acceptable ranges for various configuration parameters.
 const (
-	minTemperature       = 0.0              // Minimum value for OpenAI temperature parameter
-	maxTemperature       = 2.0              // Maximum value for OpenAI temperature parameter
-	minTimeout           = time.Second      // Minimum timeout duration for API calls
-	maxTimeout           = 10 * time.Minute // Maximum timeout duration for API calls
-	defaultOpenAITimeout = 2 * time.Minute  // Default timeout for OpenAI API calls
+	defaultOpenAITimeout = 2 * time.Minute // Default timeout for OpenAI API calls
 )
 
 // ErrValidation is returned when configuration validation fails.

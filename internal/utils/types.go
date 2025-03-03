@@ -10,11 +10,10 @@ import (
 // Logging constants define the available logging levels and formats.
 const (
 	// Log level constants.
-	defaultLogLevel = "info"  // Default logging level
-	logLevelDebug   = "debug" // Debug level for detailed troubleshooting
-	logLevelWarn    = "warn"  // Warning level for potential issues
-	logLevelError   = "error" // Error level for actual failures
-	logLevelInfo    = "info"  // Info level for general operational events
+	logLevelDebug = "debug" // Debug level for detailed troubleshooting
+	logLevelWarn  = "warn"  // Warning level for potential issues
+	logLevelError = "error" // Error level for actual failures
+	logLevelInfo  = "info"  // Info level for general operational events
 
 	// Log format constants.
 	logFormatText = "text" // Human-readable text format
