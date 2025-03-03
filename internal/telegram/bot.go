@@ -76,8 +76,8 @@ func New(cfg *config.Config, database db.Database, openAIService openai.Service)
 // The function handles updates asynchronously and manages error reporting
 // through channels.
 func (b *Bot) Start(ctx context.Context) error {
-	updateConfig := tgbotapi.NewUpdate(DefaultUpdateOffset)
-	updateConfig.Timeout = DefaultUpdateTimeout
+	updateConfig := tgbotapi.NewUpdate(defaultUpdateOffset)
+	updateConfig.Timeout = defaultUpdateTimeout
 
 	updates := b.api.GetUpdatesChan(updateConfig)
 
@@ -163,14 +163,14 @@ func (b *Bot) Stop() error {
 // operations like AI response generation.
 //
 // The function runs until the context is cancelled, sending typing indicators
-// at DefaultTypingInterval intervals.
+// at defaultTypingInterval intervals.
 func (b *Bot) SendContinuousTyping(ctx context.Context, chatID int64) {
 	action := tgbotapi.NewChatAction(chatID, tgbotapi.ChatTyping)
 	if _, err := b.api.Request(action); err != nil {
 		slog.Error("failed to send initial typing action", "error", err, "chat_id", chatID)
 	}
 
-	ticker := time.NewTicker(DefaultTypingInterval)
+	ticker := time.NewTicker(defaultTypingInterval)
 	defer ticker.Stop()
 
 	for {

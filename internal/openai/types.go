@@ -55,19 +55,19 @@ type Client struct {
 // Operation timeouts and retry settings define various timing and capacity constants
 // used throughout the package.
 const (
-	ChatHistoryTimeout       = 5 * time.Second  // Timeout for database history retrieval
-	HTTPClientTimeoutDivisor = 4                // Divides API timeout for HTTP client
-	InitialBackoffDuration   = 1 * time.Second  // Starting retry delay
-	MessagesPerHistory       = 2                // Messages per history entry (user + assistant)
-	MessagesSliceCapacity    = 20               // Initial capacity for message slice
-	MinHTTPClientTimeout     = 10 * time.Second // Minimum HTTP client timeout
-	RecentHistoryCount       = 10               // Number of recent messages to include
-	RetryMaxAttempts         = 3                // Maximum retry attempts for API calls
+	chatHistoryTimeout       = 5 * time.Second  // Timeout for database history retrieval
+	httpClientTimeoutDivisor = 4                // Divides API timeout for HTTP client
+	initialBackoffDuration   = 1 * time.Second  // Starting retry delay
+	messagesPerHistory       = 2                // Messages per history entry (user + assistant)
+	messagesSliceCapacity    = 20               // Initial capacity for message slice
+	minHTTPClientTimeout     = 10 * time.Second // Minimum HTTP client timeout
+	recentHistoryCount       = 10               // Number of recent messages to include
+	retryMaxAttempts         = 3                // Maximum retry attempts for API calls
 )
 
-// InvalidRequestErrors lists known non-retryable OpenAI API error types.
+// invalidRequestErrors lists known non-retryable OpenAI API error types.
 // When these errors occur, the operation will fail immediately without retrying.
-var InvalidRequestErrors = []string{
+var invalidRequestErrors = []string{
 	"invalid_request_error",   // General API request validation failure
 	"context_length_exceeded", // Too many tokens in the request
 	"rate_limit_exceeded",     // API rate limit reached

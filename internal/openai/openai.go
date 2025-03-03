@@ -29,7 +29,7 @@ func New(cfg *config.Config, db db.Database) (*Client, error) {
 
 	openAICfg := openai.DefaultConfig(cfg.OpenAIToken)
 	openAICfg.BaseURL = cfg.OpenAIBaseURL
-	httpClientTimeout := max(cfg.OpenAITimeout/HTTPClientTimeoutDivisor, MinHTTPClientTimeout)
+	httpClientTimeout := max(cfg.OpenAITimeout/httpClientTimeoutDivisor, minHTTPClientTimeout)
 	openAICfg.HTTPClient = &http.Client{
 		Timeout: httpClientTimeout,
 	}
@@ -61,15 +61,15 @@ func (c *Client) Generate(ctx context.Context, userID int64, userName string, us
 		return "", ErrEmptyUserMessage
 	}
 
-	historyCtx, cancel := context.WithTimeout(ctx, ChatHistoryTimeout)
+	historyCtx, cancel := context.WithTimeout(ctx, chatHistoryTimeout)
 	defer cancel()
 
-	history, err := c.db.GetRecent(historyCtx, RecentHistoryCount)
+	history, err := c.db.GetRecent(historyCtx, recentHistoryCount)
 	if err != nil {
 		return "", fmt.Errorf("failed to retrieve chat history: %w", err)
 	}
 
-	messages := make([]openai.ChatCompletionMessage, 0, MessagesSliceCapacity)
+	messages := make([]openai.ChatCompletionMessage, 0, messagesSliceCapacity)
 	messages = append(messages, openai.ChatCompletionMessage{
 		Role:    "system",
 		Content: c.instruction,
@@ -154,7 +154,7 @@ func (c *Client) formatHistory(history []db.ChatHistory) []openai.ChatCompletion
 		return nil
 	}
 
-	messages := make([]openai.ChatCompletionMessage, 0, len(validMsgs)*MessagesPerHistory)
+	messages := make([]openai.ChatCompletionMessage, 0, len(validMsgs)*messagesPerHistory)
 
 	for i := len(validMsgs) - 1; i >= 0; i-- {
 		msg := validMsgs[i]
@@ -197,7 +197,7 @@ func isPermanentAPIError(err error) (bool, error) {
 	}
 
 	errStr := err.Error()
-	for _, errType := range InvalidRequestErrors {
+	for _, errType := range invalidRequestErrors {
 		if strings.Contains(errStr, errType) {
 			return true, fmt.Errorf("permanent API error: %w", err)
 		}
@@ -207,7 +207,7 @@ func isPermanentAPIError(err error) (bool, error) {
 }
 
 // retryWithBackoff implements exponential backoff retry logic for API calls.
-// It will retry operations that fail with transient errors up to RetryMaxAttempts
+// It will retry operations that fail with transient errors up to retryMaxAttempts
 // times, with exponentially increasing delays between attempts.
 //
 // The function handles:
@@ -220,9 +220,9 @@ func retryWithBackoff(ctx context.Context, op func() (string, error)) (string, e
 
 	var lastErr error
 
-	backoff := InitialBackoffDuration
+	backoff := initialBackoffDuration
 
-	for attempt < RetryMaxAttempts {
+	for attempt < retryMaxAttempts {
 		select {
 		case <-ctx.Done():
 			return "", fmt.Errorf("context error: %w", ctx.Err())
@@ -242,7 +242,7 @@ func retryWithBackoff(ctx context.Context, op func() (string, error)) (string, e
 		lastErr = err
 		attempt++
 
-		if attempt < RetryMaxAttempts {
+		if attempt < retryMaxAttempts {
 			timer := time.NewTimer(backoff)
 			select {
 			case <-ctx.Done():
@@ -255,5 +255,5 @@ func retryWithBackoff(ctx context.Context, op func() (string, error)) (string, e
 		}
 	}
 
-	return "", fmt.Errorf("all %d API attempts failed: %w", RetryMaxAttempts, lastErr)
+	return "", fmt.Errorf("all %d API attempts failed: %w", retryMaxAttempts, lastErr)
 }

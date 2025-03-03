@@ -256,7 +256,7 @@ func IsMarkdown(text string) bool {
 	return false
 }
 
-// StripMarkdown removes markdown formatting from text while preserving the content.
+// stripMarkdown removes markdown formatting from text while preserving the content.
 // It handles:
 // - Code blocks and inline code
 // - Images and links
@@ -267,7 +267,7 @@ func IsMarkdown(text string) bool {
 //
 // The function preserves escaped markdown symbols and maintains
 // reasonable whitespace formatting.
-func StripMarkdown(md string) string {
+func stripMarkdown(md string) string {
 	md = escapedReplacer.Replace(md)
 	rules := []struct {
 		re   *regexp.Regexp
@@ -322,7 +322,7 @@ func Sanitize(input string) string {
 	}
 
 	if IsMarkdown(input) {
-		input = StripMarkdown(input)
+		input = stripMarkdown(input)
 	}
 
 	s := strings.ReplaceAll(input, "\r\n", "\n")

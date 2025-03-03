@@ -15,9 +15,9 @@ import (
 // Default telegram bot configuration values define timeouts and intervals
 // used throughout the bot's operation.
 const (
-	DefaultUpdateOffset   = 0               // Initial offset for update polling
-	DefaultUpdateTimeout  = 60              // Timeout for long polling updates (seconds)
-	DefaultTypingInterval = 5 * time.Second // Interval for sending typing indicators
+	defaultUpdateOffset   = 0               // Initial offset for update polling
+	defaultUpdateTimeout  = 60              // Timeout for long polling updates (seconds)
+	defaultTypingInterval = 5 * time.Second // Interval for sending typing indicators
 )
 
 // Messages defines configurable bot response templates.

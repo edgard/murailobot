@@ -10,11 +10,11 @@ import (
 
 // Validation constants define the acceptable ranges for various configuration parameters.
 const (
-	MinTemperature       = 0.0              // Minimum value for OpenAI temperature parameter
-	MaxTemperature       = 2.0              // Maximum value for OpenAI temperature parameter
-	MinTimeout           = time.Second      // Minimum timeout duration for API calls
-	MaxTimeout           = 10 * time.Minute // Maximum timeout duration for API calls
-	DefaultOpenAITimeout = 2 * time.Minute  // Default timeout for OpenAI API calls
+	minTemperature       = 0.0              // Minimum value for OpenAI temperature parameter
+	maxTemperature       = 2.0              // Maximum value for OpenAI temperature parameter
+	minTimeout           = time.Second      // Minimum timeout duration for API calls
+	maxTimeout           = 10 * time.Minute // Maximum timeout duration for API calls
+	defaultOpenAITimeout = 2 * time.Minute  // Default timeout for OpenAI API calls
 )
 
 // ErrValidation is returned when configuration validation fails.
@@ -27,7 +27,7 @@ var defaults = map[string]any{
 	"openai.model":       "gpt-4",
 	"openai.temperature": 1.0,
 	"openai.instruction": "You are a helpful assistant focused on providing clear and accurate responses.",
-	"openai.timeout":     DefaultOpenAITimeout,
+	"openai.timeout":     defaultOpenAITimeout,
 
 	"telegram.messages.welcome":         "👋 Welcome! I'm ready to assist you. Use /mrl followed by your message to start a conversation.",
 	"telegram.messages.not_authorized":  "🚫 Access denied. Please contact the administrator.",

@@ -12,11 +12,11 @@ import (
 
 // Database configuration defaults define the SQLite operational parameters.
 const (
-	DefaultTempStore   = "MEMORY"         // Temporary storage location (MEMORY or FILE)
-	DefaultCacheSizeKB = 4000             // SQLite page cache size in kilobytes
-	DefaultOpTimeout   = 15 * time.Second // Default timeout for database operations
-	DefaultDSNTimeout  = 5000             // SQLite busy timeout in milliseconds
-	DefaultMaxOpenConn = 1                // Maximum number of open connections
+	defaultTempStore   = "MEMORY"         // Temporary storage location (MEMORY or FILE)
+	defaultCacheSizeKB = 4000             // SQLite page cache size in kilobytes
+	defaultOpTimeout   = 15 * time.Second // Default timeout for database operations
+	defaultDSNTimeout  = 5000             // SQLite busy timeout in milliseconds
+	defaultMaxOpenConn = 1                // Maximum number of open connections
 )
 
 // Database defines the interface for chat history storage operations.

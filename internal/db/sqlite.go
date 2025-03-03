@@ -28,9 +28,9 @@ import (
 func New(cfg *Config) (*SQLiteDB, error) {
 	if cfg == nil {
 		cfg = &Config{
-			TempStore:   DefaultTempStore,
-			CacheSizeKB: DefaultCacheSizeKB,
-			OpTimeout:   DefaultOpTimeout,
+			TempStore:   defaultTempStore,
+			CacheSizeKB: defaultCacheSizeKB,
+			OpTimeout:   defaultOpTimeout,
 		}
 	}
 
@@ -44,7 +44,7 @@ func New(cfg *Config) (*SQLiteDB, error) {
 	// - Memory-based temp store for better performance
 	// - Configured page cache size
 	dsn := "storage.db?_journal=WAL" +
-		"&_timeout=" + strconv.Itoa(DefaultDSNTimeout) +
+		"&_timeout=" + strconv.Itoa(defaultDSNTimeout) +
 		"&_temp_store=" + cfg.TempStore +
 		"&_cache_size=-" + strconv.Itoa(cfg.CacheSizeKB)
 
@@ -58,7 +58,7 @@ func New(cfg *Config) (*SQLiteDB, error) {
 		return nil, fmt.Errorf("failed to get database instance: %w", err)
 	}
 
-	sqlDB.SetMaxOpenConns(DefaultMaxOpenConn)
+	sqlDB.SetMaxOpenConns(defaultMaxOpenConn)
 
 	if err := db.AutoMigrate(&ChatHistory{}); err != nil {
 		return nil, fmt.Errorf("failed to run migrations: %w", err)
