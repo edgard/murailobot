@@ -14,15 +14,12 @@ import (
 	"github.com/knadh/koanf/v2"
 )
 
-// LoadConfig loads and validates configuration from multiple sources in the following order:
-//  1. Default values (lowest priority)
-//  2. Configuration file (config.yaml)
-//  3. Environment variables (highest priority)
+// LoadConfig loads and validates configuration from multiple sources in order of
+// priority: default values, config file (config.yaml), and environment variables.
+// Environment variables should be prefixed with BOT_ and use underscore as separator
+// (e.g., BOT_OPENAI_TOKEN sets the OpenAIToken field).
 //
-// Environment variables should be prefixed with BOT_ and use underscore as separator.
-// For example, BOT_OPENAI_TOKEN will set the OpenAIToken field.
-//
-// Example usage:
+// Example:
 //
 //	cfg, err := config.LoadConfig()
 //	if err != nil {
@@ -31,19 +28,16 @@ import (
 func LoadConfig() (*Config, error) {
 	k := koanf.New(".")
 
-	// Load defaults
 	if err := k.Load(confmap.Provider(defaults, "."), nil); err != nil {
 		return nil, fmt.Errorf("error loading defaults: %w", err)
 	}
 
-	// Load config file if exists
 	if err := k.Load(file.Provider("config.yaml"), yaml.Parser()); err != nil {
 		if !os.IsNotExist(err) {
 			return nil, fmt.Errorf("error reading config file: %w", err)
 		}
 	}
 
-	// Load environment variables
 	if err := k.Load(env.Provider("BOT", ".", func(s string) string {
 		return strings.ReplaceAll(strings.ToLower(strings.TrimPrefix(s, "BOT_")), "_", ".")
 	}), nil); err != nil {
@@ -65,9 +59,8 @@ func LoadConfig() (*Config, error) {
 	return &config, nil
 }
 
-// validateConfig performs validation of the config struct using the validator tags.
-// It returns a formatted error message containing all validation failures when validation fails.
-// For example: "validation error: OpenAIToken: required, OpenAIModel: required".
+// validateConfig performs validation of the config struct using validator tags.
+// It returns a formatted error message containing all validation failures.
 func validateConfig(config *Config) error {
 	v := validator.New()
 	if err := v.Struct(config); err != nil {

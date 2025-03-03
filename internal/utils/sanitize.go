@@ -2,118 +2,12 @@ package utils
 
 import (
 	"regexp"
-	"strconv"
 	"strings"
 	"unicode"
 )
 
-// Threshold constants define limits for various text processing operations.
-const (
-	minNewlinesThreshold    = 3 // Minimum consecutive newlines to collapse
-	minHorizontalRuleLength = 3 // Minimum length for horizontal rule detection
-	minMarkdownLinkGroups   = 3 // Expected capture groups in markdown link regex
-	markdownHeaderMinLevel  = 1 // Minimum header level (#)
-	markdownHeaderMaxLevel  = 6 // Maximum header level (######)
-)
-
-// Replacer groups define character substitution mappings for text processing.
-var (
-	// unicodeReplacer handles special Unicode control and formatting characters,
-	// converting them to their appropriate plain text equivalents.
-	unicodeReplacer = strings.NewReplacer(
-		"\u2060", "", "\u180E", "", // Zero-width spaces
-		"\u2028", "\n", "\u2029", "\n\n", // Line/paragraph separators
-		"\u200B", " ", "\u200C", " ", // Zero-width characters
-		"\u200D", "", "\uFEFF", "", // Zero-width joiners and BOM
-		"\u00AD", "", "\u205F", " ", // Soft hyphen and math space
-		"\u202A", "", "\u202B", "", // Directional formatting
-		"\u202C", "", "\u202D", "", "\u202E", "", // More directional formatting
-	)
-
-	// escapedReplacer preserves escaped markdown symbols by converting
-	// them to temporary Unicode characters.
-	escapedReplacer = strings.NewReplacer(
-		"\\*", "\u0001", "\\_", "\u0002",
-		"\\`", "\u0003", "\\~", "\u0004",
-		"\\[", "\u0005", "\\]", "\u0006",
-		"\\(", "\u0007", "\\)", "\u0008",
-		"\\#", "\u000E", "\\>", "\u000F",
-		"\\!", "\u0010",
-	)
-
-	// restoreReplacer converts the temporary Unicode characters back
-	// to their original markdown symbols.
-	restoreReplacer = strings.NewReplacer(
-		"\u0001", "*", "\u0002", "_",
-		"\u0003", "`", "\u0004", "~",
-		"\u0005", "[", "\u0006", "]",
-		"\u0007", "(", "\u0008", ")",
-		"\u000E", "#", "\u000F", ">", "\u0010", "!",
-	)
-)
-
-// Regex pattern groups define regular expressions for matching various
-// markdown and text formatting constructs.
-var (
-	// Basic character patterns.
-	controlCharsRegex     = regexp.MustCompile(`[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]`)
-	multipleNewlinesRegex = regexp.MustCompile("\n{" + strconv.Itoa(minNewlinesThreshold) + ",}")
-	horizontalRuleRegex   = regexp.MustCompile("^[\\*\\-_]{" + strconv.Itoa(minHorizontalRuleLength) + ",}$")
-
-	// Code block patterns.
-	fencedCodeBlocksRegex = regexp.MustCompile("```[\\s\\S]*?```")
-	inlineCodeRegex       = regexp.MustCompile("`[^`]+`")
-
-	// Link patterns.
-	imagesRegex = regexp.MustCompile(`!\[(.*?)\]\(([^)]+)\)`)
-	linksRegex  = regexp.MustCompile(`\[(.*?)\]\(([^)]+)\)`)
-
-	// Text formatting patterns.
-	headersRegex   = regexp.MustCompile("(?m)^#{" + strconv.Itoa(markdownHeaderMinLevel) + "," + strconv.Itoa(markdownHeaderMaxLevel) + "} (.+)$")
-	boldRegex      = regexp.MustCompile(`\*\*(.*?)\*\*`)
-	boldAltRegex   = regexp.MustCompile(`__(.+?)__`)
-	italicRegex    = regexp.MustCompile(`\*([^*]+)\*`)
-	italicAltRegex = regexp.MustCompile(`_([^_]+)_`)
-	strikeRegex    = regexp.MustCompile(`~~(.+?)~~`)
-
-	// List patterns.
-	orderedListRegex  = regexp.MustCompile(`^\s*\d+\.\s+`)
-	numberedListRegex = regexp.MustCompile(`^\d+\.\s+`)
-	blockquotesRegex  = regexp.MustCompile(`(?m)^>\s*(.+)$`)
-
-	// HTML and additional patterns.
-	htmlTagsRegex = regexp.MustCompile(`<[^>]*>`)
-
-	// markdownRegexps contains all patterns used to detect markdown formatting.
-	// This comprehensive list helps identify if text contains markdown syntax.
-	markdownRegexps = []*regexp.Regexp{
-		regexp.MustCompile(`\*\*.+?\*\*`),                 // Bold with **
-		regexp.MustCompile(`__.+?__`),                     // Bold with __
-		regexp.MustCompile(`\*.+?\*`),                     // Italics with *
-		regexp.MustCompile(`_.+?_`),                       // Italics with _
-		regexp.MustCompile(`~~.+?~~`),                     // Strikethrough
-		regexp.MustCompile(`\[.+?\]\(.+?\)`),              // Markdown links
-		regexp.MustCompile(`!\[.+?\]\(.+?\)`),             // Markdown images
-		regexp.MustCompile("```[\\s\\S]+?```"),            // Fenced code blocks
-		regexp.MustCompile("`[^`]+`"),                     // Inline code
-		regexp.MustCompile(`(?m)^#{1,6} .+$`),             // Headers
-		regexp.MustCompile(`(?m)^> .+$`),                  // Blockquotes
-		regexp.MustCompile(`(?m)^[\*\-\+] .+$`),           // Unordered lists
-		regexp.MustCompile(`(?m)^\d+\. .+$`),              // Ordered lists
-		regexp.MustCompile(`(?m)^[\*\-_]{3,}$`),           // Horizontal rules
-		regexp.MustCompile(`(?m)^\|.+\|$`),                // Tables
-		regexp.MustCompile(`(?m)^.+\r?\n(=+|-+)\s*$`),     // Setext headers
-		regexp.MustCompile(`(?m)^[-*] \[(?: |x|X)\] .+$`), // Task lists
-		regexp.MustCompile(`(?m)^\[\^.+\]:\s+.+$`),        // Footnotes
-		regexp.MustCompile(`(?m)^( {4}|\t).+`),            // Indented code
-		regexp.MustCompile(`(?m)\$[^$\n]+\$`),             // Inline math
-		regexp.MustCompile(`(?m)\$\$[\s\S]+\$\$`),         // Display math
-	}
-)
-
 // applyRegexReplacements applies a series of regular expression replacements
-// to a string in sequence. Each replacement rule consists of a regular expression
-// and its replacement pattern.
+// to a string in sequence.
 func applyRegexReplacements(s string, rules []struct {
 	re   *regexp.Regexp
 	repl string
@@ -126,11 +20,9 @@ func applyRegexReplacements(s string, rules []struct {
 	return s
 }
 
-// normalizeLineWhitespace normalizes whitespace within a single line of text:
-// - Collapses multiple spaces into a single space
-// - Preserves ideographic spaces (U+3000)
-// - Converts other Unicode whitespace to regular spaces
-// - Trims leading and trailing whitespace.
+// normalizeLineWhitespace normalizes whitespace within a single line of text
+// by collapsing multiple spaces, preserving ideographic spaces, converting
+// other Unicode whitespace to regular spaces, and trimming whitespace.
 func normalizeLineWhitespace(line string) string {
 	var b strings.Builder
 
@@ -234,8 +126,7 @@ func processMarkdownStructures(md string) string {
 }
 
 // IsMarkdown determines if a text string contains markdown formatting
-// by checking against a comprehensive set of markdown patterns.
-// It handles special cases like escaped asterisks to avoid false positives.
+// by checking against a set of markdown patterns.
 func IsMarkdown(text string) bool {
 	for _, re := range markdownRegexps {
 		if re.MatchString(text) {
@@ -256,17 +147,9 @@ func IsMarkdown(text string) bool {
 	return false
 }
 
-// stripMarkdown removes markdown formatting from text while preserving the content.
-// It handles:
-// - Code blocks and inline code
-// - Images and links
-// - Headers and text formatting (bold, italic, strikethrough)
-// - Lists and blockquotes
-// - Tables and horizontal rules
-// - HTML tags
-//
-// The function preserves escaped markdown symbols and maintains
-// reasonable whitespace formatting.
+// stripMarkdown removes markdown formatting from text while preserving content.
+// Handles code blocks, images, links, headers, text formatting, lists, blockquotes,
+// tables, horizontal rules, and HTML tags.
 func stripMarkdown(md string) string {
 	md = escapedReplacer.Replace(md)
 	rules := []struct {
@@ -307,15 +190,9 @@ func stripMarkdown(md string) string {
 	return restoreReplacer.Replace(md)
 }
 
-// Sanitize normalizes text by:
-// - Removing control characters
-// - Normalizing whitespace
-// - Converting markdown to plain text
-// - Normalizing newlines
-// - Removing excessive blank lines
-//
-// The function is safe to use with any text input and preserves
-// meaningful formatting while removing potentially problematic characters.
+// Sanitize normalizes text by removing control characters, normalizing whitespace,
+// converting markdown to plain text, normalizing newlines, and removing excessive
+// blank lines.
 func Sanitize(input string) string {
 	if input == "" {
 		return ""

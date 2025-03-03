@@ -1,6 +1,5 @@
 // Package telegram implements a Telegram bot that integrates with OpenAI
-// for generating AI-powered responses. It handles user commands, message processing,
-// and maintains conversation history while providing admin-only features.
+// for generating AI-powered responses and managing conversation history.
 package telegram
 
 import (
@@ -12,16 +11,24 @@ import (
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
-// Default telegram bot configuration values define timeouts and intervals
-// used throughout the bot's operation.
+// Default telegram bot configuration values.
 const (
-	defaultUpdateOffset   = 0               // Initial offset for update polling
-	defaultUpdateTimeout  = 60              // Timeout for long polling updates (seconds)
-	defaultTypingInterval = 5 * time.Second // Interval for sending typing indicators
+	defaultUpdateOffset   = 0                // Initial offset for update polling
+	defaultUpdateTimeout  = 60               // Timeout for long polling updates (seconds)
+	defaultTypingInterval = 5 * time.Second  // Interval for sending typing indicators
+	apiOperationTimeout   = 15 * time.Second // Default timeout for API operations
 )
 
-// Messages defines configurable bot response templates.
-// These messages are used to communicate various states and responses to users.
+// Error definitions for common error conditions.
+var (
+	ErrNilConfig        = errors.New("config is nil")         // Configuration not provided
+	ErrNilDatabase      = errors.New("database is nil")       // Database not initialized
+	ErrNilOpenAIService = errors.New("OpenAI service is nil") // OpenAI service not provided
+	ErrNilMessage       = errors.New("message is nil")        // Message object is nil
+	ErrUnauthorized     = errors.New("unauthorized access")   // User not authorized
+)
+
+// Messages defines configurable bot response templates for various states.
 type Messages struct {
 	Welcome      string // Initial greeting message
 	Unauthorized string // Access denied message
@@ -32,29 +39,18 @@ type Messages struct {
 	Timeout      string // Request timeout message
 }
 
-// Config holds bot configuration including authentication,
-// admin access control, and response messages.
+// Config holds bot configuration including authentication and response messages.
 type Config struct {
 	Token    string   // Telegram Bot API token
 	AdminID  int64    // Administrator's Telegram user ID
 	Messages Messages // Configurable response templates
 }
 
-// Bot implements a Telegram bot with OpenAI capabilities.
-// It handles message processing, maintains conversation history,
-// and manages user interactions through commands.
+// Bot implements a Telegram bot with OpenAI capabilities, handling message
+// processing and user interactions through commands.
 type Bot struct {
 	api    *tgbotapi.BotAPI // Telegram Bot API client
 	db     db.Database      // Database for conversation history
 	openAI openai.Service   // OpenAI service for generating responses
 	cfg    *Config          // Bot configuration
 }
-
-// Error definitions for common error conditions.
-var (
-	ErrNilConfig        = errors.New("config is nil")         // Configuration not provided
-	ErrNilDatabase      = errors.New("database is nil")       // Database not initialized
-	ErrNilOpenAIService = errors.New("OpenAI service is nil") // OpenAI service not provided
-	ErrNilMessage       = errors.New("message is nil")        // Message object is nil
-	ErrUnauthorized     = errors.New("unauthorized access")   // User not authorized
-)

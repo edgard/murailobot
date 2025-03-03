@@ -14,14 +14,8 @@ import (
 )
 
 // New creates a new OpenAI client instance with the provided configuration.
-// It configures the underlying HTTP client with appropriate timeouts and
-// initializes the client with the specified model settings.
-//
-// Parameters:
-//   - cfg: Configuration containing API settings and model parameters
-//   - db: Database interface for conversation history management
-//
-// Returns an error if configuration is nil or invalid.
+// Configures the HTTP client with appropriate timeouts and initializes the
+// client with the specified model settings.
 func New(cfg *config.Config, db db.Database) (*Client, error) {
 	if cfg == nil {
 		return nil, ErrNilConfig
@@ -46,27 +40,36 @@ func New(cfg *config.Config, db db.Database) (*Client, error) {
 	return c, nil
 }
 
-// Generate implements the OpenAIService interface.
-// It creates an AI response for a user message by:
-//  1. Retrieving recent conversation history
-//  2. Formatting messages with user context
-//  3. Making API request with retry logic
-//  4. Sanitizing and validating the response
-//
-// The function includes conversation history to maintain context and
-// formats messages with timestamps and user information.
-func (c *Client) Generate(ctx context.Context, userID int64, userName string, userMsg string) (string, error) {
+// Generate implements the OpenAIService interface, creating an AI response
+// for a user message by retrieving conversation history, formatting messages
+// with context, making API requests with retry logic, and validating responses.
+func (c *Client) Generate(parentCtx context.Context, userID int64, userName string, userMsg string) (string, error) {
+	select {
+	case <-parentCtx.Done():
+		return "", fmt.Errorf("context canceled before generation: %w", parentCtx.Err())
+	default:
+	}
+
 	userMsg = strings.TrimSpace(userMsg)
 	if userMsg == "" {
 		return "", ErrEmptyUserMessage
 	}
 
-	historyCtx, cancel := context.WithTimeout(ctx, chatHistoryTimeout)
-	defer cancel()
+	// Create a context with timeout for database operations
+	// This is a child context of the parent, so it will be canceled if the parent is canceled
+	dbCtx, dbCancel := context.WithTimeout(parentCtx, chatHistoryTimeout)
+	defer dbCancel()
 
-	history, err := c.db.GetRecent(historyCtx, recentHistoryCount)
+	history, err := c.db.GetRecent(dbCtx, recentHistoryCount)
 	if err != nil {
 		return "", fmt.Errorf("failed to retrieve chat history: %w", err)
+	}
+
+	// Check if parent context was canceled during history retrieval
+	select {
+	case <-parentCtx.Done():
+		return "", fmt.Errorf("context canceled after history retrieval: %w", parentCtx.Err())
+	default:
 	}
 
 	messages := make([]openai.ChatCompletionMessage, 0, messagesSliceCapacity)
@@ -99,8 +102,15 @@ func (c *Client) Generate(ctx context.Context, userID int64, userName string, us
 		Content: currentMsg,
 	})
 
-	return retryWithBackoff(ctx, func() (string, error) {
-		resp, err := c.openAIClient.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
+	// Use the parent context for the API call with retries
+	return retryWithBackoff(parentCtx, func() (string, error) {
+		select {
+		case <-parentCtx.Done():
+			return "", fmt.Errorf("context canceled before API call: %w", parentCtx.Err())
+		default:
+		}
+
+		resp, err := c.openAIClient.CreateChatCompletion(parentCtx, openai.ChatCompletionRequest{
 			Model:       c.model,
 			Messages:    messages,
 			Temperature: c.temperature,
@@ -122,15 +132,9 @@ func (c *Client) Generate(ctx context.Context, userID int64, userName string, us
 	})
 }
 
-// formatHistory formats chat history entries into OpenAI message format.
-// It processes the history in reverse chronological order and includes
-// only valid message pairs (user message + bot response).
-//
-// The function adds context to user messages by including:
-//   - Timestamp in RFC3339 format
-//   - User ID for tracking
-//   - Username for display
-//   - Original message content
+// formatHistory formats chat history entries into OpenAI message format,
+// processing history in reverse chronological order and including only
+// valid message pairs (user message + bot response).
 func (c *Client) formatHistory(history []db.ChatHistory) []openai.ChatCompletionMessage {
 	if len(history) == 0 {
 		return nil
@@ -189,8 +193,7 @@ func (c *Client) formatHistory(history []db.ChatHistory) []openai.ChatCompletion
 }
 
 // isPermanentAPIError identifies non-retryable API errors by checking
-// the error message against known error types. These errors indicate
-// issues that won't be resolved by retrying (e.g., invalid API key).
+// the error message against known error types.
 func isPermanentAPIError(err error) (bool, error) {
 	if err == nil {
 		return false, nil
@@ -206,16 +209,10 @@ func isPermanentAPIError(err error) (bool, error) {
 	return false, err
 }
 
-// retryWithBackoff implements exponential backoff retry logic for API calls.
-// It will retry operations that fail with transient errors up to retryMaxAttempts
-// times, with exponentially increasing delays between attempts.
-//
-// The function handles:
-//   - Context cancellation
-//   - Permanent vs transient errors
-//   - Exponential backoff timing
-//   - Maximum retry attempts
-func retryWithBackoff(ctx context.Context, op func() (string, error)) (string, error) {
+// retryWithBackoff implements exponential backoff retry logic for API calls,
+// retrying operations that fail with transient errors up to retryMaxAttempts
+// times with exponentially increasing delays between attempts.
+func retryWithBackoff(parentCtx context.Context, op func() (string, error)) (string, error) {
 	attempt := 0
 
 	var lastErr error
@@ -224,8 +221,8 @@ func retryWithBackoff(ctx context.Context, op func() (string, error)) (string, e
 
 	for attempt < retryMaxAttempts {
 		select {
-		case <-ctx.Done():
-			return "", fmt.Errorf("context error: %w", ctx.Err())
+		case <-parentCtx.Done():
+			return "", fmt.Errorf("context canceled before retry attempt %d: %w", attempt+1, parentCtx.Err())
 		default:
 		}
 
@@ -245,10 +242,10 @@ func retryWithBackoff(ctx context.Context, op func() (string, error)) (string, e
 		if attempt < retryMaxAttempts {
 			timer := time.NewTimer(backoff)
 			select {
-			case <-ctx.Done():
+			case <-parentCtx.Done():
 				timer.Stop()
 
-				return "", fmt.Errorf("context error: %w", ctx.Err())
+				return "", fmt.Errorf("context canceled during retry backoff: %w", parentCtx.Err())
 			case <-timer.C:
 				backoff *= 2
 			}

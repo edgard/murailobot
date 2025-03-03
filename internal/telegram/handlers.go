@@ -11,33 +11,21 @@ import (
 )
 
 // handleStart processes the /start command, sending a welcome message to new users.
-// This is typically the first interaction users have with the bot.
-//
-// Parameters:
-//   - ctx: Context for timeout/cancellation (unused but kept for consistency)
-//   - msg: The message containing the command
-//
 // Returns an error if the message is nil or sending the welcome message fails.
-func (b *Bot) handleStart(_ context.Context, msg *tgbotapi.Message) error {
+func (b *Bot) handleStart(parentCtx context.Context, msg *tgbotapi.Message) error {
 	if msg == nil {
 		return ErrNilMessage
 	}
 
 	reply := tgbotapi.NewMessage(msg.Chat.ID, b.cfg.Messages.Welcome)
 
-	return b.sendMessage(reply, "failed to send welcome message")
+	return b.sendMessage(parentCtx, reply, "failed to send welcome message")
 }
 
-// handleMessage processes the /mrl command, which generates AI responses to user messages.
-// It manages the complete flow of:
-//  1. Extracting and validating the user's message
-//  2. Showing typing indicator during processing
-//  3. Generating AI response
-//  4. Saving conversation history
-//  5. Sending response back to user
-//
-// The function handles various error conditions and provides appropriate user feedback.
-func (b *Bot) handleMessage(ctx context.Context, msg *tgbotapi.Message) error {
+// handleMessage processes the /mrl command, generating AI responses to user messages.
+// Manages the flow of extracting the message, showing typing indicators, generating
+// responses, saving history, and sending the response back to the user.
+func (b *Bot) handleMessage(parentCtx context.Context, msg *tgbotapi.Message) error {
 	if msg == nil {
 		return ErrNilMessage
 	}
@@ -46,7 +34,7 @@ func (b *Bot) handleMessage(ctx context.Context, msg *tgbotapi.Message) error {
 	if text == "" {
 		reply := tgbotapi.NewMessage(msg.Chat.ID, b.cfg.Messages.Provide)
 
-		return b.sendMessage(reply, "failed to send prompt message")
+		return b.sendMessage(parentCtx, reply, "failed to send prompt message")
 	}
 
 	userName := ""
@@ -66,12 +54,12 @@ func (b *Bot) handleMessage(ctx context.Context, msg *tgbotapi.Message) error {
 		"username", displayName,
 		"message_length", len(text))
 
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
+	typingCtx, typingCancel := context.WithCancel(parentCtx)
+	defer typingCancel()
 
-	go b.SendContinuousTyping(ctx, msg.Chat.ID)
+	go b.SendContinuousTyping(typingCtx, msg.Chat.ID)
 
-	response, err := b.openAI.Generate(ctx, msg.From.ID, userName, text)
+	response, err := b.openAI.Generate(parentCtx, msg.From.ID, userName, text)
 	if err != nil {
 		slog.Error("failed to generate OpenAI response",
 			"error", err,
@@ -84,7 +72,7 @@ func (b *Bot) handleMessage(ctx context.Context, msg *tgbotapi.Message) error {
 		}
 
 		reply := tgbotapi.NewMessage(msg.Chat.ID, errMsg)
-		if err := b.sendMessage(reply, "failed to send error message"); err != nil {
+		if err := b.sendMessage(parentCtx, reply, "failed to send error message"); err != nil {
 			slog.Error("failed to send error message to user",
 				"error", err,
 				"user_id", msg.From.ID)
@@ -94,14 +82,14 @@ func (b *Bot) handleMessage(ctx context.Context, msg *tgbotapi.Message) error {
 	}
 
 	// Save history but continue if save fails
-	if err := b.db.Save(ctx, msg.From.ID, userName, text, response); err != nil {
+	if err := b.db.Save(parentCtx, msg.From.ID, userName, text, response); err != nil {
 		slog.Warn("failed to save chat history",
 			"error", err,
 			"user_id", msg.From.ID)
 	}
 
 	reply := tgbotapi.NewMessage(msg.Chat.ID, response)
-	if err := b.sendMessage(reply, "failed to send OpenAI response"); err != nil {
+	if err := b.sendMessage(parentCtx, reply, "failed to send OpenAI response"); err != nil {
 		slog.Error("failed to send OpenAI response",
 			"error", err,
 			"user_id", msg.From.ID)
@@ -112,20 +100,11 @@ func (b *Bot) handleMessage(ctx context.Context, msg *tgbotapi.Message) error {
 	return nil
 }
 
-// handleReset processes the /mrl_reset command, which clears all conversation history.
-// This is an admin-only command that requires authorization checking.
-//
-// The function:
-//  1. Validates the message and user authorization
-//  2. Deletes all conversation history
-//  3. Sends confirmation or error message to user
-//
-// Returns an error if:
-//   - Message is nil
-//   - User is not authorized
-//   - Database operation fails
-//   - Sending response fails
-func (b *Bot) handleReset(ctx context.Context, msg *tgbotapi.Message) error {
+// handleReset processes the /mrl_reset command, clearing all conversation history.
+// This admin-only command validates authorization, deletes history, and sends
+// confirmation. Returns errors for unauthorized access, database failures, or
+// messaging failures.
+func (b *Bot) handleReset(parentCtx context.Context, msg *tgbotapi.Message) error {
 	if msg == nil {
 		return ErrNilMessage
 	}
@@ -137,7 +116,7 @@ func (b *Bot) handleReset(ctx context.Context, msg *tgbotapi.Message) error {
 			"action", "reset_history")
 
 		reply := tgbotapi.NewMessage(msg.Chat.ID, b.cfg.Messages.Unauthorized)
-		if err := b.sendMessage(reply, "failed to send unauthorized message"); err != nil {
+		if err := b.sendMessage(parentCtx, reply, "failed to send unauthorized message"); err != nil {
 			slog.Error("failed to send unauthorized message",
 				"error", err,
 				"user_id", msg.From.ID)
@@ -148,13 +127,13 @@ func (b *Bot) handleReset(ctx context.Context, msg *tgbotapi.Message) error {
 
 	slog.Info("resetting chat history", "user_id", userID)
 
-	if err := b.db.DeleteAll(ctx); err != nil {
+	if err := b.db.DeleteAll(parentCtx); err != nil {
 		slog.Error("failed to reset chat history",
 			"error", err,
 			"user_id", userID)
 
 		reply := tgbotapi.NewMessage(msg.Chat.ID, b.cfg.Messages.GeneralError)
-		if err := b.sendMessage(reply, "failed to send error message"); err != nil {
+		if err := b.sendMessage(parentCtx, reply, "failed to send error message"); err != nil {
 			slog.Error("failed to send error message to user",
 				"error", err,
 				"user_id", userID)
@@ -164,7 +143,7 @@ func (b *Bot) handleReset(ctx context.Context, msg *tgbotapi.Message) error {
 	}
 
 	reply := tgbotapi.NewMessage(msg.Chat.ID, b.cfg.Messages.HistoryReset)
-	if err := b.sendMessage(reply, "failed to send reset confirmation"); err != nil {
+	if err := b.sendMessage(parentCtx, reply, "failed to send reset confirmation"); err != nil {
 		slog.Error("failed to send reset confirmation",
 			"error", err,
 			"user_id", userID)
@@ -183,16 +162,16 @@ func (b *Bot) isUserAuthorized(userID int64) bool {
 
 // sendMessage is a helper function that sends a message via the Telegram API
 // and wraps any errors with a descriptive message.
-//
-// Parameters:
-//   - msg: The message configuration to send
-//   - errMsg: Description to prepend to any error that occurs
-//
-// Returns an error if the API call fails.
-func (b *Bot) sendMessage(msg tgbotapi.MessageConfig, errMsg string) error {
-	_, err := b.api.Send(msg)
-	if err != nil {
-		return fmt.Errorf("%s: %w", errMsg, err)
+func (b *Bot) sendMessage(parentCtx context.Context, msg tgbotapi.MessageConfig, errMsg string) error {
+	// Use context-aware API request when possible
+	select {
+	case <-parentCtx.Done():
+		return fmt.Errorf("context canceled while sending message: %w", parentCtx.Err())
+	default:
+		_, err := b.api.Send(msg)
+		if err != nil {
+			return fmt.Errorf("%s: %w", errMsg, err)
+		}
 	}
 
 	return nil
