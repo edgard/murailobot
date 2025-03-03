@@ -32,12 +32,12 @@ type Service interface {
 // Config defines OpenAI settings used to configure the client.
 // These settings control API behavior, model selection, and response characteristics.
 type Config struct {
-	Token       string        `yaml:"token"`       // OpenAI API authentication token
-	BaseURL     string        `yaml:"base_url"`    // API endpoint URL
-	Model       string        `yaml:"model"`       // Model identifier (e.g., "gpt-4")
-	Temperature float32       `yaml:"temperature"` // Response randomness (0.0-2.0)
-	Instruction string        `yaml:"instruction"` // System message defining assistant behavior
-	Timeout     time.Duration `yaml:"timeout"`     // API call timeout duration
+	Token       string        // OpenAI API authentication token
+	BaseURL     string        // API endpoint URL
+	Model       string        // Model identifier (e.g., "gpt-4")
+	Temperature float32       // Response randomness (0.0-2.0)
+	Instruction string        // System message defining assistant behavior
+	Timeout     time.Duration // API call timeout duration
 }
 
 // Client represents the OpenAI client implementation.
