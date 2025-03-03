@@ -61,7 +61,7 @@ func New(cfg *config.Config, database db.Database, openAIService openai.Service)
 // processing incoming updates. It runs until the context is cancelled
 // or an error occurs. Supports commands: /start, /mrl, and /mrl_reset.
 func (b *Bot) Start(parentCtx context.Context) error {
-	if err := b.setupCommands(parentCtx); err != nil {
+	if err := b.setupCommands(); err != nil {
 		return err
 	}
 
@@ -77,14 +77,7 @@ func (b *Bot) Start(parentCtx context.Context) error {
 }
 
 // setupCommands registers the bot commands with Telegram.
-func (b *Bot) setupCommands(ctx context.Context) error {
-	var err error
-
-	cmdCtx, cmdCancel := context.WithTimeout(ctx, apiOperationTimeout)
-	done := make(chan struct{})
-
-	defer cmdCancel()
-
+func (b *Bot) setupCommands() error {
 	commands := []tgbotapi.BotCommand{
 		{Command: "start", Description: "Start conversation with the bot"},
 		{Command: "mrl", Description: "Generate OpenAI response"},
@@ -93,20 +86,9 @@ func (b *Bot) setupCommands(ctx context.Context) error {
 
 	cmdConfig := tgbotapi.NewSetMyCommands(commands...)
 
-	go func() {
-		_, err = b.api.Request(cmdConfig)
-		done <- struct{}{}
-	}()
-
-	select {
-	case <-cmdCtx.Done():
-		return fmt.Errorf("timeout or cancellation while setting bot commands: %w", cmdCtx.Err())
-	case <-done:
-		close(done)
-
-		if err != nil {
-			return fmt.Errorf("failed to set bot commands: %w", err)
-		}
+	_, err := b.api.Request(cmdConfig)
+	if err != nil {
+		return fmt.Errorf("failed to set bot commands: %w", err)
 	}
 
 	return nil
@@ -133,79 +115,38 @@ func (b *Bot) processUpdates(ctx context.Context, updates tgbotapi.UpdatesChanne
 
 // handleCommand processes a command from a Telegram update.
 func (b *Bot) handleCommand(parentCtx context.Context, update tgbotapi.Update) {
-	errCh := make(chan error, 1)
+	reqCtx, reqCancel := context.WithTimeout(parentCtx, apiOperationTimeout)
+	defer reqCancel()
 
-	// Create a request-scoped context with timeout for each command
-	go func(update tgbotapi.Update, errCh chan<- error) {
-		reqCtx, reqCancel := context.WithTimeout(parentCtx, apiOperationTimeout)
-		defer reqCancel()
+	msg := update.Message
+	cmd := msg.Command()
 
-		msg := update.Message
-		cmd := msg.Command()
+	var err error
 
-		var err error
+	switch cmd {
+	case "start":
+		err = b.handleStart(reqCtx, msg)
+	case "mrl":
+		err = b.handleMessage(reqCtx, msg)
+	case "mrl_reset":
+		err = b.handleReset(reqCtx, msg)
+	}
 
-		switch cmd {
-		case "start":
-			err = b.handleStart(reqCtx, msg)
-		case "mrl":
-			err = b.handleMessage(reqCtx, msg)
-		case "mrl_reset":
-			err = b.handleReset(reqCtx, msg)
-		}
-
-		if err != nil {
-			slog.Error("command handler error",
-				"error", err,
-				"command", msg.Command(),
-				"user_id", msg.From.ID,
-				"chat_id", msg.Chat.ID)
-
-			select {
-			case errCh <- err:
-			default:
-			}
-		}
-
-		close(errCh)
-	}(update, errCh)
-
-	go func(errCh <-chan error) {
-		for err := range errCh {
-			if err != nil {
-				slog.Error("command handler returned error", "error", err)
-			}
-		}
-	}(errCh)
+	if err != nil {
+		slog.Error("command handler error",
+			"error", err,
+			"command", msg.Command(),
+			"user_id", msg.From.ID,
+			"chat_id", msg.Chat.ID)
+	}
 }
 
 // Stop gracefully shuts down the bot by stopping the update receiver.
-// Returns an error if stopping the bot fails or the context is cancelled.
-func (b *Bot) Stop(parentCtx context.Context) error {
-	select {
-	case <-parentCtx.Done():
-		return fmt.Errorf("context canceled before stopping bot: %w", parentCtx.Err())
-	default:
-	}
+func (b *Bot) Stop() error {
+	// StopReceivingUpdates is non-blocking, so no need for goroutine
+	b.api.StopReceivingUpdates()
 
-	stopCtx, stopCancel := context.WithTimeout(parentCtx, apiOperationTimeout)
-	defer stopCancel()
-
-	done := make(chan struct{})
-
-	var stopErr error
-
-	go func() {
-		b.api.StopReceivingUpdates()
-		close(done)
-	}()
-
-	select {
-	case <-stopCtx.Done():
-		return fmt.Errorf("timeout or cancellation while stopping bot: %w", stopCtx.Err())
-	case <-done:
-		return stopErr
-	}
+	return nil
 }
 
 // SendContinuousTyping sends periodic typing indicators to provide visual

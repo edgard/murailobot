@@ -49,30 +49,12 @@ func run() int {
 	slog.Info("configuration loaded successfully")
 	slog.Info("logger initialized", "level", cfg.LogLevel, "format", cfg.LogFormat)
 
-	initCtx, initCancel := context.WithTimeout(rootCtx, startupTimeout)
-	defer initCancel()
-
-	var database db.Database
-
-	done := make(chan struct{})
-
-	go func() {
-		database, err = db.New(nil) // Use db package defaults
-
-		close(done)
-	}()
-
-	select {
-	case <-initCtx.Done():
-		slog.Error("timeout while initializing database", "error", initCtx.Err())
+	// Initialize database
+	database, err := db.New(nil) // Use db package defaults
+	if err != nil {
+		slog.Error("failed to initialize database", "error", err)
 
 		return 1
-	case <-done:
-		if err != nil {
-			slog.Error("failed to initialize database", "error", err)
-
-			return 1
-		}
 	}
 
 	defer func() {
@@ -81,50 +63,20 @@ func run() int {
 		}
 	}()
 
-	var openAIClient openai.Service
-
-	done = make(chan struct{})
-
-	go func() {
-		openAIClient, err = openai.New(cfg, database)
-
-		close(done)
-	}()
-
-	select {
-	case <-initCtx.Done():
-		slog.Error("timeout while initializing OpenAI client", "error", initCtx.Err())
+	// Initialize OpenAI client
+	openAIClient, err := openai.New(cfg, database)
+	if err != nil {
+		slog.Error("failed to initialize OpenAI client", "error", err)
 
 		return 1
-	case <-done:
-		if err != nil {
-			slog.Error("failed to initialize OpenAI client", "error", err)
-
-			return 1
-		}
 	}
 
-	var bot *telegram.Bot
-
-	done = make(chan struct{})
-
-	go func() {
-		bot, err = telegram.New(cfg, database, openAIClient)
-
-		close(done)
-	}()
-
-	select {
-	case <-initCtx.Done():
-		slog.Error("timeout while initializing Telegram bot", "error", initCtx.Err())
+	// Initialize Telegram bot
+	bot, err := telegram.New(cfg, database, openAIClient)
+	if err != nil {
+		slog.Error("failed to initialize Telegram bot", "error", err)
 
 		return 1
-	case <-done:
-		if err != nil {
-			slog.Error("failed to initialize Telegram bot", "error", err)
-
-			return 1
-		}
 	}
 
 	slog.Info("application initialized successfully",
@@ -133,17 +85,16 @@ func run() int {
 		"build_date", date,
 		"built_by", builtBy)
 
+	// Handle shutdown signals in a separate goroutine
 	go func() {
 		quit := make(chan os.Signal, 1)
 		signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 		sig := <-quit
 		slog.Info("received shutdown signal", "signal", sig)
 
-		shutdownCtx, shutdownCancel := context.WithTimeout(rootCtx, shutdownTimeout)
-		defer shutdownCancel()
-
-		if err := bot.Stop(shutdownCtx); err != nil {
-			slog.Error("error stopping bot", "error", err)
+		// Stop the bot
+		if err := bot.Stop(); err != nil {
+			slog.Error("failed to stop bot", "error", err)
 		}
 
 		// Cancel the root context to signal shutdown to all components
