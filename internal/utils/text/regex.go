@@ -54,6 +54,7 @@ var (
 	numberedListRegex     = regexp.MustCompile(`^\d+\.\s+`)
 	blockquotesRegex      = regexp.MustCompile(`(?m)^>\s*(.+)$`)
 	htmlTagsRegex         = regexp.MustCompile(`<[^>]*>`)
+	metadataFormatRegex   = regexp.MustCompile(`^\s*\[\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})\]\s+[^:]+:\s*`)
 )
 
 var markdownRegexps = []*regexp.Regexp{

@@ -116,7 +116,7 @@ func processMarkdownStructures(md string) string {
 	return strings.Join(out, "\n")
 }
 
-func isMarkdown(text string) bool {
+func IsMarkdown(text string) bool {
 	for _, re := range markdownRegexps {
 		if re.MatchString(text) {
 			if strings.Contains(re.String(), `\*`) && strings.Contains(text, `\*`) {
@@ -180,7 +180,9 @@ func Sanitize(input string) string {
 		return ""
 	}
 
-	if isMarkdown(input) {
+	input = metadataFormatRegex.ReplaceAllString(input, "")
+
+	if IsMarkdown(input) {
 		input = stripMarkdown(input)
 	}
 
