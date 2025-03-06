@@ -1,4 +1,5 @@
-package utils
+// Package text provides text sanitization and markdown processing.
+package text
 
 import (
 	"regexp"
@@ -6,8 +7,6 @@ import (
 	"unicode"
 )
 
-// applyRegexReplacements applies a series of regular expression replacements
-// to a string in sequence.
 func applyRegexReplacements(s string, rules []struct {
 	re   *regexp.Regexp
 	repl string
@@ -20,21 +19,18 @@ func applyRegexReplacements(s string, rules []struct {
 	return s
 }
 
-// normalizeLineWhitespace normalizes whitespace within a single line of text
-// by collapsing multiple spaces, preserving ideographic spaces, converting
-// other Unicode whitespace to regular spaces, and trimming whitespace.
 func normalizeLineWhitespace(line string) string {
 	var b strings.Builder
 
-	var space bool // space default false
+	var space bool
 
 	for _, r := range line {
 		switch {
-		case r == '\u3000': // Preserve ideographic space
+		case r == '\u3000':
 			b.WriteRune(r)
 
 			space = false
-		case unicode.IsSpace(r) || r == '\u00A0': // Handle all other whitespace
+		case unicode.IsSpace(r) || r == '\u00A0':
 			if !space {
 				b.WriteRune(' ')
 
@@ -50,7 +46,6 @@ func normalizeLineWhitespace(line string) string {
 	return strings.TrimSpace(b.String())
 }
 
-// processListLine removes markdown list markers from a line while preserving indentation.
 func processListLine(l string) string {
 	trim := strings.TrimSpace(l)
 	if strings.HasPrefix(trim, "* ") || strings.HasPrefix(trim, "- ") || strings.HasPrefix(trim, "+ ") {
@@ -67,7 +62,6 @@ func processListLine(l string) string {
 	return l
 }
 
-// processTableRowAndRule handles markdown table rows and separator lines.
 func processTableRowAndRule(lines []string, i int) (int, string, bool) {
 	l := lines[i]
 	if strings.HasPrefix(l, "|") && strings.HasSuffix(l, "|") {
@@ -91,8 +85,6 @@ func processTableRowAndRule(lines []string, i int) (int, string, bool) {
 	return i, "", false
 }
 
-// processMarkdownStructures handles structural markdown elements including lists,
-// tables, and horizontal rules.
 func processMarkdownStructures(md string) string {
 	lines := strings.Split(md, "\n")
 
@@ -111,7 +103,6 @@ func processMarkdownStructures(md string) string {
 		}
 
 		l := processListLine(lines[i])
-
 		if horizontalRuleRegex.MatchString(strings.TrimSpace(l)) {
 			i++
 
@@ -125,12 +116,9 @@ func processMarkdownStructures(md string) string {
 	return strings.Join(out, "\n")
 }
 
-// IsMarkdown determines if a text string contains markdown formatting
-// by checking against a set of markdown patterns.
-func IsMarkdown(text string) bool {
+func isMarkdown(text string) bool {
 	for _, re := range markdownRegexps {
 		if re.MatchString(text) {
-			// Special case: differentiate escaped asterisks
 			if strings.Contains(re.String(), `\*`) && strings.Contains(text, `\*`) {
 				esc := regexp.MustCompile(`\\[\*]`)
 				unesc := regexp.MustCompile(`[^\\]\*`)
@@ -147,9 +135,6 @@ func IsMarkdown(text string) bool {
 	return false
 }
 
-// stripMarkdown removes markdown formatting from text while preserving content.
-// Handles code blocks, images, links, headers, text formatting, lists, blockquotes,
-// tables, horizontal rules, and HTML tags.
 func stripMarkdown(md string) string {
 	md = escapedReplacer.Replace(md)
 	rules := []struct {
@@ -169,13 +154,12 @@ func stripMarkdown(md string) string {
 	}
 
 	md = applyRegexReplacements(md, rules)
-	// Custom replacement for markdown links
 	md = linksRegex.ReplaceAllStringFunc(md, func(match string) string {
 		groups := linksRegex.FindStringSubmatch(match)
 		if len(groups) < minMarkdownLinkGroups {
 			return match
 		}
-		// If link text equals the URL, display just the URL
+
 		if groups[1] == groups[2] {
 			return groups[2]
 		}
@@ -190,15 +174,13 @@ func stripMarkdown(md string) string {
 	return restoreReplacer.Replace(md)
 }
 
-// Sanitize normalizes text by removing control characters, normalizing whitespace,
-// converting markdown to plain text, normalizing newlines, and removing excessive
-// blank lines.
+// Sanitize normalizes text by removing control characters and converting markdown to plain text.
 func Sanitize(input string) string {
 	if input == "" {
 		return ""
 	}
 
-	if IsMarkdown(input) {
+	if isMarkdown(input) {
 		input = stripMarkdown(input)
 	}
 

@@ -2,14 +2,14 @@
 
 [![Go Report Card](https://goreportcard.com/badge/github.com/edgard/murailobot)](https://goreportcard.com/report/github.com/edgard/murailobot)
 [![License: CC0-1.0](https://img.shields.io/badge/License-CC0--1.0-lightgrey.svg)](http://creativecommons.org/publicdomain/zero/1.0/)
-[![Go Version](https://img.shields.io/badge/go-1.21-blue.svg)](https://golang.org)
+[![Go Version](https://img.shields.io/badge/go-1.24-blue.svg)](https://golang.org)
 [![GitHub Release](https://img.shields.io/github/v/release/edgard/murailobot)](https://github.com/edgard/murailobot/releases/latest)
 
-A Telegram bot powered by OpenAI's GPT models that provides intelligent responses through the Telegram messaging platform.
+A Telegram bot powered by AI models that provides intelligent responses through the Telegram messaging platform.
 
 ## Features
 
-- Chat with OpenAI compatible APIs through Telegram
+- Chat with AI through Telegram
 - Persistent conversation history
 - Role-based access control
 - Docker support
@@ -17,9 +17,9 @@ A Telegram bot powered by OpenAI's GPT models that provides intelligent response
 
 ## Prerequisites
 
-- Go 1.21+
+- Go 1.24+
 - Telegram Bot Token (from @BotFather)
-- OpenAI API Key
+- AI API Key (compatible with OpenAI API format)
 
 ## Quick Start
 
@@ -54,8 +54,9 @@ docker run -v $(pwd)/config.yaml:/app/config.yaml ghcr.io/edgard/murailobot:late
 
 Minimal config.yaml example:
 ```yaml
-openai:
-  token: "sk-your-token-here"         # OpenAI API token
+ai:
+  token: "sk-your-token-here"            # AI API token
+  base_url: "https://api.openai.com/v1"  # API endpoint URL
 
 telegram:
   token: "your-telegram-bot-token"    # Telegram bot token
@@ -69,7 +70,8 @@ For a complete configuration with all options, see [config.yaml.example](config.
 Configuration can also be provided through environment variables:
 
 ```bash
-export BOT_OPENAI_TOKEN="your-openai-token"
+export BOT_AI_TOKEN="your-ai-token"
+export BOT_AI_BASE_URL="https://api.openai.com/v1"
 export BOT_TELEGRAM_TOKEN="your-telegram-token"
 export BOT_TELEGRAM_ADMIN_ID="123456789"
 ```
@@ -115,4 +117,5 @@ CC0 1.0 Universal - see [LICENSE](LICENSE) file
 ## Links
 
 - [OpenAI API](https://platform.openai.com/)
+- [OpenRouter](https://openrouter.ai/)
 - [Telegram Bot API](https://core.telegram.org/bots/api)

@@ -1,21 +1,18 @@
-// Package main implements a Telegram bot that integrates with OpenAI's API,
-// providing a conversational interface through Telegram and maintaining
-// conversation history in a local database.
+// Package main implements a Telegram bot with AI-powered responses
+// and conversation history management.
 package main
 
 import (
-	"context"
-	"errors"
 	"log/slog"
 	"os"
 	"os/signal"
 	"syscall"
 
+	"github.com/edgard/murailobot/internal/ai"
 	"github.com/edgard/murailobot/internal/config"
 	"github.com/edgard/murailobot/internal/db"
-	"github.com/edgard/murailobot/internal/openai"
 	"github.com/edgard/murailobot/internal/telegram"
-	"github.com/edgard/murailobot/internal/utils"
+	"github.com/edgard/murailobot/internal/utils/logging"
 )
 
 func main() {
@@ -23,12 +20,11 @@ func main() {
 	os.Exit(code)
 }
 
-// run initializes and starts the application components, handling graceful
-// shutdown on SIGINT/SIGTERM signals. It returns an exit code (0 for success,
-// 1 for error) for the main function to use when terminating the program.
+// run initializes components and manages the application lifecycle.
+// Returns 0 for success, 1 for error.
 func run() int {
-	rootCtx, rootCancel := context.WithCancel(context.Background())
-	defer rootCancel()
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 
 	logger := slog.New(slog.NewJSONHandler(os.Stderr, nil))
 	slog.SetDefault(logger)
@@ -40,7 +36,7 @@ func run() int {
 		return 1
 	}
 
-	if err := utils.SetupLogger(cfg); err != nil {
+	if err := logging.SetupLogger(cfg); err != nil {
 		slog.Error("failed to setup logger", "error", err)
 
 		return 1
@@ -49,8 +45,7 @@ func run() int {
 	slog.Info("configuration loaded successfully")
 	slog.Info("logger initialized", "level", cfg.LogLevel, "format", cfg.LogFormat)
 
-	// Initialize database
-	database, err := db.New(nil) // Use db package defaults
+	database, err := db.New()
 	if err != nil {
 		slog.Error("failed to initialize database", "error", err)
 
@@ -63,16 +58,14 @@ func run() int {
 		}
 	}()
 
-	// Initialize OpenAI client
-	openAIClient, err := openai.New(cfg, database)
+	aiClient, err := ai.New(cfg, database)
 	if err != nil {
-		slog.Error("failed to initialize OpenAI client", "error", err)
+		slog.Error("failed to initialize AI client", "error", err)
 
 		return 1
 	}
 
-	// Initialize Telegram bot
-	bot, err := telegram.New(cfg, database, openAIClient)
+	bot, err := telegram.New(cfg, database, aiClient)
 	if err != nil {
 		slog.Error("failed to initialize Telegram bot", "error", err)
 
@@ -85,33 +78,32 @@ func run() int {
 		"build_date", date,
 		"built_by", builtBy)
 
-	// Handle shutdown signals in a separate goroutine
+	botErr := make(chan error, 1)
 	go func() {
-		quit := make(chan os.Signal, 1)
-		signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
-		sig := <-quit
-		slog.Info("received shutdown signal", "signal", sig)
-
-		// Stop the bot
-		if err := bot.Stop(); err != nil {
-			slog.Error("failed to stop bot", "error", err)
-		}
-
-		// Cancel the root context to signal shutdown to all components
-		rootCancel()
+		botErr <- bot.Start()
 	}()
 
-	if err := bot.Start(rootCtx); err != nil {
-		if !errors.Is(err, context.Canceled) {
+	var exitCode int
+	select {
+	case sig := <-quit:
+		slog.Info("received shutdown signal", "signal", sig)
+
+		if err := bot.Stop(); err != nil {
+			slog.Error("failed to stop bot", "error", err)
+
+			exitCode = 1
+		}
+	case err := <-botErr:
+		if err != nil {
 			slog.Error("bot stopped with error", "error", err)
 
-			return 1
+			exitCode = 1
+		} else {
+			slog.Info("bot stopped gracefully")
 		}
-
-		slog.Info("bot stopped due to context cancellation")
 	}
 
 	slog.Info("application shutdown complete")
 
-	return 0
+	return exitCode
 }

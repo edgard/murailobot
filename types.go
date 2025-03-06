@@ -1,9 +1,9 @@
 package main
 
-// Build information variables injected at compile time through linker flags.
+// Build information set by the build system.
 var (
-	version = "dev"     // Semantic version of the build
+	version = "dev"     // Version from git tag
 	commit  = "none"    // Git commit hash
 	date    = "unknown" // Build timestamp
-	builtBy = "unknown" // Builder identifier
+	builtBy = "unknown" // Builder name
 )

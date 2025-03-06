@@ -1,6 +1,5 @@
-// Package config provides configuration management for the Telegram bot application.
-// It handles loading and validating configuration from multiple sources including
-// environment variables, configuration files, and default values.
+// Package config manages application configuration from environment variables,
+// config files, and default values.
 package config
 
 import (
@@ -8,64 +7,52 @@ import (
 	"time"
 )
 
-// Validation constants define the acceptable ranges for various configuration parameters.
 const (
-	defaultOpenAITimeout = 2 * time.Minute // Default timeout for OpenAI API calls
+	defaultAITimeout = 2 * time.Minute
 )
 
-// ErrValidation is returned when configuration validation fails.
 var ErrValidation = errors.New("validation error")
 
-// Default configuration values used when no override is provided.
-// These values can be overridden through config.yaml or environment variables.
 var defaults = map[string]any{
-	"openai.base_url":    "https://api.openai.com/v1",
-	"openai.model":       "gpt-4",
-	"openai.temperature": 1.0,
-	"openai.instruction": "You are a helpful assistant focused on providing clear and accurate responses.",
-	"openai.timeout":     defaultOpenAITimeout,
+	"ai.base_url":    "https://api.openai.com/v1",
+	"ai.model":       "gpt-4",
+	"ai.temperature": 1.0,
+	"ai.instruction": "You are a helpful assistant focused on providing clear and accurate responses.",
+	"ai.timeout":     defaultAITimeout,
 
 	"telegram.messages.welcome":         "👋 Welcome! I'm ready to assist you. Use /mrl followed by your message to start a conversation.",
 	"telegram.messages.not_authorized":  "🚫 Access denied. Please contact the administrator.",
 	"telegram.messages.provide_message": "ℹ️ Please provide a message with your command.",
-	"telegram.messages.ai_error":        "🤖 Unable to process request. Please try again.",
 	"telegram.messages.general_error":   "❌ An error occurred. Please try again later.",
 	"telegram.messages.history_reset":   "🔄 Chat history has been cleared.",
+	"telegram.messages.timeout":         "⏱️ Request timed out. Please try again later.",
 
 	"log.level":  "info",
 	"log.format": "json",
 }
 
-// Config defines the complete application configuration.
-// Configuration can be provided through environment variables prefixed with BOT_
-// or through a config.yaml file. Environment variables take precedence over
-// config file values.
-//
-// Example environment variables:
-//
-//	BOT_OPENAI_TOKEN=sk-xxx
-//	BOT_TELEGRAM_TOKEN=123456:xxx
-//	BOT_TELEGRAM_ADMIN_ID=123456789
+// Config defines the application configuration. Values can be set via environment
+// variables prefixed with BOT_ (e.g., BOT_AI_TOKEN) or through config.yaml.
 type Config struct {
-	// OpenAI service configuration
-	OpenAIToken       string        `koanf:"openai.token"       validate:"required"`                // API token for OpenAI service authentication
-	OpenAIBaseURL     string        `koanf:"openai.base_url"    validate:"required,url"`            // Base URL for OpenAI API, defaults to https://api.openai.com/v1
-	OpenAIModel       string        `koanf:"openai.model"       validate:"required"`                // Model identifier (e.g., "gpt-4")
-	OpenAITemperature float32       `koanf:"openai.temperature" validate:"required,min=0,max=2"`    // Temperature controls response randomness (0.0-2.0)
-	OpenAIInstruction string        `koanf:"openai.instruction" validate:"required,min=1"`          // System instruction defining assistant behavior
-	OpenAITimeout     time.Duration `koanf:"openai.timeout"     validate:"required,min=1s,max=10m"` // Timeout for OpenAI API calls (1s-10m)
+	// AI service configuration
+	AIToken       string        `koanf:"ai.token"       validate:"required"`
+	AIBaseURL     string        `koanf:"ai.base_url"    validate:"required,url"`
+	AIModel       string        `koanf:"ai.model"       validate:"required"`
+	AITemperature float32       `koanf:"ai.temperature" validate:"required,min=0,max=2"`
+	AIInstruction string        `koanf:"ai.instruction" validate:"required"`
+	AITimeout     time.Duration `koanf:"ai.timeout"     validate:"required,min=1s,max=10m"`
 
-	// Telegram Settings
-	TelegramToken                string `koanf:"telegram.token"                    validate:"required"`      // API token for Telegram bot authentication
-	TelegramAdminID              int64  `koanf:"telegram.admin_id"                 validate:"required,gt=0"` // User ID of the Telegram admin
-	TelegramWelcomeMessage       string `koanf:"telegram.messages.welcome"         validate:"required"`      // Message sent when a user starts the bot
-	TelegramNotAuthorizedMessage string `koanf:"telegram.messages.not_authorized"  validate:"required"`      // Message sent to unauthorized users
-	TelegramProvideMessage       string `koanf:"telegram.messages.provide_message" validate:"required"`      // Message sent when user sends command without text
-	TelegramAIErrorMessage       string `koanf:"telegram.messages.ai_error"        validate:"required"`      // Message sent when AI service returns an error
-	TelegramGeneralErrorMessage  string `koanf:"telegram.messages.general_error"   validate:"required"`      // Message sent on general system errors
-	TelegramHistoryResetMessage  string `koanf:"telegram.messages.history_reset"   validate:"required"`      // Message sent when chat history is reset
+	// Telegram settings
+	TelegramToken                string `koanf:"telegram.token"                    validate:"required"`
+	TelegramAdminID              int64  `koanf:"telegram.admin_id"                 validate:"required,gt=0"`
+	TelegramWelcomeMessage       string `koanf:"telegram.messages.welcome"         validate:"required"`
+	TelegramNotAuthorizedMessage string `koanf:"telegram.messages.not_authorized"  validate:"required"`
+	TelegramProvideMessage       string `koanf:"telegram.messages.provide_message" validate:"required"`
+	TelegramGeneralErrorMessage  string `koanf:"telegram.messages.general_error"   validate:"required"`
+	TelegramHistoryResetMessage  string `koanf:"telegram.messages.history_reset"   validate:"required"`
+	TelegramTimeoutMessage       string `koanf:"telegram.messages.timeout"         validate:"required"`
 
-	// Logging Settings
-	LogLevel  string `koanf:"log.level"  validate:"required,oneof=debug info warn error"` // Log level (debug, info, warn, error)
-	LogFormat string `koanf:"log.format" validate:"required,oneof=json text"`             // Log output format (json, text)
+	// Logging settings
+	LogLevel  string `koanf:"log.level"  validate:"required,oneof=debug info warn error"`
+	LogFormat string `koanf:"log.format" validate:"required,oneof=json text"`
 }

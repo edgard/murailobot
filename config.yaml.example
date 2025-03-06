@@ -3,14 +3,14 @@
 ################################################################################
 
 #------------------------------------------------------------------------------
-# OpenAI Configuration
+# AI Configuration
 #------------------------------------------------------------------------------
-openai:
+ai:
   token: "sk-your-token-here"                # REQUIRED: API token
-  base_url: "https://api.openai.com/v1"      # Optional: API endpoint URL
+  base_url: "https://api.openai.com/v1"      # Optional: API endpoint URL (must be valid URL)
   model: "gpt-4"                             # Optional: Model identifier
-  temperature: 1.0                           # Optional: Between 0.0 and 2.0
-  timeout: "2m"                              # Optional: Between 1s and 10m
+  temperature: 1.0                           # Optional: Controls response randomness (between 0.0 and 2.0)
+  timeout: "2m"                              # Optional: API call timeout (between 1s and 10m)
   instruction: "You are a helpful assistant focused on providing clear and accurate responses." # Optional: System prompt
 
 #------------------------------------------------------------------------------
@@ -18,18 +18,18 @@ openai:
 #------------------------------------------------------------------------------
 telegram:
   token: "your-telegram-bot-token"           # REQUIRED: Bot token from @BotFather
-  admin_id: 123456789                        # REQUIRED: Admin's Telegram user ID
-  messages:                                  # Optional: all messages have defaults
+  admin_id: 123456789                        # REQUIRED: Admin's Telegram user ID (must be > 0)
+  messages:                                  # Optional: Custom message templates
     welcome: "👋 Welcome! I'm ready to assist you. Use /mrl followed by your message to start a conversation."
     not_authorized: "🚫 Access denied. Please contact the administrator."
     provide_message: "ℹ️ Please provide a message with your command."
-    ai_error: "🤖 Unable to process request. Please try again."
     general_error: "❌ An error occurred. Please try again later."
     history_reset: "🔄 Chat history has been cleared."
+    timeout: "⏱️ Request timed out. Please try again later."
 
 #------------------------------------------------------------------------------
 # Logging Configuration
 #------------------------------------------------------------------------------
 log:
-  level: "info"                              # Optional: debug, info, warn, or error
-  format: "json"                             # Optional: json or text
+  level: "info"                              # Optional: Log level (debug, info, warn, error)
+  format: "json"                             # Optional: Log format (json, text)
