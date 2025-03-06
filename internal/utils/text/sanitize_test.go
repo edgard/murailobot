@@ -6,10 +6,11 @@ import (
 	"github.com/edgard/murailobot/internal/utils/text"
 )
 
-func TestSanitize_MetadataRemoval(t *testing.T) {
+// TestSanitizeMetadataRemoval tests the metadata removal functionality.
+func TestSanitizeMetadataRemoval(t *testing.T) {
 	t.Parallel()
 
-	tests := []struct {
+	testCases := []struct {
 		name     string
 		input    string
 		expected string
@@ -56,19 +57,11 @@ func TestSanitize_MetadataRemoval(t *testing.T) {
 		},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-
-			result := text.Sanitize(tt.input)
-			if result != tt.expected {
-				t.Errorf("Sanitize() = %q, want %q", result, tt.expected)
-			}
-		})
-	}
+	runTestCases(t, testCases)
 }
 
-func TestSanitizePlaintext(t *testing.T) {
+// TestSanitizeBasicText tests basic text handling in the sanitize function.
+func TestSanitizeBasicText(t *testing.T) {
 	t.Parallel()
 
 	testCases := []struct {
@@ -76,7 +69,6 @@ func TestSanitizePlaintext(t *testing.T) {
 		input    string
 		expected string
 	}{
-		// Basic text handling
 		{
 			name:     "empty string",
 			input:    "",
@@ -97,8 +89,20 @@ func TestSanitizePlaintext(t *testing.T) {
 			input:    "  1234, 5678!  \n  $9.99  ",
 			expected: "1234, 5678!\n$9.99",
 		},
+	}
 
-		// Whitespace handling
+	runTestCases(t, testCases)
+}
+
+// TestSanitizeWhitespace tests whitespace handling in the sanitize function.
+func TestSanitizeWhitespace(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name     string
+		input    string
+		expected string
+	}{
 		{
 			name:     "text with multiple spaces",
 			input:    "hello   world",
@@ -129,8 +133,20 @@ func TestSanitizePlaintext(t *testing.T) {
 			input:    "word\u205Fword\u2060word\u180Eword",
 			expected: "word wordwordword",
 		},
+	}
 
-		// Newline handling
+	runTestCases(t, testCases)
+}
+
+// TestSanitizeNewlines tests newline handling in the sanitize function.
+func TestSanitizeNewlines(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name     string
+		input    string
+		expected string
+	}{
 		{
 			name:     "text with newline characters",
 			input:    "hello\nworld",
@@ -181,8 +197,20 @@ func TestSanitizePlaintext(t *testing.T) {
 			input:    "hello\n \n \n \nworld",
 			expected: "hello\n\nworld",
 		},
+	}
 
-		// Line separators
+	runTestCases(t, testCases)
+}
+
+// TestSanitizeLineSeparators tests line separator handling in the sanitize function.
+func TestSanitizeLineSeparators(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name     string
+		input    string
+		expected string
+	}{
 		{
 			name:     "text with carriage returns",
 			input:    "hello\rworld",
@@ -203,8 +231,20 @@ func TestSanitizePlaintext(t *testing.T) {
 			input:    "hello\u2029world",
 			expected: "hello\n\nworld",
 		},
+	}
 
-		// Unicode and special characters
+	runTestCases(t, testCases)
+}
+
+// TestSanitizeUnicodeChars tests Unicode character handling in the sanitize function.
+func TestSanitizeUnicodeChars(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name     string
+		input    string
+		expected string
+	}{
 		{
 			name:     "text with unicode characters",
 			input:    "你好，世界",
@@ -240,8 +280,20 @@ func TestSanitizePlaintext(t *testing.T) {
 			input:    "'Single quotes' and \"Double quotes\" and \"Curly quotes\"",
 			expected: "'Single quotes' and \"Double quotes\" and \"Curly quotes\"",
 		},
+	}
 
-		// Unicode control characters
+	runTestCases(t, testCases)
+}
+
+// TestSanitizeControlChars tests control character handling in the sanitize function.
+func TestSanitizeControlChars(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name     string
+		input    string
+		expected string
+	}{
 		{
 			name:     "text with zero-width spaces",
 			input:    "hello\u200Bworld\u200B",
@@ -277,8 +329,20 @@ func TestSanitizePlaintext(t *testing.T) {
 			input:    "zero\u2060width\u2060joiner",
 			expected: "zerowidthjoiner",
 		},
+	}
 
-		// Mixed character handling
+	runTestCases(t, testCases)
+}
+
+// TestSanitizeMixedChars tests mixed character handling in the sanitize function.
+func TestSanitizeMixedChars(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name     string
+		input    string
+		expected string
+	}{
 		{
 			name:     "text with mixed whitespace characters",
 			input:    "hello\t \r\nworld\f\vtest",
@@ -289,8 +353,20 @@ func TestSanitizePlaintext(t *testing.T) {
 			input:    "hello\r\n\t \f\vworld",
 			expected: "hello\nworld",
 		},
+	}
 
-		// Specific content handling
+	runTestCases(t, testCases)
+}
+
+// TestSanitizeSpecificContent tests specific content handling in the sanitize function.
+func TestSanitizeSpecificContent(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name     string
+		input    string
+		expected string
+	}{
 		{
 			name:     "text with URLs",
 			input:    "Visit https://example.com/test?param=value",
@@ -303,20 +379,11 @@ func TestSanitizePlaintext(t *testing.T) {
 		},
 	}
 
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-
-			actual := text.Sanitize(tc.input)
-
-			if actual != tc.expected {
-				t.Errorf("input: %q, expected: %q, actual: %q", tc.input, tc.expected, actual)
-			}
-		})
-	}
+	runTestCases(t, testCases)
 }
 
-func TestSanitizeMarkdown(t *testing.T) {
+// TestSanitizeMarkdownBasic tests basic markdown formatting in the sanitize function.
+func TestSanitizeMarkdownBasic(t *testing.T) {
 	t.Parallel()
 
 	testCases := []struct {
@@ -344,6 +411,35 @@ func TestSanitizeMarkdown(t *testing.T) {
 			input:    "Here's an image: ![alt text](https://example.com/image.jpg)",
 			expected: "Here's an image: https://example.com/image.jpg",
 		},
+		{
+			name:     "text with markdown strikethrough",
+			input:    "This is ~~deleted~~ text",
+			expected: "This is deleted text",
+		},
+		{
+			name:     "text with nested markdown formatting",
+			input:    "This is **bold _and italic_** text",
+			expected: "This is bold and italic text",
+		},
+		{
+			name:     "markdown link with same text and url",
+			input:    "Click here: [https://example.com](https://example.com)",
+			expected: "Click here: https://example.com",
+		},
+	}
+
+	runTestCases(t, testCases)
+}
+
+// TestSanitizeMarkdownStructure tests markdown structural elements in the sanitize function.
+func TestSanitizeMarkdownStructure(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name     string
+		input    string
+		expected string
+	}{
 		{
 			name:     "text with markdown headers",
 			input:    "# Main Title\n## Subtitle\nRegular text here",
@@ -375,55 +471,45 @@ func TestSanitizeMarkdown(t *testing.T) {
 			expected: "Above\nBelow\nEnd",
 		},
 		{
-			name:     "text with complex markdown",
-			input:    "# Project README\n\n## Features\n* **Bold item** with _emphasis_\n* [Link](https://example.com)\n\n```\nSample code\n```\n\n> Note: This is important",
-			expected: "Project README\n\nFeatures\nBold item with emphasis\nLink (https://example.com)\n\nNote: This is important",
+			name:     "text with markdown tables",
+			input:    "| Header 1 | Header 2 |\n| -------- | -------- |\n| Cell 1   | Cell 2   |",
+			expected: "Header 1 Header 2\nCell 1 Cell 2",
 		},
-		{
-			name:     "text with markdown strikethrough",
-			input:    "This is ~~deleted~~ text",
-			expected: "This is deleted text",
-		},
+	}
+
+	runTestCases(t, testCases)
+}
+
+// TestSanitizeMarkdownMixed tests mixed markdown and whitespace in the sanitize function.
+func TestSanitizeMarkdownMixed(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name     string
+		input    string
+		expected string
+	}{
 		{
 			name:     "text with mixed markdown and whitespace",
 			input:    "  **Bold**  \n  _Italic_  \n\n\n> Quote",
 			expected: "Bold\nItalic\n\nQuote",
 		},
 		{
-			name:     "text with nested markdown formatting",
-			input:    "This is **bold _and italic_** text",
-			expected: "This is bold and italic text",
-		},
-		{
-			name:     "text with markdown tables",
-			input:    "| Header 1 | Header 2 |\n| -------- | -------- |\n| Cell 1   | Cell 2   |",
-			expected: "Header 1 Header 2\nCell 1 Cell 2",
+			name:     "text with complex markdown",
+			input:    "# Project README\n\n## Features\n* **Bold item** with _emphasis_\n* [Link](https://example.com)\n\n```\nSample code\n```\n\n> Note: This is important",
+			expected: "Project README\n\nFeatures\nBold item with emphasis\nLink (https://example.com)\n\nNote: This is important",
 		},
 		{
 			name:     "text with escaped markdown",
 			input:    "This \\*is not italic\\* and this \\`is not code\\`",
 			expected: "This *is not italic* and this `is not code`",
 		},
-		{
-			name:     "markdown link with same text and url",
-			input:    "Click here: [https://example.com](https://example.com)",
-			expected: "Click here: https://example.com",
-		},
 	}
 
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-
-			actual := text.Sanitize(tc.input)
-
-			if actual != tc.expected {
-				t.Errorf("input: %q, expected: %q, actual: %q", tc.input, tc.expected, actual)
-			}
-		})
-	}
+	runTestCases(t, testCases)
 }
 
+// TestIsMarkdown tests the markdown detection functionality.
 func TestIsMarkdown(t *testing.T) {
 	t.Parallel()
 
@@ -432,11 +518,19 @@ func TestIsMarkdown(t *testing.T) {
 		input    string
 		expected bool
 	}{
+		// Basic text detection
 		{
 			name:     "plain text",
 			input:    "This is just regular text",
 			expected: false,
 		},
+		{
+			name:     "escaped markdown",
+			input:    "This \\*is not markdown\\*",
+			expected: false,
+		},
+
+		// Inline formatting detection
 		{
 			name:     "bold markdown",
 			input:    "This is **bold text**",
@@ -452,9 +546,16 @@ func TestIsMarkdown(t *testing.T) {
 			input:    "[link text](https://example.com)",
 			expected: true,
 		},
+
+		// Block element detection
 		{
 			name:     "header markdown",
 			input:    "# Header",
+			expected: true,
+		},
+		{
+			name:     "setext header markdown",
+			input:    "Header Text\n---",
 			expected: true,
 		},
 		{
@@ -468,30 +569,56 @@ func TestIsMarkdown(t *testing.T) {
 			expected: true,
 		},
 		{
-			name:     "escaped markdown",
-			input:    "This \\*is not markdown\\*",
-			expected: false,
-		},
-		{
-			name:     "setext header markdown",
-			input:    "Header Text\n---",
-			expected: true,
-		},
-		{
 			name:     "task list markdown detection",
 			input:    "- [ ] Incomplete task",
 			expected: true,
 		},
 	}
 
+	runBoolTestCases(t, testCases)
+}
+
+// Helper function to run test cases for sanitization tests.
+func runTestCases(t *testing.T, testCases []struct {
+	name     string
+	input    string
+	expected string
+},
+) {
+	t.Helper()
+
 	for _, tc := range testCases {
+		// Capture range variable
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			actual := text.Sanitize(tc.input)
+
+			if actual != tc.expected {
+				t.Errorf("input: %q, expected: %q, actual: %q", tc.input, tc.expected, actual)
+			}
+		})
+	}
+}
+
+// Helper function to run test cases for boolean tests.
+func runBoolTestCases(t *testing.T, testCases []struct {
+	name     string
+	input    string
+	expected bool
+},
+) {
+	t.Helper()
+
+	for _, tc := range testCases {
+		// Capture range variable
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
 			actual := text.IsMarkdown(tc.input)
 
 			if actual != tc.expected {
-				t.Errorf("IsMarkdown(%q) = %v, expected %v", tc.input, actual, tc.expected)
+				t.Errorf("input: %q, expected: %v, actual: %v", tc.input, tc.expected, actual)
 			}
 		})
 	}
