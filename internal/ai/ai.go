@@ -37,14 +37,14 @@ func New(cfg *config.Config, database Database) (*Client, error) {
 	return c, nil
 }
 
-// Generate creates an AI response for a user message.
-func (c *Client) Generate(userID int64, userMsg string) (string, error) {
+// GenerateWithContext creates an AI response for a user message with context support.
+func (c *Client) GenerateWithContext(ctx context.Context, userID int64, userMsg string) (string, error) {
 	userMsg = strings.TrimSpace(userMsg)
 	if userMsg == "" {
 		return "", ErrEmptyUserMessage
 	}
 
-	history, err := c.db.GetRecent(recentHistoryCount)
+	history, err := c.db.GetRecentWithContext(ctx, recentHistoryCount)
 	if err != nil {
 		return "", fmt.Errorf("failed to retrieve chat history: %w", err)
 	}
@@ -73,9 +73,6 @@ func (c *Client) Generate(userID int64, userMsg string) (string, error) {
 		Content: currentMsg,
 	})
 
-	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
-	defer cancel()
-
 	var attemptCount uint
 
 	response, err := c.createCompletion(ctx, completionRequest{
@@ -90,22 +87,8 @@ func (c *Client) Generate(userID int64, userMsg string) (string, error) {
 	return response, nil
 }
 
-// UserAnalysis represents behavioral analysis for a user.
-type UserAnalysis struct {
-	UserID             int64
-	Date               time.Time
-	CommunicationStyle string
-	PersonalityTraits  string
-	BehavioralPatterns string
-	WordChoicePatterns string
-	InteractionHabits  string
-	UniqueQuirks       string
-	EmotionalTriggers  string
-	MessageCount       int
-}
-
-// GenerateGroupAnalysis creates a behavioral analysis for all users in the provided messages.
-func (c *Client) GenerateGroupAnalysis(messages []db.GroupMessage) (map[int64]*db.UserAnalysis, error) {
+// GenerateGroupAnalysisWithContext creates a behavioral analysis for all users with context support.
+func (c *Client) GenerateGroupAnalysisWithContext(ctx context.Context, messages []db.GroupMessage) (map[int64]*db.UserAnalysis, error) {
 	if len(messages) == 0 {
 		return nil, ErrNoMessages
 	}
@@ -152,6 +135,9 @@ Ensure that:
 
 	conversation.WriteString("Group Chat Messages:\n\n")
 
+	// Track total messages for logging
+	totalMessages := 0
+
 	for userID, userMsgs := range userMessages {
 		conversation.WriteString(fmt.Sprintf("Messages from User %d:\n", userID))
 
@@ -159,18 +145,21 @@ Ensure that:
 			conversation.WriteString(fmt.Sprintf("[%s] %s\n",
 				msg.Timestamp.Format(timeformats.FullTimestamp),
 				msg.Message))
+
+			totalMessages++
 		}
 
 		conversation.WriteString("\n")
 	}
 
+	slog.Info("analyzing group messages",
+		"total_messages", totalMessages,
+		"unique_users", len(userMessages))
+
 	chatMessages = append(chatMessages, openai.ChatCompletionMessage{
 		Role:    "user",
 		Content: conversation.String(),
 	})
-
-	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
-	defer cancel()
 
 	var attemptCount uint
 
@@ -214,6 +203,14 @@ Ensure that:
 			continue
 		}
 
+		// Skip if no messages exist for this user
+		if _, exists := userMessages[userID]; !exists {
+			slog.Warn("analysis received for unknown user",
+				"user_id", userID)
+
+			continue
+		}
+
 		result[userID] = &db.UserAnalysis{
 			UserID:             userID,
 			Date:               time.Now().UTC(),
@@ -227,6 +224,10 @@ Ensure that:
 			MessageCount:       len(userMessages[userID]),
 		}
 	}
+
+	slog.Info("group analysis completed",
+		"users_analyzed", len(result),
+		"total_messages", totalMessages)
 
 	return result, nil
 }
@@ -301,12 +302,14 @@ func (c *Client) formatHistory(history []db.ChatHistory) []openai.ChatCompletion
 
 	for i := len(history) - 1; i >= 0; i-- {
 		msg := history[i]
-		if msg.ID <= 0 || msg.UserID <= 0 ||
-			msg.UserMsg == "" || msg.BotMsg == "" || msg.Timestamp.IsZero() {
+		if msg.ID <= 0 || msg.UserID <= 0 || msg.Timestamp.IsZero() {
 			continue
 		}
 
-		if strings.TrimSpace(msg.UserMsg) != "" && strings.TrimSpace(msg.BotMsg) != "" {
+		trimmedUserMsg := strings.TrimSpace(msg.UserMsg)
+		trimmedBotMsg := strings.TrimSpace(msg.BotMsg)
+
+		if trimmedUserMsg != "" && trimmedBotMsg != "" {
 			validMsgs = append(validMsgs, msg)
 		}
 	}

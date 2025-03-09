@@ -48,14 +48,17 @@ func normalizeLineWhitespace(line string) string {
 
 func processListLine(l string) string {
 	trim := strings.TrimSpace(l)
-	if strings.HasPrefix(trim, "* ") || strings.HasPrefix(trim, "- ") || strings.HasPrefix(trim, "+ ") {
-		indent := l[:len(l)-len(trim)]
+	indent := l[:len(l)-len(trim)]
 
-		return indent + strings.TrimSpace(strings.TrimPrefix(strings.TrimPrefix(strings.TrimPrefix(trim, "* "), "- "), "+ "))
+	if unorderedListRegex.MatchString(l) {
+		// Remove the list marker (* or - or +) and its trailing space
+		for _, prefix := range []string{"* ", "- ", "+ "} {
+			if strings.HasPrefix(trim, prefix) {
+				return indent + strings.TrimSpace(strings.TrimPrefix(trim, prefix))
+			}
+		}
 	} else if orderedListRegex.MatchString(l) {
-		trim = strings.TrimSpace(l)
-		indent := l[:len(l)-len(trim)]
-
+		// Remove the number and dot prefix
 		return indent + numberedListRegex.ReplaceAllString(trim, "")
 	}
 
@@ -103,8 +106,18 @@ func processMarkdownStructures(md string) string {
 		}
 
 		l := processListLine(lines[i])
-		if horizontalRuleRegex.MatchString(strings.TrimSpace(l)) {
+
+		// Skip horizontal rules and setext header underlines
+		trimmed := strings.TrimSpace(l)
+		if horizontalRuleRegex.MatchString(trimmed) {
+			// If this is part of a setext header, skip it but keep the header text
 			i++
+
+			continue
+		} else if i > 0 && horizontalRuleRegex.MatchString(strings.TrimSpace(lines[i])) {
+			// If next line is a horizontal rule, keep current line
+			out = append(out, l)
+			i += 2
 
 			continue
 		}

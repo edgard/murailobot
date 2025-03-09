@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"sort"
 	"strings"
 	"time"
 
@@ -211,7 +212,7 @@ func (b *Bot) handleMessage(msg *tgbotapi.Message) error {
 
 	b.StartTyping(ctx, msg.Chat.ID)
 
-	response, err := b.ai.Generate(msg.From.ID, text)
+	response, err := b.ai.GenerateWithContext(ctx, msg.From.ID, text)
 	if err != nil {
 		slog.Error("failed to generate AI response",
 			"error", err,
@@ -340,11 +341,15 @@ func (b *Bot) runDailyAnalysis() {
 
 // generateUserAnalyses analyzes behavior for all active users.
 func (b *Bot) generateUserAnalyses(date time.Time) {
+	// Create context with timeout for database operations
+	ctx, cancel := context.WithTimeout(context.Background(), defaultOperationTimeout)
+	defer cancel()
+
 	start := time.Date(date.Year(), date.Month(), date.Day(), 0, 0, 0, 0, time.UTC)
 	end := start.Add(hoursInDay * time.Hour)
 
 	// Get all messages for the time period
-	messages, err := b.db.GetGroupMessagesInTimeRange(start, end)
+	messages, err := b.db.GetGroupMessagesInTimeRangeWithContext(ctx, start, end)
 	if err != nil {
 		slog.Error("failed to get group messages",
 			"error", err,
@@ -358,8 +363,16 @@ func (b *Bot) generateUserAnalyses(date time.Time) {
 	}
 
 	// Generate analysis for all users
-	analyses, err := b.ai.GenerateGroupAnalysis(messages)
+	analyses, err := b.ai.GenerateGroupAnalysisWithContext(ctx, messages)
 	if err != nil {
+		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			slog.Error("timeout generating analysis",
+				"error", err,
+				"date", date.Format(timeformats.DateOnly))
+
+			return
+		}
+
 		slog.Error("failed to generate group analysis",
 			"error", err,
 			"date", date.Format(timeformats.DateOnly))
@@ -400,15 +413,60 @@ func (b *Bot) handleUserAnalysis(msg *tgbotapi.Message) error {
 		return ErrUnauthorized
 	}
 
+	// Create context with timeout for operations
+	ctx, cancel := context.WithTimeout(context.Background(), defaultOperationTimeout)
+	defer cancel()
+
 	// Calculate date range for the past week
 	now := time.Now().UTC()
 	weekAgo := now.AddDate(0, 0, dailySummaryOffset)
 	start := time.Date(weekAgo.Year(), weekAgo.Month(), weekAgo.Day(), 0, 0, 0, 0, time.UTC)
 	end := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
 
-	analyses, err := b.db.GetUserAnalysesInTimeRange(start, end)
+	// Get messages for analysis
+	messages, err := b.db.GetGroupMessagesInTimeRangeWithContext(ctx, start, end)
 	if err != nil {
-		slog.Error("failed to get weekly analyses",
+		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			slog.Error("timeout getting group messages",
+				"error", err,
+				"user_id", userID)
+
+			reply := tgbotapi.NewMessage(msg.Chat.ID, b.cfg.Messages.Timeout)
+
+			return b.sendMessage(reply)
+		}
+
+		slog.Error("failed to get group messages",
+			"error", err,
+			"user_id", userID)
+
+		reply := tgbotapi.NewMessage(msg.Chat.ID, b.cfg.Messages.GeneralError)
+
+		return b.sendMessage(reply)
+	}
+
+	if len(messages) == 0 {
+		reply := tgbotapi.NewMessage(msg.Chat.ID, "No messages available for analysis in the past week.")
+
+		return b.sendMessage(reply)
+	}
+
+	// Generate analysis with progress indication
+	b.StartTyping(ctx, msg.Chat.ID)
+
+	analyses, err := b.ai.GenerateGroupAnalysisWithContext(ctx, messages)
+	if err != nil {
+		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			slog.Error("timeout generating analysis",
+				"error", err,
+				"user_id", userID)
+
+			reply := tgbotapi.NewMessage(msg.Chat.ID, b.cfg.Messages.Timeout)
+
+			return b.sendMessage(reply)
+		}
+
+		slog.Error("failed to generate analysis",
 			"error", err,
 			"user_id", userID)
 
@@ -418,7 +476,7 @@ func (b *Bot) handleUserAnalysis(msg *tgbotapi.Message) error {
 	}
 
 	if len(analyses) == 0 {
-		reply := tgbotapi.NewMessage(msg.Chat.ID, "No user analyses available for the past week.")
+		reply := tgbotapi.NewMessage(msg.Chat.ID, "No user analyses generated for the past week.")
 
 		return b.sendMessage(reply)
 	}
@@ -430,7 +488,17 @@ func (b *Bot) handleUserAnalysis(msg *tgbotapi.Message) error {
 
 	currentDate := ""
 
+	// Sort analyses by date for consistent display
+	sortedAnalyses := make([]*db.UserAnalysis, 0, len(analyses))
 	for _, analysis := range analyses {
+		sortedAnalyses = append(sortedAnalyses, analysis)
+	}
+
+	sort.Slice(sortedAnalyses, func(i, j int) bool {
+		return sortedAnalyses[i].Date.Before(sortedAnalyses[j].Date)
+	})
+
+	for _, analysis := range sortedAnalyses {
 		date := analysis.Date.Format(timeformats.DateOnly)
 		if date != currentDate {
 			if currentDate != "" {

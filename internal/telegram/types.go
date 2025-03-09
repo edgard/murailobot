@@ -10,23 +10,23 @@ import (
 )
 
 const (
-	defaultUpdateOffset   = 0
-	defaultUpdateTimeout  = 60
-	defaultTypingInterval = 5 * time.Second
-	defaultRetryAttempts  = 3
-	defaultRetryDelay     = 500 * time.Millisecond
-	dailySummaryOffset    = -7 // Days offset for weekly summary
-	hoursInDay            = 24
+	defaultUpdateOffset     = 0
+	defaultUpdateTimeout    = 60
+	defaultTypingInterval   = 5 * time.Second
+	defaultRetryAttempts    = 3
+	defaultRetryDelay       = 500 * time.Millisecond
+	dailySummaryOffset      = -7 // Days offset for weekly summary
+	hoursInDay              = 24
+	defaultOperationTimeout = 30 * time.Second // Default timeout for operations
 )
 
 var (
 	// Error definitions.
-	ErrNilConfig     = errors.New("config is nil")
-	ErrNilDatabase   = errors.New("database is nil")
-	ErrNilAIService  = errors.New("AI service is nil")
-	ErrNilMessage    = errors.New("message is nil")
-	ErrUnauthorized  = errors.New("unauthorized access")
-	ErrJSONUnmarshal = errors.New("failed to unmarshal JSON data")
+	ErrNilConfig    = errors.New("config is nil")
+	ErrNilDatabase  = errors.New("database is nil")
+	ErrNilAIService = errors.New("AI service is nil")
+	ErrNilMessage   = errors.New("message is nil")
+	ErrUnauthorized = errors.New("unauthorized access")
 )
 
 // messages defines bot response templates.

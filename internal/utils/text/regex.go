@@ -40,6 +40,7 @@ var (
 	controlCharsRegex     = regexp.MustCompile(`[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]`)
 	multipleNewlinesRegex = regexp.MustCompile("\n{" + strconv.Itoa(minNewlinesThreshold) + ",}")
 	horizontalRuleRegex   = regexp.MustCompile("^[\\*\\-_]{" + strconv.Itoa(minHorizontalRuleLength) + ",}$")
+	setextHeaderRegex     = regexp.MustCompile(`(?m)^[^\n]+\n[=\-]{2,}$`)
 	fencedCodeBlocksRegex = regexp.MustCompile("```[\\s\\S]*?```")
 	inlineCodeRegex       = regexp.MustCompile("`[^`]+`")
 	imagesRegex           = regexp.MustCompile(`!\[(.*?)\]\(([^)]+)\)`)
@@ -57,20 +58,27 @@ var (
 	metadataFormatRegex   = regexp.MustCompile(`^\s*\[\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})\]\s+[^:]+:\s*`)
 )
 
+var (
+	unorderedListRegex = regexp.MustCompile(`(?m)^[\*\-\+] .+$`)
+	tableRowRegex      = regexp.MustCompile(`(?m)^\|.+\|$`)
+)
+
+// markdownRegexps contains patterns for detecting markdown syntax.
 var markdownRegexps = []*regexp.Regexp{
-	regexp.MustCompile(`\*\*.+?\*\*`),
-	regexp.MustCompile(`__.+?__`),
-	regexp.MustCompile(`\*.+?\*`),
-	regexp.MustCompile(`_.+?_`),
-	regexp.MustCompile(`~~.+?~~`),
-	regexp.MustCompile(`\[.+?\]\(.+?\)`),
-	regexp.MustCompile(`!\[.+?\]\(.+?\)`),
-	regexp.MustCompile("```[\\s\\S]+?```"),
-	regexp.MustCompile("`[^`]+`"),
-	regexp.MustCompile(`(?m)^#{1,6} .+$`),
-	regexp.MustCompile(`(?m)^> .+$`),
-	regexp.MustCompile(`(?m)^[\*\-\+] .+$`),
-	regexp.MustCompile(`(?m)^\d+\. .+$`),
-	regexp.MustCompile(`(?m)^[\*\-_]{3,}$`),
-	regexp.MustCompile(`(?m)^\|.+\|$`),
+	boldRegex,
+	boldAltRegex,
+	italicRegex,
+	italicAltRegex,
+	strikeRegex,
+	linksRegex,
+	imagesRegex,
+	fencedCodeBlocksRegex,
+	inlineCodeRegex,
+	headersRegex,
+	setextHeaderRegex,
+	blockquotesRegex,
+	unorderedListRegex,
+	orderedListRegex,
+	horizontalRuleRegex,
+	tableRowRegex,
 }
