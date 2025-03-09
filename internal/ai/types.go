@@ -35,9 +35,9 @@ var (
 // Service defines the interface for AI operations.
 type Service interface {
 	// Generate creates an AI response for a user message.
-	Generate(userID int64, userName string, userMsg string) (string, error)
-	// GenerateUserAnalysis creates a behavioral analysis of users' messages.
-	GenerateUserAnalysis(userID int64, userName string, messages []db.GroupMessage) (*db.UserAnalysis, error)
+	Generate(userID int64, userMsg string) (string, error)
+	// GenerateGroupAnalysis creates a behavioral analysis for all users in the provided messages.
+	GenerateGroupAnalysis(messages []db.GroupMessage) (map[int64]*db.UserAnalysis, error)
 }
 
 // Client implements the Service interface using OpenAI's API.
@@ -54,14 +54,11 @@ type Client struct {
 type Database interface {
 	// GetRecent retrieves recent chat history.
 	GetRecent(limit int) ([]db.ChatHistory, error)
-	// GetMessagesByUserInTimeRange retrieves user messages within a time range.
-	GetMessagesByUserInTimeRange(userID int64, start, end time.Time) ([]db.GroupMessage, error)
 }
 
 // completionRequest holds parameters for an AI completion request.
 type completionRequest struct {
 	messages   []openai.ChatCompletionMessage
 	userID     int64
-	userName   string
 	attemptNum *uint
 }

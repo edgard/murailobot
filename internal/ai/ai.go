@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"strconv"
 	"strings"
 	"time"
 
@@ -38,7 +37,7 @@ func New(cfg *config.Config, database Database) (*Client, error) {
 }
 
 // Generate creates an AI response for a user message.
-func (c *Client) Generate(userID int64, userName string, userMsg string) (string, error) {
+func (c *Client) Generate(userID int64, userMsg string) (string, error) {
 	userMsg = strings.TrimSpace(userMsg)
 	if userMsg == "" {
 		return "", ErrEmptyUserMessage
@@ -62,15 +61,9 @@ func (c *Client) Generate(userID int64, userName string, userMsg string) (string
 		}
 	}
 
-	usernameDisplay := "unknown"
-	if userName != "" {
-		usernameDisplay = userName
-	}
-
-	currentMsg := fmt.Sprintf("[%s] UID %d (%s): %s",
+	currentMsg := fmt.Sprintf("[%s] UID %d: %s",
 		time.Now().Format(time.RFC3339),
 		userID,
-		usernameDisplay,
 		userMsg,
 	)
 
@@ -87,7 +80,6 @@ func (c *Client) Generate(userID int64, userName string, userMsg string) (string
 	response, err := c.createCompletion(ctx, completionRequest{
 		messages:   messages,
 		userID:     userID,
-		userName:   userName,
 		attemptNum: &attemptCount,
 	})
 	if err != nil {
@@ -97,52 +89,61 @@ func (c *Client) Generate(userID int64, userName string, userMsg string) (string
 	return response, nil
 }
 
-// GenerateUserAnalysis creates a behavioral analysis of users' messages.
-func (c *Client) GenerateUserAnalysis(userID int64, userName string, messages []db.GroupMessage) (*db.UserAnalysis, error) {
+// UserAnalysis represents behavioral analysis for a user.
+type UserAnalysis struct {
+	UserID             int64
+	Date               time.Time
+	CommunicationStyle string
+	PersonalityTraits  string
+	BehavioralPatterns string
+	WordChoicePatterns string
+	InteractionHabits  string
+	UniqueQuirks       string
+	EmotionalTriggers  string
+	MessageCount       int
+}
+
+// GenerateGroupAnalysis creates a behavioral analysis for all users in the provided messages.
+func (c *Client) GenerateGroupAnalysis(messages []db.GroupMessage) (map[int64]*db.UserAnalysis, error) {
 	if len(messages) == 0 {
 		return nil, ErrNoMessages
 	}
 
 	// Group messages by user
 	userMessages := make(map[int64][]db.GroupMessage)
-	userNames := make(map[int64]string)
 
 	for _, msg := range messages {
 		userMessages[msg.UserID] = append(userMessages[msg.UserID], msg)
-		userNames[msg.UserID] = msg.UserName
-	}
-
-	if _, exists := userMessages[userID]; !exists {
-		return nil, ErrNoUserMessages
 	}
 
 	// Format messages for behavior analysis
 	chatMessages := make([]openai.ChatCompletionMessage, 0, len(messages)+extraMessageSlots)
 	chatMessages = append(chatMessages, openai.ChatCompletionMessage{
 		Role: "system",
-		Content: `You are a behavioral analyst analyzing chat messages from multiple users in a group. Consider:
+		Content: `You are a behavioral analyst analyzing chat messages from multiple users in a group.
+Analyze the chat messages and return a JSON object with the following exact structure:
 
-1. Individual Analysis (for each user):
-   - Communication style (formal, casual, direct)
-   - Personality traits
-   - Behavioral patterns
-   - Word choice patterns
-   - Interaction habits
-   - Unique quirks
-   - Mood analysis:
-     * Overall emotional state
-     * Mood variations
-     * Emotional triggers
-     * Emotional patterns
+{
+  "users": {
+    "<user_id>": {
+      "communication_style": "Description of how the user communicates",
+      "personality_traits": "Description of personality traits observed in messages",
+      "behavioral_patterns": "Description of consistent behaviors shown in interactions",
+      "word_choice_patterns": "Description of vocabulary, slang, and language patterns used",
+      "interaction_habits": "Description of how the user engages with others",
+      "unique_quirks": "Description of distinctive characteristics",
+      "emotional_triggers": "Description of topics or interactions that cause emotional responses"
+    }
+  }
+}
 
-2. Group Dynamics:
-   - How users interact with each other
-   - Communication patterns between users
-   - Group mood and atmosphere
-   - Common topics or interests
-   - Social dynamics and relationships
-
-Respond with a JSON object containing a "users" object with user IDs as keys, each containing individual analyses, and a "group" object for overall dynamics.`,
+Ensure that:
+1. You include analysis for all users.
+2. The user_id in the JSON must be a string representation of the numeric ID.
+3. All field names use snake_case format as shown above.
+4. All fields must be plain text paragraphs without any nested objects or arrays.
+5. Each description should be concise but informative, ideally 1-2 sentences.
+6. Follow the exact field names shown in the example above - no additional or missing fields.`,
 	})
 
 	// Build the conversation context
@@ -151,8 +152,7 @@ Respond with a JSON object containing a "users" object with user IDs as keys, ea
 	conversation.WriteString("Group Chat Messages:\n\n")
 
 	for userID, userMsgs := range userMessages {
-		userName := userNames[userID]
-		conversation.WriteString(fmt.Sprintf("Messages from %s (ID: %d):\n", userName, userID))
+		conversation.WriteString(fmt.Sprintf("Messages from User %d:\n", userID))
 
 		for _, msg := range userMsgs {
 			conversation.WriteString(fmt.Sprintf("[%s] %s\n",
@@ -174,9 +174,9 @@ Respond with a JSON object containing a "users" object with user IDs as keys, ea
 	var attemptCount uint
 
 	response, err := c.createCompletion(ctx, completionRequest{
-		messages:   chatMessages,
-		userID:     userID,
-		userName:   userName,
+		messages: chatMessages,
+		// These are just for logging purposes in the retry mechanism
+		userID:     0,
 		attemptNum: &attemptCount,
 	})
 	if err != nil {
@@ -186,92 +186,48 @@ Respond with a JSON object containing a "users" object with user IDs as keys, ea
 	// Parse the JSON response
 	var analysisData struct {
 		Users map[string]struct {
-			CommunicationStyle string                 `json:"communicationStyle"`
-			PersonalityTraits  []string               `json:"personalityTraits"`
-			BehavioralPatterns []string               `json:"behavioralPatterns"`
-			WordChoices        map[string]interface{} `json:"wordChoices"`
-			InteractionHabits  map[string]interface{} `json:"interactionHabits"`
-			Quirks             []string               `json:"quirks"`
-			Mood               struct {
-				Overall    string   `json:"overall"`
-				Variations []string `json:"variations"`
-				Triggers   []string `json:"triggers"`
-				Patterns   []string `json:"patterns"`
-			} `json:"mood"`
+			CommunicationStyle string `json:"communication_style"`
+			PersonalityTraits  string `json:"personality_traits"`
+			BehavioralPatterns string `json:"behavioral_patterns"`
+			WordChoicePatterns string `json:"word_choice_patterns"`
+			InteractionHabits  string `json:"interaction_habits"`
+			UniqueQuirks       string `json:"unique_quirks"`
+			EmotionalTriggers  string `json:"emotional_triggers"`
 		} `json:"users"`
-		Group struct {
-			Dynamics     []string `json:"dynamics"`
-			CommonTopics []string `json:"commonTopics"`
-			Atmosphere   string   `json:"atmosphere"`
-		} `json:"group"`
 	}
 
 	if err := json.Unmarshal([]byte(response), &analysisData); err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrJSONUnmarshal, err)
 	}
 
-	// Extract the target user's analysis
-	userIDStr := strconv.FormatInt(userID, 10)
+	// Convert user analyses to return format
+	result := make(map[int64]*db.UserAnalysis)
 
-	userAnalysis, exists := analysisData.Users[userIDStr]
-	if !exists {
-		return nil, fmt.Errorf("%w: user %d", ErrUserNotFound, userID)
+	for userIDStr, analysis := range analysisData.Users {
+		userID := int64(0)
+		if _, err := fmt.Sscanf(userIDStr, "%d", &userID); err != nil {
+			slog.Warn("invalid user ID in analysis response",
+				"user_id", userIDStr,
+				"error", err)
+
+			continue
+		}
+
+		result[userID] = &db.UserAnalysis{
+			UserID:             userID,
+			Date:               time.Now().UTC(),
+			CommunicationStyle: analysis.CommunicationStyle,
+			PersonalityTraits:  analysis.PersonalityTraits,
+			BehavioralPatterns: analysis.BehavioralPatterns,
+			WordChoicePatterns: analysis.WordChoicePatterns,
+			InteractionHabits:  analysis.InteractionHabits,
+			UniqueQuirks:       analysis.UniqueQuirks,
+			EmotionalTriggers:  analysis.EmotionalTriggers,
+			MessageCount:       len(userMessages[userID]),
+		}
 	}
 
-	// Create and populate the user analysis
-	analysis := &db.UserAnalysis{
-		UserID:       userID,
-		UserName:     userName,
-		Date:         time.Now().UTC(),
-		MessageCount: len(userMessages[userID]),
-	}
-
-	// Store the individual analysis components with error handling
-	personalityTraits, err := json.Marshal(userAnalysis.PersonalityTraits)
-	if err != nil {
-		return nil, fmt.Errorf("%w: personality traits", ErrJSONMarshal)
-	}
-
-	analysis.PersonalityTraits = string(personalityTraits)
-
-	behavioralPatterns, err := json.Marshal(userAnalysis.BehavioralPatterns)
-	if err != nil {
-		return nil, fmt.Errorf("%w: behavioral patterns", ErrJSONMarshal)
-	}
-
-	analysis.BehavioralPatterns = string(behavioralPatterns)
-
-	wordChoices, err := json.Marshal(userAnalysis.WordChoices)
-	if err != nil {
-		return nil, fmt.Errorf("%w: word choices", ErrJSONMarshal)
-	}
-
-	analysis.WordChoices = string(wordChoices)
-
-	interactionHabits, err := json.Marshal(userAnalysis.InteractionHabits)
-	if err != nil {
-		return nil, fmt.Errorf("%w: interaction habits", ErrJSONMarshal)
-	}
-
-	analysis.InteractionHabits = string(interactionHabits)
-
-	quirks, err := json.Marshal(userAnalysis.Quirks)
-	if err != nil {
-		return nil, fmt.Errorf("%w: quirks", ErrJSONMarshal)
-	}
-
-	analysis.Quirks = string(quirks)
-
-	mood, err := json.Marshal(userAnalysis.Mood)
-	if err != nil {
-		return nil, fmt.Errorf("%w: mood", ErrJSONMarshal)
-	}
-
-	analysis.Mood = string(mood)
-
-	analysis.CommunicationStyle = userAnalysis.CommunicationStyle
-
-	return analysis, nil
+	return result, nil
 }
 
 // createCompletion handles the common logic for making API requests with retries.
@@ -292,7 +248,6 @@ func (c *Client) createCompletion(ctx context.Context, req completionRequest) (s
 					"error", err,
 					"attempt", *req.attemptNum,
 					"user_id", req.userID,
-					"user_name", req.userName,
 				}
 
 				slog.Debug("completion attempt failed", logFields...)
@@ -323,7 +278,6 @@ func (c *Client) createCompletion(ctx context.Context, req completionRequest) (s
 				"attempt", n + 1,
 				"max_attempts", retryMaxAttempts,
 				"user_id", req.userID,
-				"user_name", req.userName,
 			}
 
 			slog.Debug("retrying request", logFields...)
@@ -367,15 +321,9 @@ func (c *Client) formatHistory(history []db.ChatHistory) []openai.ChatCompletion
 		userMsg := strings.TrimSpace(msg.UserMsg)
 		botMsg := strings.TrimSpace(msg.BotMsg)
 
-		usernameDisplay := "unknown"
-		if msg.UserName != "" {
-			usernameDisplay = msg.UserName
-		}
-
-		formattedUserMsg := fmt.Sprintf("[%s] UID %d (%s): %s",
+		formattedUserMsg := fmt.Sprintf("[%s] UID %d: %s",
 			msg.Timestamp.Format(time.RFC3339),
 			msg.UserID,
-			usernameDisplay,
 			userMsg,
 		)
 

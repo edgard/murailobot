@@ -2,7 +2,6 @@ package telegram
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -16,7 +15,7 @@ import (
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
-// New creates a Telegram bot with the provided configuration and dependencies.
+// New creates a new bot instance.
 func New(cfg *config.Config, database db.Database, aiClient ai.Service) (*Bot, error) {
 	if cfg == nil {
 		return nil, ErrNilConfig
@@ -51,15 +50,14 @@ func New(cfg *config.Config, database db.Database, aiClient ai.Service) (*Bot, e
 				Timeout:      cfg.TelegramTimeoutMessage,
 			},
 		},
-		running:     make(chan struct{}),
-		analyzer:    make(chan struct{}),
-		activeUsers: make(map[int64]string),
+		running:  make(chan struct{}),
+		analyzer: make(chan struct{}),
 	}
 
 	return bot, nil
 }
 
-// Start begins processing incoming updates and handling commands.
+// Start begins processing incoming updates.
 func (b *Bot) Start() error {
 	if err := b.setupCommands(); err != nil {
 		return fmt.Errorf("failed to setup commands: %w", err)
@@ -70,10 +68,8 @@ func (b *Bot) Start() error {
 	updates := b.api.GetUpdatesChan(updateConfig)
 
 	slog.Info("bot started successfully",
-		"bot_username", b.api.Self.UserName,
 		"admin_id", b.cfg.AdminID)
 
-	// Start the daily analysis goroutine
 	go b.runDailyAnalysis()
 
 	return b.processUpdates(updates)
@@ -88,7 +84,7 @@ func (b *Bot) Stop() error {
 	return nil
 }
 
-// setupCommands registers the bot's command list with Telegram.
+// setupCommands registers bot commands.
 func (b *Bot) setupCommands() error {
 	commands := []tgbotapi.BotCommand{
 		{Command: "start", Description: "Start conversation with the bot"},
@@ -120,7 +116,7 @@ func (b *Bot) setupCommands() error {
 	return nil
 }
 
-// processUpdates handles incoming Telegram updates.
+// processUpdates handles incoming updates.
 func (b *Bot) processUpdates(updates tgbotapi.UpdatesChannel) error {
 	for {
 		select {
@@ -128,7 +124,6 @@ func (b *Bot) processUpdates(updates tgbotapi.UpdatesChannel) error {
 			slog.Info("bot stopping due to Stop call")
 
 			return nil
-
 		case update := <-updates:
 			if update.Message == nil {
 				continue
@@ -147,76 +142,7 @@ func (b *Bot) processUpdates(updates tgbotapi.UpdatesChannel) error {
 	}
 }
 
-// runDailyAnalysis generates user analyses every day.
-func (b *Bot) runDailyAnalysis() {
-	ticker := time.NewTicker(1 * time.Hour)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-b.analyzer:
-			return
-
-		case <-ticker.C:
-			now := time.Now()
-			if now.Hour() == 0 { // Run at midnight
-				yesterday := now.Add(-24 * time.Hour)
-				b.generateUserAnalyses(yesterday)
-			}
-		}
-	}
-}
-
-// generateUserAnalyses analyzes behavior for all active users.
-func (b *Bot) generateUserAnalyses(date time.Time) {
-	start := time.Date(date.Year(), date.Month(), date.Day(), 0, 0, 0, 0, time.UTC)
-	end := start.Add(hoursInDay * time.Hour)
-
-	// Get all messages for the time period
-	messages := make([]db.GroupMessage, 0)
-
-	for userID := range b.activeUsers {
-		userMsgs, err := b.db.GetMessagesByUserInTimeRange(userID, start, end)
-		if err != nil {
-			slog.Error("failed to get user messages",
-				"error", err,
-				"user_id", userID,
-				"date", date.Format("2006-01-02"))
-
-			continue
-		}
-
-		messages = append(messages, userMsgs...)
-	}
-
-	if len(messages) == 0 {
-		return
-	}
-
-	// Generate analysis for each active user using the full context
-	for userID, userName := range b.activeUsers {
-		analysis, err := b.ai.GenerateUserAnalysis(userID, userName, messages)
-		if err != nil {
-			slog.Error("failed to generate user analysis",
-				"error", err,
-				"user_id", userID,
-				"user_name", userName,
-				"date", date.Format("2006-01-02"))
-
-			continue
-		}
-
-		if err := b.db.SaveUserAnalysis(analysis); err != nil {
-			slog.Error("failed to save user analysis",
-				"error", err,
-				"user_id", userID,
-				"user_name", userName,
-				"date", date.Format("2006-01-02"))
-		}
-	}
-}
-
-// handleCommand routes commands to their handlers.
+// handleCommand processes bot commands.
 func (b *Bot) handleCommand(update tgbotapi.Update) {
 	msg := update.Message
 	cmd := msg.Command()
@@ -251,32 +177,6 @@ func (b *Bot) handleCommand(update tgbotapi.Update) {
 	}
 }
 
-// handleGroupMessage processes messages from group chats.
-func (b *Bot) handleGroupMessage(msg *tgbotapi.Message) error {
-	if msg == nil || msg.Text == "" {
-		return nil
-	}
-
-	groupID := msg.Chat.ID
-	groupName := msg.Chat.Title
-	userID := msg.From.ID
-
-	userName := ""
-	if msg.From.UserName != "" {
-		userName = "@" + msg.From.UserName
-	} else if msg.From.FirstName != "" {
-		userName = msg.From.FirstName
-	}
-
-	b.activeUsers[userID] = userName
-
-	if err := b.db.SaveGroupMessage(groupID, groupName, userID, userName, msg.Text); err != nil {
-		return fmt.Errorf("failed to save group message: %w", err)
-	}
-
-	return nil
-}
-
 // handleStart processes the /start command.
 func (b *Bot) handleStart(msg *tgbotapi.Message) error {
 	if msg == nil {
@@ -288,7 +188,7 @@ func (b *Bot) handleStart(msg *tgbotapi.Message) error {
 	return b.sendMessage(reply)
 }
 
-// handleMessage processes the /mrl command, generating AI responses.
+// handleMessage processes the /mrl command.
 func (b *Bot) handleMessage(msg *tgbotapi.Message) error {
 	if msg == nil {
 		return ErrNilMessage
@@ -301,21 +201,8 @@ func (b *Bot) handleMessage(msg *tgbotapi.Message) error {
 		return b.sendMessage(reply)
 	}
 
-	userName := ""
-	if msg.From.UserName != "" {
-		userName = "@" + msg.From.UserName
-	} else if msg.From.FirstName != "" {
-		userName = msg.From.FirstName
-	}
-
-	usernameForLog := "unknown"
-	if userName != "" {
-		usernameForLog = userName
-	}
-
 	slog.Info("processing chat request",
 		"user_id", msg.From.ID,
-		"username", usernameForLog,
 		"message_length", len(text))
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -323,7 +210,7 @@ func (b *Bot) handleMessage(msg *tgbotapi.Message) error {
 
 	b.StartTyping(ctx, msg.Chat.ID)
 
-	response, err := b.ai.Generate(msg.From.ID, userName, text)
+	response, err := b.ai.Generate(msg.From.ID, text)
 	if err != nil {
 		slog.Error("failed to generate AI response",
 			"error", err,
@@ -345,7 +232,7 @@ func (b *Bot) handleMessage(msg *tgbotapi.Message) error {
 		return fmt.Errorf("AI generation failed: %w", err)
 	}
 
-	if err := b.db.Save(msg.From.ID, userName, text, response); err != nil {
+	if err := b.db.Save(msg.From.ID, text, response); err != nil {
 		slog.Warn("failed to save chat history",
 			"error", err,
 			"user_id", msg.From.ID)
@@ -363,7 +250,24 @@ func (b *Bot) handleMessage(msg *tgbotapi.Message) error {
 	return nil
 }
 
-// handleReset processes the /mrl_reset command (admin only).
+// handleGroupMessage processes messages from group chats.
+func (b *Bot) handleGroupMessage(msg *tgbotapi.Message) error {
+	if msg == nil || msg.Text == "" {
+		return nil
+	}
+
+	groupID := msg.Chat.ID
+	groupName := msg.Chat.Title
+	userID := msg.From.ID
+
+	if err := b.db.SaveGroupMessage(groupID, groupName, userID, msg.Text); err != nil {
+		return fmt.Errorf("failed to save group message: %w", err)
+	}
+
+	return nil
+}
+
+// handleReset processes the /mrl_reset command.
 func (b *Bot) handleReset(msg *tgbotapi.Message) error {
 	if msg == nil {
 		return ErrNilMessage
@@ -414,7 +318,66 @@ func (b *Bot) handleReset(msg *tgbotapi.Message) error {
 	return nil
 }
 
-// handleUserAnalysis retrieves and sends user analyses for the past week (admin only).
+// runDailyAnalysis runs user analysis at midnight each day.
+func (b *Bot) runDailyAnalysis() {
+	ticker := time.NewTicker(1 * time.Hour)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-b.analyzer:
+			return
+		case <-ticker.C:
+			now := time.Now()
+			if now.Hour() == 0 {
+				yesterday := now.Add(-hoursInDay * time.Hour)
+				b.generateUserAnalyses(yesterday)
+			}
+		}
+	}
+}
+
+// generateUserAnalyses analyzes behavior for all active users.
+func (b *Bot) generateUserAnalyses(date time.Time) {
+	start := time.Date(date.Year(), date.Month(), date.Day(), 0, 0, 0, 0, time.UTC)
+	end := start.Add(hoursInDay * time.Hour)
+
+	// Get all messages for the time period
+	messages, err := b.db.GetGroupMessagesInTimeRange(start, end)
+	if err != nil {
+		slog.Error("failed to get group messages",
+			"error", err,
+			"date", date.Format("2006-01-02"))
+
+		return
+	}
+
+	if len(messages) == 0 {
+		return
+	}
+
+	// Generate analysis for all users
+	analyses, err := b.ai.GenerateGroupAnalysis(messages)
+	if err != nil {
+		slog.Error("failed to generate group analysis",
+			"error", err,
+			"date", date.Format("2006-01-02"))
+
+		return
+	}
+
+	// Save all analyses
+	for _, analysis := range analyses {
+		if err := b.db.SaveUserAnalysis(analysis); err != nil {
+			slog.Error("failed to save user analysis",
+				"error", err,
+				"user_id", analysis.UserID,
+				"date", date.Format("2006-01-02"))
+		}
+	}
+}
+
+// handleUserAnalysis retrieves and sends user analyses for the past week.
 func (b *Bot) handleUserAnalysis(msg *tgbotapi.Message) error {
 	if msg == nil {
 		return ErrNilMessage
@@ -442,7 +405,7 @@ func (b *Bot) handleUserAnalysis(msg *tgbotapi.Message) error {
 	start := time.Date(weekAgo.Year(), weekAgo.Month(), weekAgo.Day(), 0, 0, 0, 0, time.UTC)
 	end := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
 
-	analyses, err := b.db.GetUserAnalysesByDateRange(start, end)
+	analyses, err := b.db.GetUserAnalysesInTimeRange(start, end)
 	if err != nil {
 		slog.Error("failed to get weekly analyses",
 			"error", err,
@@ -477,63 +440,14 @@ func (b *Bot) handleUserAnalysis(msg *tgbotapi.Message) error {
 			currentDate = date
 		}
 
-		response.WriteString(fmt.Sprintf("\n*User:* %s\n", analysis.UserName))
-		response.WriteString(fmt.Sprintf("*Style:* %s\n", analysis.CommunicationStyle))
-
-		// Parse and format traits with error handling
-		var traits []string
-		if err := json.Unmarshal([]byte(analysis.PersonalityTraits), &traits); err != nil {
-			slog.Error("failed to parse personality traits",
-				"error", err,
-				"user_id", analysis.UserID)
-		} else {
-			response.WriteString("*Traits:* " + strings.Join(traits, ", ") + "\n")
-		}
-
-		// Parse and format patterns with error handling
-		var patterns []string
-		if err := json.Unmarshal([]byte(analysis.BehavioralPatterns), &patterns); err != nil {
-			slog.Error("failed to parse behavioral patterns",
-				"error", err,
-				"user_id", analysis.UserID)
-		} else {
-			response.WriteString("*Patterns:* " + strings.Join(patterns, ", ") + "\n")
-		}
-
-		// Parse and format mood information with error handling
-		var moodData struct {
-			Overall    string   `json:"overall"`
-			Variations []string `json:"variations"`
-			Triggers   []string `json:"triggers"`
-			Patterns   []string `json:"patterns"`
-		}
-
-		if err := json.Unmarshal([]byte(analysis.Mood), &moodData); err != nil {
-			slog.Error("failed to parse mood data",
-				"error", err,
-				"user_id", analysis.UserID)
-		} else {
-			response.WriteString(fmt.Sprintf("*Mood:* %s\n", moodData.Overall))
-
-			if len(moodData.Variations) > 0 {
-				response.WriteString("*Mood Variations:* " + strings.Join(moodData.Variations, ", ") + "\n")
-			}
-
-			if len(moodData.Patterns) > 0 {
-				response.WriteString("*Emotional Patterns:* " + strings.Join(moodData.Patterns, ", ") + "\n")
-			}
-		}
-
-		// Parse and format quirks with error handling
-		var quirks []string
-		if err := json.Unmarshal([]byte(analysis.Quirks), &quirks); err != nil {
-			slog.Error("failed to parse quirks",
-				"error", err,
-				"user_id", analysis.UserID)
-		} else {
-			response.WriteString("*Quirks:* " + strings.Join(quirks, ", ") + "\n")
-		}
-
+		response.WriteString(fmt.Sprintf("\n*User ID:* %d\n", analysis.UserID))
+		response.WriteString(fmt.Sprintf("*Communication Style:* %s\n", analysis.CommunicationStyle))
+		response.WriteString(fmt.Sprintf("*Personality Traits:* %s\n", analysis.PersonalityTraits))
+		response.WriteString(fmt.Sprintf("*Behavioral Patterns:* %s\n", analysis.BehavioralPatterns))
+		response.WriteString(fmt.Sprintf("*Word Choice Patterns:* %s\n", analysis.WordChoicePatterns))
+		response.WriteString(fmt.Sprintf("*Interaction Habits:* %s\n", analysis.InteractionHabits))
+		response.WriteString(fmt.Sprintf("*Unique Quirks:* %s\n", analysis.UniqueQuirks))
+		response.WriteString(fmt.Sprintf("*Emotional Triggers:* %s\n", analysis.EmotionalTriggers))
 		response.WriteString(fmt.Sprintf("*Messages Analyzed:* %d\n", analysis.MessageCount))
 	}
 
@@ -543,7 +457,35 @@ func (b *Bot) handleUserAnalysis(msg *tgbotapi.Message) error {
 	return b.sendMessage(reply)
 }
 
-// StartTyping sends periodic typing indicators until the context is canceled.
+// isUserAuthorized checks if a user is authorized for admin actions.
+func (b *Bot) isUserAuthorized(userID int64) bool {
+	return userID == b.cfg.AdminID
+}
+
+// sendMessage sends a message with retry logic.
+func (b *Bot) sendMessage(msg tgbotapi.MessageConfig) error {
+	err := retry.Do(
+		func() error {
+			_, err := b.api.Send(msg)
+			if err != nil {
+				return fmt.Errorf("telegram API send failed: %w", err)
+			}
+
+			return nil
+		},
+		retry.Attempts(defaultRetryAttempts),
+		retry.Delay(defaultRetryDelay),
+		retry.DelayType(retry.BackOffDelay),
+		retry.LastErrorOnly(true),
+	)
+	if err != nil {
+		return fmt.Errorf("failed to send message: %w", err)
+	}
+
+	return nil
+}
+
+// StartTyping sends periodic typing indicators.
 func (b *Bot) StartTyping(ctx context.Context, chatID int64) {
 	action := tgbotapi.NewChatAction(chatID, tgbotapi.ChatTyping)
 	if _, err := b.api.Request(action); err != nil {
@@ -569,54 +511,4 @@ func (b *Bot) StartTyping(ctx context.Context, chatID int64) {
 			}
 		}
 	}()
-}
-
-// isUserAuthorized checks if a user has admin privileges.
-func (b *Bot) isUserAuthorized(userID int64) bool {
-	return userID == b.cfg.AdminID
-}
-
-// sendMessage sends a message with retry logic.
-func (b *Bot) sendMessage(msg tgbotapi.MessageConfig) error {
-	err := retry.Do(
-		func() error {
-			_, err := b.api.Send(msg)
-			if err != nil {
-				return fmt.Errorf("telegram API send failed: %w", err)
-			}
-
-			return nil
-		},
-		retry.Attempts(defaultRetryAttempts),
-		retry.Delay(defaultRetryDelay),
-		retry.DelayType(retry.BackOffDelay),
-		retry.LastErrorOnly(true),
-	)
-	if err != nil {
-		messageType := b.getMessageType(msg.Text)
-
-		return fmt.Errorf("failed to send %s: %w", messageType, err)
-	}
-
-	return nil
-}
-
-// getMessageType determines the message category for logging.
-func (b *Bot) getMessageType(msgText string) string {
-	switch {
-	case strings.Contains(msgText, b.cfg.Messages.Welcome):
-		return "welcome message"
-	case strings.Contains(msgText, b.cfg.Messages.Provide):
-		return "prompt message"
-	case strings.Contains(msgText, b.cfg.Messages.GeneralError):
-		return "error message"
-	case strings.Contains(msgText, b.cfg.Messages.Timeout):
-		return "timeout message"
-	case strings.Contains(msgText, b.cfg.Messages.Unauthorized):
-		return "unauthorized message"
-	case strings.Contains(msgText, b.cfg.Messages.HistoryReset):
-		return "history reset confirmation"
-	default:
-		return "message"
-	}
 }
