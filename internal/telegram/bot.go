@@ -12,6 +12,7 @@ import (
 	"github.com/edgard/murailobot/internal/ai"
 	"github.com/edgard/murailobot/internal/config"
 	"github.com/edgard/murailobot/internal/db"
+	timeformats "github.com/edgard/murailobot/internal/utils/time"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
@@ -347,7 +348,7 @@ func (b *Bot) generateUserAnalyses(date time.Time) {
 	if err != nil {
 		slog.Error("failed to get group messages",
 			"error", err,
-			"date", date.Format("2006-01-02"))
+			"date", date.Format(timeformats.DateOnly))
 
 		return
 	}
@@ -361,7 +362,7 @@ func (b *Bot) generateUserAnalyses(date time.Time) {
 	if err != nil {
 		slog.Error("failed to generate group analysis",
 			"error", err,
-			"date", date.Format("2006-01-02"))
+			"date", date.Format(timeformats.DateOnly))
 
 		return
 	}
@@ -372,7 +373,7 @@ func (b *Bot) generateUserAnalyses(date time.Time) {
 			slog.Error("failed to save user analysis",
 				"error", err,
 				"user_id", analysis.UserID,
-				"date", date.Format("2006-01-02"))
+				"date", date.Format(timeformats.DateOnly))
 		}
 	}
 }
@@ -430,7 +431,7 @@ func (b *Bot) handleUserAnalysis(msg *tgbotapi.Message) error {
 	currentDate := ""
 
 	for _, analysis := range analyses {
-		date := analysis.Date.Format("2006-01-02")
+		date := analysis.Date.Format(timeformats.DateOnly)
 		if date != currentDate {
 			if currentDate != "" {
 				response.WriteString("\n")

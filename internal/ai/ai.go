@@ -12,6 +12,7 @@ import (
 	"github.com/edgard/murailobot/internal/config"
 	"github.com/edgard/murailobot/internal/db"
 	"github.com/edgard/murailobot/internal/utils/text"
+	timeformats "github.com/edgard/murailobot/internal/utils/time"
 	"github.com/sashabaranov/go-openai"
 )
 
@@ -62,7 +63,7 @@ func (c *Client) Generate(userID int64, userMsg string) (string, error) {
 	}
 
 	currentMsg := fmt.Sprintf("[%s] UID %d: %s",
-		time.Now().Format(time.RFC3339),
+		time.Now().Format(timeformats.FullTimestamp),
 		userID,
 		userMsg,
 	)
@@ -156,7 +157,7 @@ Ensure that:
 
 		for _, msg := range userMsgs {
 			conversation.WriteString(fmt.Sprintf("[%s] %s\n",
-				msg.Timestamp.Format("15:04"),
+				msg.Timestamp.Format(timeformats.FullTimestamp),
 				msg.Message))
 		}
 
@@ -322,7 +323,7 @@ func (c *Client) formatHistory(history []db.ChatHistory) []openai.ChatCompletion
 		botMsg := strings.TrimSpace(msg.BotMsg)
 
 		formattedUserMsg := fmt.Sprintf("[%s] UID %d: %s",
-			msg.Timestamp.Format(time.RFC3339),
+			msg.Timestamp.Format(timeformats.FullTimestamp),
 			msg.UserID,
 			userMsg,
 		)
