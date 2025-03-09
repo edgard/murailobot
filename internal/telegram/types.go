@@ -1,5 +1,3 @@
-// Package telegram implements a Telegram bot with AI-powered responses
-// and conversation history management.
 package telegram
 
 import (
@@ -17,14 +15,18 @@ const (
 	defaultTypingInterval = 5 * time.Second
 	defaultRetryAttempts  = 3
 	defaultRetryDelay     = 500 * time.Millisecond
+	dailySummaryOffset    = -7 // Days offset for weekly summary
+	hoursInDay            = 24
 )
 
 var (
-	ErrNilConfig    = errors.New("config is nil")
-	ErrNilDatabase  = errors.New("database is nil")
-	ErrNilAIService = errors.New("AI service is nil")
-	ErrNilMessage   = errors.New("message is nil")
-	ErrUnauthorized = errors.New("unauthorized access")
+	// Error definitions.
+	ErrNilConfig     = errors.New("config is nil")
+	ErrNilDatabase   = errors.New("database is nil")
+	ErrNilAIService  = errors.New("AI service is nil")
+	ErrNilMessage    = errors.New("message is nil")
+	ErrUnauthorized  = errors.New("unauthorized access")
+	ErrJSONUnmarshal = errors.New("failed to unmarshal JSON data")
 )
 
 // messages defines bot response templates.
@@ -46,9 +48,11 @@ type botConfig struct {
 
 // Bot implements a Telegram bot with AI capabilities.
 type Bot struct {
-	api     *tgbotapi.BotAPI
-	db      db.Database
-	ai      ai.Service
-	cfg     *botConfig
-	running chan struct{}
+	api         *tgbotapi.BotAPI
+	db          db.Database
+	ai          ai.Service
+	cfg         *botConfig
+	running     chan struct{}
+	analyzer    chan struct{}    // Channel to control analyzer goroutine
+	activeUsers map[int64]string // Map of user IDs to usernames for active users
 }

@@ -2,8 +2,10 @@ package ai
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
+	"strconv"
 	"strings"
 	"time"
 
@@ -15,7 +17,7 @@ import (
 )
 
 // New creates a new AI client with the provided configuration and database connection.
-func New(cfg *config.Config, db db.Database) (*Client, error) {
+func New(cfg *config.Config, database Database) (*Client, error) {
 	if cfg == nil {
 		return nil, ErrNilConfig
 	}
@@ -29,14 +31,13 @@ func New(cfg *config.Config, db db.Database) (*Client, error) {
 		temperature: cfg.AITemperature,
 		instruction: cfg.AIInstruction,
 		timeout:     cfg.AITimeout,
-		db:          db,
+		db:          database,
 	}
 
 	return c, nil
 }
 
-// Generate creates an AI response for a user message. It retrieves recent conversation
-// history, formats the context, and makes API requests with automatic retries.
+// Generate creates an AI response for a user message.
 func (c *Client) Generate(userID int64, userName string, userMsg string) (string, error) {
 	userMsg = strings.TrimSpace(userMsg)
 	if userMsg == "" {
@@ -81,24 +82,220 @@ func (c *Client) Generate(userID int64, userName string, userMsg string) (string
 	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
 	defer cancel()
 
-	var response string
+	var attemptCount uint
+
+	response, err := c.createCompletion(ctx, completionRequest{
+		messages:   messages,
+		userID:     userID,
+		userName:   userName,
+		attemptNum: &attemptCount,
+	})
+	if err != nil {
+		return "", fmt.Errorf("failed to generate AI response: %w", err)
+	}
+
+	return response, nil
+}
+
+// GenerateUserAnalysis creates a behavioral analysis of users' messages.
+func (c *Client) GenerateUserAnalysis(userID int64, userName string, messages []db.GroupMessage) (*db.UserAnalysis, error) {
+	if len(messages) == 0 {
+		return nil, ErrNoMessages
+	}
+
+	// Group messages by user
+	userMessages := make(map[int64][]db.GroupMessage)
+	userNames := make(map[int64]string)
+
+	for _, msg := range messages {
+		userMessages[msg.UserID] = append(userMessages[msg.UserID], msg)
+		userNames[msg.UserID] = msg.UserName
+	}
+
+	if _, exists := userMessages[userID]; !exists {
+		return nil, ErrNoUserMessages
+	}
+
+	// Format messages for behavior analysis
+	chatMessages := make([]openai.ChatCompletionMessage, 0, len(messages)+extraMessageSlots)
+	chatMessages = append(chatMessages, openai.ChatCompletionMessage{
+		Role: "system",
+		Content: `You are a behavioral analyst analyzing chat messages from multiple users in a group. Consider:
+
+1. Individual Analysis (for each user):
+   - Communication style (formal, casual, direct)
+   - Personality traits
+   - Behavioral patterns
+   - Word choice patterns
+   - Interaction habits
+   - Unique quirks
+   - Mood analysis:
+     * Overall emotional state
+     * Mood variations
+     * Emotional triggers
+     * Emotional patterns
+
+2. Group Dynamics:
+   - How users interact with each other
+   - Communication patterns between users
+   - Group mood and atmosphere
+   - Common topics or interests
+   - Social dynamics and relationships
+
+Respond with a JSON object containing a "users" object with user IDs as keys, each containing individual analyses, and a "group" object for overall dynamics.`,
+	})
+
+	// Build the conversation context
+	var conversation strings.Builder
+
+	conversation.WriteString("Group Chat Messages:\n\n")
+
+	for userID, userMsgs := range userMessages {
+		userName := userNames[userID]
+		conversation.WriteString(fmt.Sprintf("Messages from %s (ID: %d):\n", userName, userID))
+
+		for _, msg := range userMsgs {
+			conversation.WriteString(fmt.Sprintf("[%s] %s\n",
+				msg.Timestamp.Format("15:04"),
+				msg.Message))
+		}
+
+		conversation.WriteString("\n")
+	}
+
+	chatMessages = append(chatMessages, openai.ChatCompletionMessage{
+		Role:    "user",
+		Content: conversation.String(),
+	})
+
+	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
+	defer cancel()
 
 	var attemptCount uint
 
-	err = retry.Do(
+	response, err := c.createCompletion(ctx, completionRequest{
+		messages:   chatMessages,
+		userID:     userID,
+		userName:   userName,
+		attemptNum: &attemptCount,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate analysis: %w", err)
+	}
+
+	// Parse the JSON response
+	var analysisData struct {
+		Users map[string]struct {
+			CommunicationStyle string                 `json:"communicationStyle"`
+			PersonalityTraits  []string               `json:"personalityTraits"`
+			BehavioralPatterns []string               `json:"behavioralPatterns"`
+			WordChoices        map[string]interface{} `json:"wordChoices"`
+			InteractionHabits  map[string]interface{} `json:"interactionHabits"`
+			Quirks             []string               `json:"quirks"`
+			Mood               struct {
+				Overall    string   `json:"overall"`
+				Variations []string `json:"variations"`
+				Triggers   []string `json:"triggers"`
+				Patterns   []string `json:"patterns"`
+			} `json:"mood"`
+		} `json:"users"`
+		Group struct {
+			Dynamics     []string `json:"dynamics"`
+			CommonTopics []string `json:"commonTopics"`
+			Atmosphere   string   `json:"atmosphere"`
+		} `json:"group"`
+	}
+
+	if err := json.Unmarshal([]byte(response), &analysisData); err != nil {
+		return nil, fmt.Errorf("%w: %w", ErrJSONUnmarshal, err)
+	}
+
+	// Extract the target user's analysis
+	userIDStr := strconv.FormatInt(userID, 10)
+
+	userAnalysis, exists := analysisData.Users[userIDStr]
+	if !exists {
+		return nil, fmt.Errorf("%w: user %d", ErrUserNotFound, userID)
+	}
+
+	// Create and populate the user analysis
+	analysis := &db.UserAnalysis{
+		UserID:       userID,
+		UserName:     userName,
+		Date:         time.Now().UTC(),
+		MessageCount: len(userMessages[userID]),
+	}
+
+	// Store the individual analysis components with error handling
+	personalityTraits, err := json.Marshal(userAnalysis.PersonalityTraits)
+	if err != nil {
+		return nil, fmt.Errorf("%w: personality traits", ErrJSONMarshal)
+	}
+
+	analysis.PersonalityTraits = string(personalityTraits)
+
+	behavioralPatterns, err := json.Marshal(userAnalysis.BehavioralPatterns)
+	if err != nil {
+		return nil, fmt.Errorf("%w: behavioral patterns", ErrJSONMarshal)
+	}
+
+	analysis.BehavioralPatterns = string(behavioralPatterns)
+
+	wordChoices, err := json.Marshal(userAnalysis.WordChoices)
+	if err != nil {
+		return nil, fmt.Errorf("%w: word choices", ErrJSONMarshal)
+	}
+
+	analysis.WordChoices = string(wordChoices)
+
+	interactionHabits, err := json.Marshal(userAnalysis.InteractionHabits)
+	if err != nil {
+		return nil, fmt.Errorf("%w: interaction habits", ErrJSONMarshal)
+	}
+
+	analysis.InteractionHabits = string(interactionHabits)
+
+	quirks, err := json.Marshal(userAnalysis.Quirks)
+	if err != nil {
+		return nil, fmt.Errorf("%w: quirks", ErrJSONMarshal)
+	}
+
+	analysis.Quirks = string(quirks)
+
+	mood, err := json.Marshal(userAnalysis.Mood)
+	if err != nil {
+		return nil, fmt.Errorf("%w: mood", ErrJSONMarshal)
+	}
+
+	analysis.Mood = string(mood)
+
+	analysis.CommunicationStyle = userAnalysis.CommunicationStyle
+
+	return analysis, nil
+}
+
+// createCompletion handles the common logic for making API requests with retries.
+func (c *Client) createCompletion(ctx context.Context, req completionRequest) (string, error) {
+	var response string
+
+	err := retry.Do(
 		func() error {
-			attemptCount++
+			*req.attemptNum++
 
 			resp, err := c.aiClient.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
 				Model:       c.model,
-				Messages:    messages,
+				Messages:    req.messages,
 				Temperature: c.temperature,
 			})
 			if err != nil {
-				slog.Debug("chat completion attempt failed",
+				logFields := []any{
 					"error", err,
-					"user_id", userID,
-					"attempt", attemptCount)
+					"attempt", *req.attemptNum,
+					"user_id", req.userID,
+					"user_name", req.userName,
+				}
+
+				slog.Debug("completion attempt failed", logFields...)
 
 				return fmt.Errorf("chat completion API call failed: %w", err)
 			}
@@ -122,21 +319,24 @@ func (c *Client) Generate(userID int64, userName string, userMsg string) (string
 		retry.LastErrorOnly(true),
 		retry.Context(ctx),
 		retry.OnRetry(func(n uint, _ error) {
-			slog.Debug("retrying AI request",
-				"attempt", n+1,
+			logFields := []any{
+				"attempt", n + 1,
 				"max_attempts", retryMaxAttempts,
-				"user_id", userID)
+				"user_id", req.userID,
+				"user_name", req.userName,
+			}
+
+			slog.Debug("retrying request", logFields...)
 		}),
 	)
 	if err != nil {
-		return "", fmt.Errorf("AI generation retry failed: %w", err)
+		return "", fmt.Errorf("failed to complete API request: %w", err)
 	}
 
 	return response, nil
 }
 
 // formatHistory converts database chat history entries into message format for the AI API.
-// It processes entries in reverse chronological order and includes only complete message pairs.
 func (c *Client) formatHistory(history []db.ChatHistory) []openai.ChatCompletionMessage {
 	if len(history) == 0 {
 		return nil

@@ -2,6 +2,7 @@ package telegram
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -50,7 +51,9 @@ func New(cfg *config.Config, database db.Database, aiClient ai.Service) (*Bot, e
 				Timeout:      cfg.TelegramTimeoutMessage,
 			},
 		},
-		running: make(chan struct{}),
+		running:     make(chan struct{}),
+		analyzer:    make(chan struct{}),
+		activeUsers: make(map[int64]string),
 	}
 
 	return bot, nil
@@ -70,6 +73,9 @@ func (b *Bot) Start() error {
 		"bot_username", b.api.Self.UserName,
 		"admin_id", b.cfg.AdminID)
 
+	// Start the daily analysis goroutine
+	go b.runDailyAnalysis()
+
 	return b.processUpdates(updates)
 }
 
@@ -77,6 +83,7 @@ func (b *Bot) Start() error {
 func (b *Bot) Stop() error {
 	b.api.StopReceivingUpdates()
 	close(b.running)
+	close(b.analyzer)
 
 	return nil
 }
@@ -87,6 +94,7 @@ func (b *Bot) setupCommands() error {
 		{Command: "start", Description: "Start conversation with the bot"},
 		{Command: "mrl", Description: "Generate AI response"},
 		{Command: "mrl_reset", Description: "Reset chat history (admin only)"},
+		{Command: "mrl_analysis", Description: "Get weekly user analyses (admin only)"},
 	}
 
 	cmdConfig := tgbotapi.NewSetMyCommands(commands...)
@@ -122,11 +130,88 @@ func (b *Bot) processUpdates(updates tgbotapi.UpdatesChannel) error {
 			return nil
 
 		case update := <-updates:
-			if update.Message == nil || !update.Message.IsCommand() {
+			if update.Message == nil {
 				continue
 			}
 
-			b.handleCommand(update)
+			if update.Message.IsCommand() {
+				b.handleCommand(update)
+			} else if update.Message.Chat.IsGroup() || update.Message.Chat.IsSuperGroup() {
+				if err := b.handleGroupMessage(update.Message); err != nil {
+					slog.Error("failed to handle group message",
+						"error", err,
+						"chat_id", update.Message.Chat.ID)
+				}
+			}
+		}
+	}
+}
+
+// runDailyAnalysis generates user analyses every day.
+func (b *Bot) runDailyAnalysis() {
+	ticker := time.NewTicker(1 * time.Hour)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-b.analyzer:
+			return
+
+		case <-ticker.C:
+			now := time.Now()
+			if now.Hour() == 0 { // Run at midnight
+				yesterday := now.Add(-24 * time.Hour)
+				b.generateUserAnalyses(yesterday)
+			}
+		}
+	}
+}
+
+// generateUserAnalyses analyzes behavior for all active users.
+func (b *Bot) generateUserAnalyses(date time.Time) {
+	start := time.Date(date.Year(), date.Month(), date.Day(), 0, 0, 0, 0, time.UTC)
+	end := start.Add(hoursInDay * time.Hour)
+
+	// Get all messages for the time period
+	messages := make([]db.GroupMessage, 0)
+
+	for userID := range b.activeUsers {
+		userMsgs, err := b.db.GetMessagesByUserInTimeRange(userID, start, end)
+		if err != nil {
+			slog.Error("failed to get user messages",
+				"error", err,
+				"user_id", userID,
+				"date", date.Format("2006-01-02"))
+
+			continue
+		}
+
+		messages = append(messages, userMsgs...)
+	}
+
+	if len(messages) == 0 {
+		return
+	}
+
+	// Generate analysis for each active user using the full context
+	for userID, userName := range b.activeUsers {
+		analysis, err := b.ai.GenerateUserAnalysis(userID, userName, messages)
+		if err != nil {
+			slog.Error("failed to generate user analysis",
+				"error", err,
+				"user_id", userID,
+				"user_name", userName,
+				"date", date.Format("2006-01-02"))
+
+			continue
+		}
+
+		if err := b.db.SaveUserAnalysis(analysis); err != nil {
+			slog.Error("failed to save user analysis",
+				"error", err,
+				"user_id", userID,
+				"user_name", userName,
+				"date", date.Format("2006-01-02"))
 		}
 	}
 }
@@ -145,6 +230,8 @@ func (b *Bot) handleCommand(update tgbotapi.Update) {
 		err = b.handleMessage(msg)
 	case "mrl_reset":
 		err = b.handleReset(msg)
+	case "mrl_analysis":
+		err = b.handleUserAnalysis(msg)
 	}
 
 	if err != nil {
@@ -162,6 +249,32 @@ func (b *Bot) handleCommand(update tgbotapi.Update) {
 				"chat_id", msg.Chat.ID)
 		}
 	}
+}
+
+// handleGroupMessage processes messages from group chats.
+func (b *Bot) handleGroupMessage(msg *tgbotapi.Message) error {
+	if msg == nil || msg.Text == "" {
+		return nil
+	}
+
+	groupID := msg.Chat.ID
+	groupName := msg.Chat.Title
+	userID := msg.From.ID
+
+	userName := ""
+	if msg.From.UserName != "" {
+		userName = "@" + msg.From.UserName
+	} else if msg.From.FirstName != "" {
+		userName = msg.From.FirstName
+	}
+
+	b.activeUsers[userID] = userName
+
+	if err := b.db.SaveGroupMessage(groupID, groupName, userID, userName, msg.Text); err != nil {
+		return fmt.Errorf("failed to save group message: %w", err)
+	}
+
+	return nil
 }
 
 // handleStart processes the /start command.
@@ -301,6 +414,135 @@ func (b *Bot) handleReset(msg *tgbotapi.Message) error {
 	return nil
 }
 
+// handleUserAnalysis retrieves and sends user analyses for the past week (admin only).
+func (b *Bot) handleUserAnalysis(msg *tgbotapi.Message) error {
+	if msg == nil {
+		return ErrNilMessage
+	}
+
+	userID := msg.From.ID
+	if !b.isUserAuthorized(userID) {
+		slog.Warn("unauthorized access attempt",
+			"user_id", msg.From.ID,
+			"action", "get_user_analysis")
+
+		reply := tgbotapi.NewMessage(msg.Chat.ID, b.cfg.Messages.Unauthorized)
+		if err := b.sendMessage(reply); err != nil {
+			slog.Error("failed to send unauthorized message",
+				"error", err,
+				"user_id", msg.From.ID)
+		}
+
+		return ErrUnauthorized
+	}
+
+	// Calculate date range for the past week
+	now := time.Now().UTC()
+	weekAgo := now.AddDate(0, 0, dailySummaryOffset)
+	start := time.Date(weekAgo.Year(), weekAgo.Month(), weekAgo.Day(), 0, 0, 0, 0, time.UTC)
+	end := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
+
+	analyses, err := b.db.GetUserAnalysesByDateRange(start, end)
+	if err != nil {
+		slog.Error("failed to get weekly analyses",
+			"error", err,
+			"user_id", userID)
+
+		reply := tgbotapi.NewMessage(msg.Chat.ID, b.cfg.Messages.GeneralError)
+
+		return b.sendMessage(reply)
+	}
+
+	if len(analyses) == 0 {
+		reply := tgbotapi.NewMessage(msg.Chat.ID, "No user analyses available for the past week.")
+
+		return b.sendMessage(reply)
+	}
+
+	// Format analyses by date and user
+	var response strings.Builder
+
+	response.WriteString("👤 *Weekly User Analyses*\n\n")
+
+	currentDate := ""
+
+	for _, analysis := range analyses {
+		date := analysis.Date.Format("2006-01-02")
+		if date != currentDate {
+			if currentDate != "" {
+				response.WriteString("\n")
+			}
+
+			response.WriteString(fmt.Sprintf("*%s*\n", date))
+			currentDate = date
+		}
+
+		response.WriteString(fmt.Sprintf("\n*User:* %s\n", analysis.UserName))
+		response.WriteString(fmt.Sprintf("*Style:* %s\n", analysis.CommunicationStyle))
+
+		// Parse and format traits with error handling
+		var traits []string
+		if err := json.Unmarshal([]byte(analysis.PersonalityTraits), &traits); err != nil {
+			slog.Error("failed to parse personality traits",
+				"error", err,
+				"user_id", analysis.UserID)
+		} else {
+			response.WriteString("*Traits:* " + strings.Join(traits, ", ") + "\n")
+		}
+
+		// Parse and format patterns with error handling
+		var patterns []string
+		if err := json.Unmarshal([]byte(analysis.BehavioralPatterns), &patterns); err != nil {
+			slog.Error("failed to parse behavioral patterns",
+				"error", err,
+				"user_id", analysis.UserID)
+		} else {
+			response.WriteString("*Patterns:* " + strings.Join(patterns, ", ") + "\n")
+		}
+
+		// Parse and format mood information with error handling
+		var moodData struct {
+			Overall    string   `json:"overall"`
+			Variations []string `json:"variations"`
+			Triggers   []string `json:"triggers"`
+			Patterns   []string `json:"patterns"`
+		}
+
+		if err := json.Unmarshal([]byte(analysis.Mood), &moodData); err != nil {
+			slog.Error("failed to parse mood data",
+				"error", err,
+				"user_id", analysis.UserID)
+		} else {
+			response.WriteString(fmt.Sprintf("*Mood:* %s\n", moodData.Overall))
+
+			if len(moodData.Variations) > 0 {
+				response.WriteString("*Mood Variations:* " + strings.Join(moodData.Variations, ", ") + "\n")
+			}
+
+			if len(moodData.Patterns) > 0 {
+				response.WriteString("*Emotional Patterns:* " + strings.Join(moodData.Patterns, ", ") + "\n")
+			}
+		}
+
+		// Parse and format quirks with error handling
+		var quirks []string
+		if err := json.Unmarshal([]byte(analysis.Quirks), &quirks); err != nil {
+			slog.Error("failed to parse quirks",
+				"error", err,
+				"user_id", analysis.UserID)
+		} else {
+			response.WriteString("*Quirks:* " + strings.Join(quirks, ", ") + "\n")
+		}
+
+		response.WriteString(fmt.Sprintf("*Messages Analyzed:* %d\n", analysis.MessageCount))
+	}
+
+	reply := tgbotapi.NewMessage(msg.Chat.ID, response.String())
+	reply.ParseMode = "Markdown"
+
+	return b.sendMessage(reply)
+}
+
 // StartTyping sends periodic typing indicators until the context is canceled.
 func (b *Bot) StartTyping(ctx context.Context, chatID int64) {
 	action := tgbotapi.NewChatAction(chatID, tgbotapi.ChatTyping)
@@ -334,26 +576,6 @@ func (b *Bot) isUserAuthorized(userID int64) bool {
 	return userID == b.cfg.AdminID
 }
 
-// getMessageType determines the message category for logging.
-func (b *Bot) getMessageType(msgText string) string {
-	switch {
-	case strings.Contains(msgText, b.cfg.Messages.Welcome):
-		return "welcome message"
-	case strings.Contains(msgText, b.cfg.Messages.Provide):
-		return "prompt message"
-	case strings.Contains(msgText, b.cfg.Messages.GeneralError):
-		return "error message"
-	case strings.Contains(msgText, b.cfg.Messages.Timeout):
-		return "timeout message"
-	case strings.Contains(msgText, b.cfg.Messages.Unauthorized):
-		return "unauthorized message"
-	case strings.Contains(msgText, b.cfg.Messages.HistoryReset):
-		return "history reset confirmation"
-	default:
-		return "message"
-	}
-}
-
 // sendMessage sends a message with retry logic.
 func (b *Bot) sendMessage(msg tgbotapi.MessageConfig) error {
 	err := retry.Do(
@@ -377,4 +599,24 @@ func (b *Bot) sendMessage(msg tgbotapi.MessageConfig) error {
 	}
 
 	return nil
+}
+
+// getMessageType determines the message category for logging.
+func (b *Bot) getMessageType(msgText string) string {
+	switch {
+	case strings.Contains(msgText, b.cfg.Messages.Welcome):
+		return "welcome message"
+	case strings.Contains(msgText, b.cfg.Messages.Provide):
+		return "prompt message"
+	case strings.Contains(msgText, b.cfg.Messages.GeneralError):
+		return "error message"
+	case strings.Contains(msgText, b.cfg.Messages.Timeout):
+		return "timeout message"
+	case strings.Contains(msgText, b.cfg.Messages.Unauthorized):
+		return "unauthorized message"
+	case strings.Contains(msgText, b.cfg.Messages.HistoryReset):
+		return "history reset confirmation"
+	default:
+		return "message"
+	}
 }
