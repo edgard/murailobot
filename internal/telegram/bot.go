@@ -91,7 +91,7 @@ func (b *Bot) setupCommands() error {
 		{Command: "start", Description: "Start conversation with the bot"},
 		{Command: "mrl", Description: "Generate AI response"},
 		{Command: "mrl_reset", Description: "Reset chat history (admin only)"},
-		{Command: "mrl_analysis", Description: "Get weekly user analyses (admin only)"},
+		{Command: "mrl_analysis", Description: "Get previous daily user analyses (admin only)"},
 	}
 
 	cmdConfig := tgbotapi.NewSetMyCommands(commands...)
@@ -412,35 +412,20 @@ func (b *Bot) handleUserAnalysis(msg *tgbotapi.Message) error {
 		return ErrUnauthorized
 	}
 
-	// Calculate date range for the past week
+	// Calculate date range for retrieving past daily analyses
 	now := time.Now().UTC()
 	weekAgo := now.AddDate(0, 0, dailySummaryOffset)
 	start := time.Date(weekAgo.Year(), weekAgo.Month(), weekAgo.Day(), 0, 0, 0, 0, time.UTC)
-	end := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
+	end := time.Date(now.Year(), now.Month(), now.Day(), 23, 59, 59, 999999999, time.UTC)
 
-	// Get messages for analysis
-	messages, err := b.db.GetGroupMessagesInTimeRange(start, end)
+	// Get previously generated daily analyses
+	analyses, err := b.db.GetUserAnalysesInTimeRange(start, end)
 	if err != nil {
-		slog.Error("failed to get group messages",
+		slog.Error("failed to get user analyses",
 			"error", err,
-			"user_id", userID)
-
-		reply := tgbotapi.NewMessage(msg.Chat.ID, b.cfg.Messages.GeneralError)
-
-		return b.sendMessage(reply)
-	}
-
-	if len(messages) == 0 {
-		reply := tgbotapi.NewMessage(msg.Chat.ID, "No messages available for analysis in the past week.")
-
-		return b.sendMessage(reply)
-	}
-
-	analyses, err := b.ai.GenerateGroupAnalysis(messages)
-	if err != nil {
-		slog.Error("failed to generate analysis",
-			"error", err,
-			"user_id", userID)
+			"user_id", userID,
+			"start", start,
+			"end", end)
 
 		reply := tgbotapi.NewMessage(msg.Chat.ID, b.cfg.Messages.GeneralError)
 
@@ -448,7 +433,7 @@ func (b *Bot) handleUserAnalysis(msg *tgbotapi.Message) error {
 	}
 
 	if len(analyses) == 0 {
-		reply := tgbotapi.NewMessage(msg.Chat.ID, "No user analyses generated for the past week.")
+		reply := tgbotapi.NewMessage(msg.Chat.ID, "No analyses available for the past week. They are generated automatically at midnight.")
 
 		return b.sendMessage(reply)
 	}
@@ -461,16 +446,11 @@ func (b *Bot) handleUserAnalysis(msg *tgbotapi.Message) error {
 	currentDate := ""
 
 	// Sort analyses by date for consistent display
-	sortedAnalyses := make([]*db.UserAnalysis, 0, len(analyses))
-	for _, analysis := range analyses {
-		sortedAnalyses = append(sortedAnalyses, analysis)
-	}
-
-	sort.Slice(sortedAnalyses, func(i, j int) bool {
-		return sortedAnalyses[i].Date.Before(sortedAnalyses[j].Date)
+	sort.Slice(analyses, func(i, j int) bool {
+		return analyses[i].Date.Before(analyses[j].Date)
 	})
 
-	for _, analysis := range sortedAnalyses {
+	for _, analysis := range analyses {
 		date := analysis.Date.Format(timeformats.DateOnly)
 		if date != currentDate {
 			if currentDate != "" {
