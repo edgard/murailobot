@@ -63,9 +63,9 @@ type Service interface {
 	GenerateGroupAnalysis(messages []db.GroupMessage) (map[int64]*db.UserAnalysis, error)
 }
 
-// Client implements the Service interface using OpenAI's API.
+// client implements the Service interface using OpenAI's API.
 // It manages API communication, response generation, and conversation history.
-type Client struct {
+type client struct {
 	// OpenAI client configuration
 	aiClient    *openai.Client // Configured OpenAI API client
 	model       string         // Model identifier (e.g., "gpt-3.5-turbo")
@@ -76,12 +76,12 @@ type Client struct {
 	timeout     time.Duration // Maximum time for API operations
 
 	// Dependencies
-	db Database // Database for conversation history
+	db database // Database for conversation history
 }
 
-// Database defines the required database operations for AI functionality.
+// database defines the required database operations for AI functionality.
 // It provides access to conversation history.
-type Database interface {
+type database interface {
 	// GetRecent retrieves recent chat history.
 	// It returns up to 'limit' entries ordered by timestamp descending.
 	GetRecent(limit int) ([]db.ChatHistory, error)

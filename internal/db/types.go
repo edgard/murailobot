@@ -69,8 +69,8 @@ type Database interface {
 	Close() error
 }
 
-// SQLiteDB implements the Database interface using SQLite.
-type SQLiteDB struct {
+// sqliteDB implements the Database interface using SQLite.
+type sqliteDB struct {
 	db *gorm.DB
 }
 

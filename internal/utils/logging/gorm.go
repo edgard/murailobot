@@ -14,46 +14,44 @@ const (
 	defaultSlowThreshold = 200 * time.Millisecond
 )
 
-// GormLogger implements GORM's logger.Interface using our logging package.
-type GormLogger struct {
+// gormLogger implements GORM's logger.Interface using our logging package.
+type gormLogger struct {
 	SlowThreshold time.Duration
 }
 
-// NewGormLogger creates a new GORM logger that uses our logging implementation.
-// Interface return is required to satisfy GORM's logger.Interface contract
+// NewGormLogger returns a new logger that implements GORM's logger.Interface.
 //
-//nolint:ireturn // Intentionally returning interface to implement GORM's logger system
+//nolint:ireturn // Interface return is required by GORM's API contract
 func NewGormLogger() logger.Interface {
-	return &GormLogger{
+	return &gormLogger{
 		SlowThreshold: defaultSlowThreshold,
 	}
 }
 
 // LogMode implements logger.Interface.
-// Interface return is required to satisfy GORM's logger.Interface contract
 //
-//nolint:ireturn // Intentionally returning interface to implement GORM's logger system
-func (l *GormLogger) LogMode(_ logger.LogLevel) logger.Interface {
+//nolint:ireturn // Interface return is required by GORM's API contract
+func (l *gormLogger) LogMode(_ logger.LogLevel) logger.Interface {
 	return l // We use our own log levels
 }
 
 // Info implements logger.Interface.
-func (l *GormLogger) Info(_ context.Context, msg string, data ...interface{}) {
+func (l *gormLogger) Info(_ context.Context, msg string, data ...interface{}) {
 	Info(msg, "data", fmt.Sprint(data...))
 }
 
 // Warn implements logger.Interface.
-func (l *GormLogger) Warn(_ context.Context, msg string, data ...interface{}) {
+func (l *gormLogger) Warn(_ context.Context, msg string, data ...interface{}) {
 	Warn(msg, "data", fmt.Sprint(data...))
 }
 
 // Error implements logger.Interface.
-func (l *GormLogger) Error(_ context.Context, msg string, data ...interface{}) {
+func (l *gormLogger) Error(_ context.Context, msg string, data ...interface{}) {
 	Error(msg, "data", fmt.Sprint(data...))
 }
 
 // Trace implements logger.Interface.
-func (l *GormLogger) Trace(_ context.Context, begin time.Time, fc func() (sql string, rowsAffected int64), err error) {
+func (l *gormLogger) Trace(_ context.Context, begin time.Time, fc func() (sql string, rowsAffected int64), err error) {
 	elapsed := time.Since(begin)
 	sql, rows := fc()
 

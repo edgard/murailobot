@@ -445,9 +445,9 @@ func (b *Bot) handleUserAnalysis(msg *tgbotapi.Message) error {
 	}
 
 	// Format analyses by date and user
-	var response strings.Builder
+	var analysisReport strings.Builder
 
-	response.WriteString("👤 *Weekly User Analyses*\n\n")
+	analysisReport.WriteString("👤 *Weekly User Analyses*\n\n")
 
 	currentDate := ""
 
@@ -460,25 +460,25 @@ func (b *Bot) handleUserAnalysis(msg *tgbotapi.Message) error {
 		date := analysis.Date.Format(timeformats.DateOnly)
 		if date != currentDate {
 			if currentDate != "" {
-				response.WriteString("\n")
+				analysisReport.WriteString("\n")
 			}
 
-			response.WriteString(fmt.Sprintf("*%s*\n", date))
+			analysisReport.WriteString(fmt.Sprintf("*%s*\n", date))
 			currentDate = date
 		}
 
-		response.WriteString(fmt.Sprintf("\n*User ID:* %d\n", analysis.UserID))
-		response.WriteString(fmt.Sprintf("*Communication Style:* %s\n", analysis.CommunicationStyle))
-		response.WriteString(fmt.Sprintf("*Personality Traits:* %s\n", analysis.PersonalityTraits))
-		response.WriteString(fmt.Sprintf("*Behavioral Patterns:* %s\n", analysis.BehavioralPatterns))
-		response.WriteString(fmt.Sprintf("*Word Choice Patterns:* %s\n", analysis.WordChoicePatterns))
-		response.WriteString(fmt.Sprintf("*Interaction Habits:* %s\n", analysis.InteractionHabits))
-		response.WriteString(fmt.Sprintf("*Unique Quirks:* %s\n", analysis.UniqueQuirks))
-		response.WriteString(fmt.Sprintf("*Emotional Triggers:* %s\n", analysis.EmotionalTriggers))
-		response.WriteString(fmt.Sprintf("*Messages Analyzed:* %d\n", analysis.MessageCount))
+		analysisReport.WriteString(fmt.Sprintf("\n*User ID:* %d\n", analysis.UserID))
+		analysisReport.WriteString(fmt.Sprintf("*Communication Style:* %s\n", analysis.CommunicationStyle))
+		analysisReport.WriteString(fmt.Sprintf("*Personality Traits:* %s\n", analysis.PersonalityTraits))
+		analysisReport.WriteString(fmt.Sprintf("*Behavioral Patterns:* %s\n", analysis.BehavioralPatterns))
+		analysisReport.WriteString(fmt.Sprintf("*Word Choice Patterns:* %s\n", analysis.WordChoicePatterns))
+		analysisReport.WriteString(fmt.Sprintf("*Interaction Habits:* %s\n", analysis.InteractionHabits))
+		analysisReport.WriteString(fmt.Sprintf("*Unique Quirks:* %s\n", analysis.UniqueQuirks))
+		analysisReport.WriteString(fmt.Sprintf("*Emotional Triggers:* %s\n", analysis.EmotionalTriggers))
+		analysisReport.WriteString(fmt.Sprintf("*Messages Analyzed:* %d\n", analysis.MessageCount))
 	}
 
-	reply := tgbotapi.NewMessage(msg.Chat.ID, response.String())
+	reply := tgbotapi.NewMessage(msg.Chat.ID, analysisReport.String())
 	reply.ParseMode = "Markdown"
 
 	return b.sendMessage(reply)
@@ -514,7 +514,7 @@ func (b *Bot) sendMessage(msg tgbotapi.MessageConfig) error {
 
 // StartTyping sends periodic typing indicators until the returned channel is closed.
 func (b *Bot) StartTyping(chatID int64) chan struct{} {
-	done := make(chan struct{})
+	stopTyping := make(chan struct{})
 	action := tgbotapi.NewChatAction(chatID, tgbotapi.ChatTyping)
 
 	// Send initial typing indicator
@@ -524,14 +524,14 @@ func (b *Bot) StartTyping(chatID int64) chan struct{} {
 			"chat_id", chatID)
 	}
 
-	// Keep sending typing indicators until done
+	// Keep sending typing indicators until stopTyping
 	go func() {
 		ticker := time.NewTicker(defaultTypingInterval)
 		defer ticker.Stop()
 
 		for {
 			select {
-			case <-done:
+			case <-stopTyping:
 				return
 			case <-ticker.C:
 				if _, err := b.api.Request(action); err != nil {
@@ -543,5 +543,5 @@ func (b *Bot) StartTyping(chatID int64) chan struct{} {
 		}
 	}()
 
-	return done
+	return stopTyping
 }

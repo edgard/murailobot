@@ -3,21 +3,23 @@ package logging
 
 import "errors"
 
-// Log levels.
+// log levels for internal use.
 const (
-	LogLevelDebug = "debug"
-	LogLevelWarn  = "warn"
-	LogLevelError = "error"
-	LogLevelInfo  = "info"
+	logLevelDebug = "debug"
+	logLevelWarn  = "warn"
+	logLevelError = "error"
+	logLevelInfo  = "info"
 )
 
-// Log formats.
+// log formats for internal use.
 const (
-	LogFormatText = "text"
-	LogFormatJSON = "json"
+	logFormatText = "text"
+	logFormatJSON = "json"
 )
 
 var (
-	ErrInvalidLogLevel  = errors.New("invalid log level")
+	// ErrInvalidLogLevel indicates an invalid logging level was specified.
+	ErrInvalidLogLevel = errors.New("invalid log level")
+	// ErrInvalidLogFormat indicates an invalid logging format was specified.
 	ErrInvalidLogFormat = errors.New("invalid log format")
 )

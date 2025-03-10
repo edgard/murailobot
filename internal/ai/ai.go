@@ -17,7 +17,9 @@ import (
 )
 
 // New creates a new AI client with the provided configuration and database connection.
-func New(cfg *config.Config, database Database) (*Client, error) {
+//
+//nolint:ireturn // Interface return is intentional for better abstraction
+func New(cfg *config.Config, db database) (Service, error) {
 	if cfg == nil {
 		return nil, ErrNilConfig
 	}
@@ -25,20 +27,20 @@ func New(cfg *config.Config, database Database) (*Client, error) {
 	aiCfg := openai.DefaultConfig(cfg.AIToken)
 	aiCfg.BaseURL = cfg.AIBaseURL
 
-	c := &Client{
+	c := &client{
 		aiClient:    openai.NewClientWithConfig(aiCfg),
 		model:       cfg.AIModel,
 		temperature: cfg.AITemperature,
 		instruction: cfg.AIInstruction,
 		timeout:     cfg.AITimeout,
-		db:          database,
+		db:          db,
 	}
 
 	return c, nil
 }
 
 // Generate creates an AI response for a user message.
-func (c *Client) Generate(userID int64, userMsg string) (string, error) {
+func (c *client) Generate(userID int64, userMsg string) (string, error) {
 	userMsg = strings.TrimSpace(userMsg)
 	if userMsg == "" {
 		return "", ErrEmptyUserMessage
@@ -88,7 +90,7 @@ func (c *Client) Generate(userID int64, userMsg string) (string, error) {
 }
 
 // GenerateGroupAnalysis creates a behavioral analysis for all users.
-func (c *Client) GenerateGroupAnalysis(messages []db.GroupMessage) (map[int64]*db.UserAnalysis, error) {
+func (c *client) GenerateGroupAnalysis(messages []db.GroupMessage) (map[int64]*db.UserAnalysis, error) {
 	if len(messages) == 0 {
 		return nil, ErrNoMessages
 	}
@@ -131,25 +133,25 @@ Ensure that:
 	})
 
 	// Build the conversation context
-	var conversation strings.Builder
+	var msgBuilder strings.Builder
 
-	conversation.WriteString("Group Chat Messages:\n\n")
+	msgBuilder.WriteString("Group Chat Messages:\n\n")
 
 	// Track total messages for logging
 	totalMessages := 0
 
 	for userID, userMsgs := range userMessages {
-		conversation.WriteString(fmt.Sprintf("Messages from User %d:\n", userID))
+		msgBuilder.WriteString(fmt.Sprintf("Messages from User %d:\n", userID))
 
 		for _, msg := range userMsgs {
-			conversation.WriteString(fmt.Sprintf("[%s] %s\n",
+			msgBuilder.WriteString(fmt.Sprintf("[%s] %s\n",
 				msg.Timestamp.Format(timeformats.FullTimestamp),
 				msg.Message))
 
 			totalMessages++
 		}
 
-		conversation.WriteString("\n")
+		msgBuilder.WriteString("\n")
 	}
 
 	logging.Info("analyzing group messages",
@@ -158,7 +160,7 @@ Ensure that:
 
 	chatMessages = append(chatMessages, openai.ChatCompletionMessage{
 		Role:    "user",
-		Content: conversation.String(),
+		Content: msgBuilder.String(),
 	})
 
 	var attemptCount uint
@@ -174,7 +176,7 @@ Ensure that:
 	}
 
 	// Parse the JSON response
-	var analysisData struct {
+	var userAnalysisResponse struct {
 		Users map[string]struct {
 			CommunicationStyle string `json:"communication_style"`
 			PersonalityTraits  string `json:"personality_traits"`
@@ -186,14 +188,14 @@ Ensure that:
 		} `json:"users"`
 	}
 
-	if err := json.Unmarshal([]byte(response), &analysisData); err != nil {
+	if err := json.Unmarshal([]byte(response), &userAnalysisResponse); err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrJSONUnmarshal, err)
 	}
 
 	// Convert user analyses to return format
 	result := make(map[int64]*db.UserAnalysis)
 
-	for userIDStr, analysis := range analysisData.Users {
+	for userIDStr, analysis := range userAnalysisResponse.Users {
 		userID := int64(0)
 		if _, err := fmt.Sscanf(userIDStr, "%d", &userID); err != nil {
 			logging.Warn("invalid user ID in analysis response",
@@ -233,7 +235,7 @@ Ensure that:
 }
 
 // createCompletion handles the common logic for making API requests with retries.
-func (c *Client) createCompletion(req completionRequest) (string, error) {
+func (c *client) createCompletion(req completionRequest) (string, error) {
 	var response string
 
 	err := retry.Do(
@@ -292,12 +294,12 @@ func (c *Client) createCompletion(req completionRequest) (string, error) {
 }
 
 // formatHistory converts database chat history entries into message format for the AI API.
-func (c *Client) formatHistory(history []db.ChatHistory) []openai.ChatCompletionMessage {
+func (c *client) formatHistory(history []db.ChatHistory) []openai.ChatCompletionMessage {
 	if len(history) == 0 {
 		return nil
 	}
 
-	validMsgs := make([]db.ChatHistory, 0, len(history))
+	validChatHistory := make([]db.ChatHistory, 0, len(history))
 
 	for i := len(history) - 1; i >= 0; i-- {
 		msg := history[i]
@@ -309,22 +311,22 @@ func (c *Client) formatHistory(history []db.ChatHistory) []openai.ChatCompletion
 		trimmedBotMsg := strings.TrimSpace(msg.BotMsg)
 
 		if trimmedUserMsg != "" && trimmedBotMsg != "" {
-			validMsgs = append(validMsgs, msg)
+			validChatHistory = append(validChatHistory, msg)
 		}
 	}
 
-	if len(validMsgs) == 0 {
+	if len(validChatHistory) == 0 {
 		return nil
 	}
 
-	messages := make([]openai.ChatCompletionMessage, 0, len(validMsgs)*messagesPerHistory)
+	messages := make([]openai.ChatCompletionMessage, 0, len(validChatHistory)*messagesPerHistory)
 
-	for i := len(validMsgs) - 1; i >= 0; i-- {
-		msg := validMsgs[i]
+	for i := len(validChatHistory) - 1; i >= 0; i-- {
+		msg := validChatHistory[i]
 		userMsg := strings.TrimSpace(msg.UserMsg)
 		botMsg := strings.TrimSpace(msg.BotMsg)
 
-		formattedUserMsg := fmt.Sprintf("[%s] UID %d: %s",
+		formattedMsg := fmt.Sprintf("[%s] UID %d: %s",
 			msg.Timestamp.Format(timeformats.FullTimestamp),
 			msg.UserID,
 			userMsg,
@@ -333,7 +335,7 @@ func (c *Client) formatHistory(history []db.ChatHistory) []openai.ChatCompletion
 		messages = append(messages,
 			openai.ChatCompletionMessage{
 				Role:    "user",
-				Content: formattedUserMsg,
+				Content: formattedMsg,
 			},
 			openai.ChatCompletionMessage{
 				Role:    "assistant",

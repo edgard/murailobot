@@ -10,7 +10,9 @@ import (
 )
 
 // New creates a SQLite database connection.
-func New() (*SQLiteDB, error) {
+//
+//nolint:ireturn // Interface return is intentional for better abstraction
+func New() (Database, error) {
 	gormCfg := &gorm.Config{
 		Logger: logging.NewGormLogger(),
 	}
@@ -31,37 +33,37 @@ func New() (*SQLiteDB, error) {
 		return nil, fmt.Errorf("failed to run migrations: %w", err)
 	}
 
-	return &SQLiteDB{
+	return &sqliteDB{
 		db: db,
 	}, nil
 }
 
 // GetRecent retrieves the most recent chat history entries.
-func (d *SQLiteDB) GetRecent(limit int) ([]ChatHistory, error) {
+func (d *sqliteDB) GetRecent(limit int) ([]ChatHistory, error) {
 	if limit <= 0 {
 		return nil, fmt.Errorf("%w: %d", ErrInvalidLimit, limit)
 	}
 
-	var history []ChatHistory
+	var chatHistory []ChatHistory
 	if err := d.db.Order("timestamp desc").
 		Limit(limit).
-		Find(&history).Error; err != nil {
+		Find(&chatHistory).Error; err != nil {
 		return nil, fmt.Errorf("failed to get recent history: %w", err)
 	}
 
-	return history, nil
+	return chatHistory, nil
 }
 
 // Save stores a new chat interaction with the current UTC timestamp.
-func (d *SQLiteDB) Save(userID int64, userMsg, botMsg string) error {
-	history := ChatHistory{
+func (d *sqliteDB) Save(userID int64, userMsg, botMsg string) error {
+	chatEntry := ChatHistory{
 		UserID:    userID,
 		UserMsg:   userMsg,
 		BotMsg:    botMsg,
 		Timestamp: time.Now().UTC(),
 	}
 
-	if err := d.db.Create(&history).Error; err != nil {
+	if err := d.db.Create(&chatEntry).Error; err != nil {
 		return fmt.Errorf("failed to save chat history: %w", err)
 	}
 
@@ -69,7 +71,7 @@ func (d *SQLiteDB) Save(userID int64, userMsg, botMsg string) error {
 }
 
 // SaveGroupMessage stores a message from a group chat.
-func (d *SQLiteDB) SaveGroupMessage(groupID int64, groupName string, userID int64, message string) error {
+func (d *sqliteDB) SaveGroupMessage(groupID int64, groupName string, userID int64, message string) error {
 	groupMsg := GroupMessage{
 		GroupID:   groupID,
 		GroupName: groupName,
@@ -86,23 +88,23 @@ func (d *SQLiteDB) SaveGroupMessage(groupID int64, groupName string, userID int6
 }
 
 // GetGroupMessagesInTimeRange retrieves all group messages within a time range.
-func (d *SQLiteDB) GetGroupMessagesInTimeRange(start, end time.Time) ([]GroupMessage, error) {
+func (d *sqliteDB) GetGroupMessagesInTimeRange(start, end time.Time) ([]GroupMessage, error) {
 	if err := validateTimeRange(start, end); err != nil {
 		return nil, fmt.Errorf("invalid time range: %w", err)
 	}
 
-	var messages []GroupMessage
+	var groupMsgs []GroupMessage
 	if err := d.db.Where("timestamp >= ? AND timestamp < ?", start, end).
 		Order("timestamp asc").
-		Find(&messages).Error; err != nil {
+		Find(&groupMsgs).Error; err != nil {
 		return nil, fmt.Errorf("failed to get group messages: %w", err)
 	}
 
-	return messages, nil
+	return groupMsgs, nil
 }
 
 // SaveUserAnalysis stores personality/behavioral analysis for a user.
-func (d *SQLiteDB) SaveUserAnalysis(analysis *UserAnalysis) error {
+func (d *sqliteDB) SaveUserAnalysis(analysis *UserAnalysis) error {
 	if err := d.db.Create(analysis).Error; err != nil {
 		return fmt.Errorf("failed to save user analysis: %w", err)
 	}
@@ -130,23 +132,23 @@ func validateTimeRange(start, end time.Time) error {
 }
 
 // GetUserAnalysesInTimeRange retrieves user analyses within a time range.
-func (d *SQLiteDB) GetUserAnalysesInTimeRange(start, end time.Time) ([]UserAnalysis, error) {
+func (d *sqliteDB) GetUserAnalysesInTimeRange(start, end time.Time) ([]UserAnalysis, error) {
 	if err := validateTimeRange(start, end); err != nil {
 		return nil, fmt.Errorf("invalid time range: %w", err)
 	}
 
-	var analyses []UserAnalysis
+	var userAnalyses []UserAnalysis
 	if err := d.db.Where("date >= ? AND date < ?", start, end).
 		Order("date asc, user_id asc").
-		Find(&analyses).Error; err != nil {
+		Find(&userAnalyses).Error; err != nil {
 		return nil, fmt.Errorf("failed to get user analyses: %w", err)
 	}
 
-	return analyses, nil
+	return userAnalyses, nil
 }
 
 // DeleteAll removes all chat history entries in a single transaction.
-func (d *SQLiteDB) DeleteAll() error {
+func (d *sqliteDB) DeleteAll() error {
 	if err := d.db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Session(&gorm.Session{AllowGlobalUpdate: true}).Delete(&ChatHistory{}).Error; err != nil {
 			return fmt.Errorf("failed to delete chat history: %w", err)
@@ -169,7 +171,7 @@ func (d *SQLiteDB) DeleteAll() error {
 }
 
 // Close ensures all pending operations are completed and resources are released.
-func (d *SQLiteDB) Close() error {
+func (d *sqliteDB) Close() error {
 	sqlDB, err := d.db.DB()
 	if err != nil {
 		return fmt.Errorf("failed to get database instance: %w", err)

@@ -1,9 +1,16 @@
 package main
 
-// Build information set by the build system.
+// Build information variables are set during compilation via ldflags.
 var (
-	version = "dev"     // Version from git tag
-	commit  = "none"    // Git commit hash
-	date    = "unknown" // Build timestamp
-	builtBy = "unknown" // Builder name
+	// Version contains the current semver version from git tag.
+	version = "dev"
+
+	// commit contains the git commit hash.
+	commit = "none"
+
+	// date contains the UTC build timestamp in RFC3339 format.
+	date = "unknown"
+
+	// builtBy contains the username/system that built the binary.
+	builtBy = "unknown"
 )

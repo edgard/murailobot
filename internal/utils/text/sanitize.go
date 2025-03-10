@@ -8,42 +8,42 @@ import (
 )
 
 func applyRegexReplacements(s string, rules []struct {
-	re   *regexp.Regexp
-	repl string
+	regex       *regexp.Regexp
+	replacement string
 },
 ) string {
 	for _, rule := range rules {
-		s = rule.re.ReplaceAllString(s, rule.repl)
+		s = rule.regex.ReplaceAllString(s, rule.replacement)
 	}
 
 	return s
 }
 
 func normalizeLineWhitespace(line string) string {
-	var b strings.Builder
+	var strBuilder strings.Builder
 
 	var space bool
 
 	for _, r := range line {
 		switch {
 		case r == '\u3000':
-			b.WriteRune(r)
+			strBuilder.WriteRune(r)
 
 			space = false
 		case unicode.IsSpace(r) || r == '\u00A0':
 			if !space {
-				b.WriteRune(' ')
+				strBuilder.WriteRune(' ')
 
 				space = true
 			}
 		default:
-			b.WriteRune(r)
+			strBuilder.WriteRune(r)
 
 			space = false
 		}
 	}
 
-	return strings.TrimSpace(b.String())
+	return strings.TrimSpace(strBuilder.String())
 }
 
 func processListLine(l string) string {
@@ -70,19 +70,19 @@ func processTableRowAndRule(lines []string, i int) (int, string, bool) {
 	if strings.HasPrefix(l, "|") && strings.HasSuffix(l, "|") {
 		if i+1 < len(lines) && strings.HasPrefix(lines[i+1], "|") &&
 			strings.HasSuffix(lines[i+1], "|") && strings.Contains(lines[i+1], "---") {
-			s := strings.Trim(l, "|")
-			s = strings.ReplaceAll(s, "|", " ")
+			rowContent := strings.Trim(l, "|")
+			rowContent = strings.ReplaceAll(rowContent, "|", " ")
 			i++
 
-			return i, strings.TrimSpace(s), true
+			return i, strings.TrimSpace(rowContent), true
 		} else if strings.Contains(l, "---") && i > 0 && strings.HasPrefix(lines[i-1], "|") {
 			return i, "", true
 		}
 
-		s := strings.Trim(l, "|")
-		s = strings.ReplaceAll(s, "|", " ")
+		rowContent := strings.Trim(l, "|")
+		rowContent = strings.ReplaceAll(rowContent, "|", " ")
 
-		return i, strings.TrimSpace(s), true
+		return i, strings.TrimSpace(rowContent), true
 	}
 
 	return i, "", false
@@ -91,13 +91,13 @@ func processTableRowAndRule(lines []string, i int) (int, string, bool) {
 func processMarkdownStructures(md string) string {
 	lines := strings.Split(md, "\n")
 
-	var out []string
+	var processedLines []string
 
 	for i := 0; i < len(lines); {
 		newIndex, processed, handled := processTableRowAndRule(lines, i)
 		if handled {
 			if processed != "" {
-				out = append(out, processed)
+				processedLines = append(processedLines, processed)
 			}
 
 			i = newIndex + 1
@@ -116,17 +116,17 @@ func processMarkdownStructures(md string) string {
 			continue
 		} else if i > 0 && horizontalRuleRegex.MatchString(strings.TrimSpace(lines[i])) {
 			// If next line is a horizontal rule, keep current line
-			out = append(out, l)
+			processedLines = append(processedLines, l)
 			i += 2
 
 			continue
 		}
 
-		out = append(out, l)
+		processedLines = append(processedLines, l)
 		i++
 	}
 
-	return strings.Join(out, "\n")
+	return strings.Join(processedLines, "\n")
 }
 
 func IsMarkdown(text string) bool {
@@ -151,8 +151,8 @@ func IsMarkdown(text string) bool {
 func stripMarkdown(md string) string {
 	md = escapedReplacer.Replace(md)
 	rules := []struct {
-		re   *regexp.Regexp
-		repl string
+		regex       *regexp.Regexp
+		replacement string
 	}{
 		{fencedCodeBlocksRegex, "\n"},
 		{inlineCodeRegex, ""},

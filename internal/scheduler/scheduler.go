@@ -10,7 +10,7 @@ import (
 
 // New creates and starts a new scheduler instance.
 //
-//nolint:ireturn // Interface return is intended for dependency injection
+//nolint:ireturn // Interface return is intentional for better abstraction
 func New() (Scheduler, error) {
 	s, err := gocron.NewScheduler(
 		gocron.WithLocation(time.UTC),

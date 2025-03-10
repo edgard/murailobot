@@ -19,13 +19,13 @@ func Setup(cfg *config.Config) error {
 	level := slog.LevelInfo
 
 	switch strings.ToLower(cfg.LogLevel) {
-	case LogLevelDebug:
+	case logLevelDebug:
 		level = slog.LevelDebug
-	case LogLevelWarn:
+	case logLevelWarn:
 		level = slog.LevelWarn
-	case LogLevelError:
+	case logLevelError:
 		level = slog.LevelError
-	case LogLevelInfo:
+	case logLevelInfo:
 	default:
 		return fmt.Errorf("%w: %s", ErrInvalidLogLevel, cfg.LogLevel)
 	}
@@ -35,9 +35,9 @@ func Setup(cfg *config.Config) error {
 	var handler slog.Handler
 
 	switch strings.ToLower(cfg.LogFormat) {
-	case LogFormatText:
+	case logFormatText:
 		handler = slog.NewTextHandler(os.Stderr, opts)
-	case LogFormatJSON:
+	case logFormatJSON:
 		handler = slog.NewJSONHandler(os.Stderr, opts)
 	default:
 		return fmt.Errorf("%w: %s", ErrInvalidLogFormat, cfg.LogFormat)
