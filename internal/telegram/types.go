@@ -6,6 +6,7 @@ import (
 
 	"github.com/edgard/murailobot/internal/ai"
 	"github.com/edgard/murailobot/internal/db"
+	"github.com/edgard/murailobot/internal/scheduler"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
@@ -24,6 +25,7 @@ var (
 	ErrNilConfig    = errors.New("config is nil")
 	ErrNilDatabase  = errors.New("database is nil")
 	ErrNilAIService = errors.New("AI service is nil")
+	ErrNilScheduler = errors.New("scheduler is nil")
 	ErrNilMessage   = errors.New("message is nil")
 	ErrUnauthorized = errors.New("unauthorized access")
 )
@@ -47,9 +49,10 @@ type botConfig struct {
 
 // Bot implements a Telegram bot with AI capabilities.
 type Bot struct {
-	api     *tgbotapi.BotAPI
-	db      db.Database
-	ai      ai.Service
-	cfg     *botConfig
-	running chan struct{}
+	api       *tgbotapi.BotAPI
+	db        db.Database
+	ai        ai.Service
+	scheduler scheduler.Scheduler
+	cfg       *botConfig
+	running   chan struct{}
 }

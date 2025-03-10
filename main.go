@@ -26,13 +26,6 @@ func run() int {
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 
-	// Ensure scheduler is cleaned up on exit
-	defer func() {
-		if err := scheduler.Stop(); err != nil {
-			logging.Error("failed to close scheduler", "error", err)
-		}
-	}()
-
 	cfg, err := config.LoadConfig()
 	if err != nil {
 		logging.Error("failed to load configuration", "error", err)
@@ -47,6 +40,20 @@ func run() int {
 	}
 
 	logging.Info("configuration loaded successfully")
+
+	s, err := scheduler.New()
+	if err != nil {
+		logging.Error("failed to create scheduler", "error", err)
+
+		return 1
+	}
+
+	// Ensure scheduler is cleaned up on exit
+	defer func() {
+		if err := s.Stop(); err != nil {
+			logging.Error("failed to close scheduler", "error", err)
+		}
+	}()
 
 	database, err := db.New()
 	if err != nil {
@@ -68,7 +75,7 @@ func run() int {
 		return 1
 	}
 
-	bot, err := telegram.New(cfg, database, aiClient)
+	bot, err := telegram.New(cfg, database, aiClient, s)
 	if err != nil {
 		logging.Error("failed to initialize Telegram bot", "error", err)
 

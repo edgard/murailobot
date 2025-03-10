@@ -2,53 +2,32 @@ package scheduler
 
 import (
 	"fmt"
-	"sync"
 	"time"
 
 	"github.com/edgard/murailobot/internal/utils/logging"
 	"github.com/go-co-op/gocron/v2"
 )
 
-var (
-	scheduler gocron.Scheduler
-	once      sync.Once
-	errInit   error
-)
-
-// Get the scheduler singleton
+// New creates and starts a new scheduler instance.
 //
-//nolint:ireturn // Intentionally returning interface type
-func getScheduler() (gocron.Scheduler, error) {
-	once.Do(func() {
-		s, err := gocron.NewScheduler(
-			gocron.WithLocation(time.UTC),
-			gocron.WithLogger(logging.NewGocronLogger()),
-		)
-		if err != nil {
-			errInit = fmt.Errorf("failed to create scheduler: %w", err)
-
-			return
-		}
-
-		s.Start()
-		scheduler = s
-	})
-
-	if errInit != nil {
-		return nil, errInit
+//nolint:ireturn // Interface return is intended for dependency injection
+func New() (Scheduler, error) {
+	s, err := gocron.NewScheduler(
+		gocron.WithLocation(time.UTC),
+		gocron.WithLogger(logging.NewGocronLogger()),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create scheduler: %w", err)
 	}
 
-	return scheduler, nil
+	s.Start()
+
+	return &scheduler{scheduler: s}, nil
 }
 
 // AddJob adds a new job to the scheduler using a cron expression.
-func AddJob(name, cronExpr string, job func()) error {
-	s, err := getScheduler()
-	if err != nil {
-		return fmt.Errorf("failed to initialize scheduler: %w", err)
-	}
-
-	_, err = s.NewJob(
+func (s *scheduler) AddJob(name, cronExpr string, job func()) error {
+	_, err := s.scheduler.NewJob(
 		gocron.CronJob(cronExpr, false),
 		gocron.NewTask(job),
 		gocron.WithName(name),
@@ -70,13 +49,8 @@ func AddJob(name, cronExpr string, job func()) error {
 }
 
 // Stop gracefully stops the scheduler.
-func Stop() error {
-	s, err := getScheduler()
-	if err != nil {
-		return fmt.Errorf("failed to get scheduler for shutdown: %w", err)
-	}
-
-	if err := s.Shutdown(); err != nil {
+func (s *scheduler) Stop() error {
+	if err := s.scheduler.Shutdown(); err != nil {
 		return fmt.Errorf("failed to shutdown scheduler: %w", err)
 	}
 

@@ -18,7 +18,7 @@ import (
 )
 
 // New creates a new bot instance.
-func New(cfg *config.Config, database db.Database, aiClient ai.Service) (*Bot, error) {
+func New(cfg *config.Config, database db.Database, aiClient ai.Service, sched scheduler.Scheduler) (*Bot, error) {
 	if cfg == nil {
 		return nil, ErrNilConfig
 	}
@@ -31,6 +31,10 @@ func New(cfg *config.Config, database db.Database, aiClient ai.Service) (*Bot, e
 		return nil, ErrNilAIService
 	}
 
+	if sched == nil {
+		return nil, ErrNilScheduler
+	}
+
 	api, err := tgbotapi.NewBotAPI(cfg.TelegramToken)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create telegram bot: %w", err)
@@ -40,9 +44,10 @@ func New(cfg *config.Config, database db.Database, aiClient ai.Service) (*Bot, e
 	api.Debug = false
 
 	bot := &Bot{
-		api: api,
-		db:  database,
-		ai:  aiClient,
+		api:       api,
+		db:        database,
+		ai:        aiClient,
+		scheduler: sched,
 		cfg: &botConfig{
 			Token:   cfg.TelegramToken,
 			AdminID: cfg.TelegramAdminID,
@@ -335,7 +340,7 @@ func (b *Bot) handleReset(msg *tgbotapi.Message) error {
 
 // scheduleDailyAnalysis sets up the daily user analysis job to run at midnight UTC.
 func (b *Bot) scheduleDailyAnalysis() {
-	err := scheduler.AddJob(
+	err := b.scheduler.AddJob(
 		"daily-user-analysis",
 		"0 0 * * *", // Run at midnight UTC
 		func() {
