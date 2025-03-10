@@ -1,7 +1,6 @@
 package ai
 
 import (
-	"context"
 	"errors"
 	"time"
 
@@ -47,25 +46,21 @@ var (
 type Service interface {
 	// Message generation methods
 
-	// GenerateWithContext creates an AI response for a user message.
-	// It uses conversation history and handles timeouts via context.
+	// Generate creates an AI response for a user message.
 	// The response is sanitized and validated before being returned.
 	// Returns:
 	// - ErrEmptyUserMessage if the message is empty
 	// - ErrNoChoices if the API returns no completion choices
 	// - ErrEmptyResponse if the API returns an empty response
-	// - context.DeadlineExceeded if the operation times out
-	GenerateWithContext(ctx context.Context, userID int64, userMsg string) (string, error)
+	Generate(userID int64, userMsg string) (string, error)
 
 	// Analysis methods
 
-	// GenerateGroupAnalysisWithContext creates a behavioral analysis with context support.
-	// It provides the same functionality as GenerateGroupAnalysis but with timeout control.
+	// GenerateGroupAnalysis creates a behavioral analysis.
 	// Returns:
 	// - ErrNoMessages if messages slice is empty
 	// - ErrJSONUnmarshal if the API response cannot be parsed
-	// - context.DeadlineExceeded if the operation times out
-	GenerateGroupAnalysisWithContext(ctx context.Context, messages []db.GroupMessage) (map[int64]*db.UserAnalysis, error)
+	GenerateGroupAnalysis(messages []db.GroupMessage) (map[int64]*db.UserAnalysis, error)
 }
 
 // Client implements the Service interface using OpenAI's API.
@@ -85,12 +80,11 @@ type Client struct {
 }
 
 // Database defines the required database operations for AI functionality.
-// It provides access to conversation history and supports context-aware operations.
+// It provides access to conversation history.
 type Database interface {
-	// GetRecentWithContext retrieves recent chat history with context control.
+	// GetRecent retrieves recent chat history.
 	// It returns up to 'limit' entries ordered by timestamp descending.
-	// The context allows cancellation of long-running queries.
-	GetRecentWithContext(ctx context.Context, limit int) ([]db.ChatHistory, error)
+	GetRecent(limit int) ([]db.ChatHistory, error)
 }
 
 // completionRequest encapsulates parameters for an AI completion API call.

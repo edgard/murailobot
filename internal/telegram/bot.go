@@ -1,7 +1,6 @@
 package telegram
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -207,12 +206,10 @@ func (b *Bot) handleMessage(msg *tgbotapi.Message) error {
 		"user_id", msg.From.ID,
 		"message_length", len(text))
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	stopTyping := b.StartTyping(msg.Chat.ID)
+	defer close(stopTyping)
 
-	b.StartTyping(ctx, msg.Chat.ID)
-
-	response, err := b.ai.GenerateWithContext(ctx, msg.From.ID, text)
+	response, err := b.ai.Generate(msg.From.ID, text)
 	if err != nil {
 		slog.Error("failed to generate AI response",
 			"error", err,
@@ -220,9 +217,6 @@ func (b *Bot) handleMessage(msg *tgbotapi.Message) error {
 			"chat_id", msg.Chat.ID)
 
 		errMsg := b.cfg.Messages.GeneralError
-		if errors.Is(err, context.DeadlineExceeded) {
-			errMsg = b.cfg.Messages.Timeout
-		}
 
 		reply := tgbotapi.NewMessage(msg.Chat.ID, errMsg)
 		if sendErr := b.sendMessage(reply); sendErr != nil {
@@ -341,15 +335,11 @@ func (b *Bot) runDailyAnalysis() {
 
 // generateUserAnalyses analyzes behavior for all active users.
 func (b *Bot) generateUserAnalyses(date time.Time) {
-	// Create context with timeout for database operations
-	ctx, cancel := context.WithTimeout(context.Background(), defaultOperationTimeout)
-	defer cancel()
-
 	start := time.Date(date.Year(), date.Month(), date.Day(), 0, 0, 0, 0, time.UTC)
 	end := start.Add(hoursInDay * time.Hour)
 
 	// Get all messages for the time period
-	messages, err := b.db.GetGroupMessagesInTimeRangeWithContext(ctx, start, end)
+	messages, err := b.db.GetGroupMessagesInTimeRange(start, end)
 	if err != nil {
 		slog.Error("failed to get group messages",
 			"error", err,
@@ -363,16 +353,8 @@ func (b *Bot) generateUserAnalyses(date time.Time) {
 	}
 
 	// Generate analysis for all users
-	analyses, err := b.ai.GenerateGroupAnalysisWithContext(ctx, messages)
+	analyses, err := b.ai.GenerateGroupAnalysis(messages)
 	if err != nil {
-		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-			slog.Error("timeout generating analysis",
-				"error", err,
-				"date", date.Format(timeformats.DateOnly))
-
-			return
-		}
-
 		slog.Error("failed to generate group analysis",
 			"error", err,
 			"date", date.Format(timeformats.DateOnly))
@@ -413,10 +395,6 @@ func (b *Bot) handleUserAnalysis(msg *tgbotapi.Message) error {
 		return ErrUnauthorized
 	}
 
-	// Create context with timeout for operations
-	ctx, cancel := context.WithTimeout(context.Background(), defaultOperationTimeout)
-	defer cancel()
-
 	// Calculate date range for the past week
 	now := time.Now().UTC()
 	weekAgo := now.AddDate(0, 0, dailySummaryOffset)
@@ -424,18 +402,8 @@ func (b *Bot) handleUserAnalysis(msg *tgbotapi.Message) error {
 	end := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
 
 	// Get messages for analysis
-	messages, err := b.db.GetGroupMessagesInTimeRangeWithContext(ctx, start, end)
+	messages, err := b.db.GetGroupMessagesInTimeRange(start, end)
 	if err != nil {
-		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-			slog.Error("timeout getting group messages",
-				"error", err,
-				"user_id", userID)
-
-			reply := tgbotapi.NewMessage(msg.Chat.ID, b.cfg.Messages.Timeout)
-
-			return b.sendMessage(reply)
-		}
-
 		slog.Error("failed to get group messages",
 			"error", err,
 			"user_id", userID)
@@ -451,21 +419,8 @@ func (b *Bot) handleUserAnalysis(msg *tgbotapi.Message) error {
 		return b.sendMessage(reply)
 	}
 
-	// Generate analysis with progress indication
-	b.StartTyping(ctx, msg.Chat.ID)
-
-	analyses, err := b.ai.GenerateGroupAnalysisWithContext(ctx, messages)
+	analyses, err := b.ai.GenerateGroupAnalysis(messages)
 	if err != nil {
-		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-			slog.Error("timeout generating analysis",
-				"error", err,
-				"user_id", userID)
-
-			reply := tgbotapi.NewMessage(msg.Chat.ID, b.cfg.Messages.Timeout)
-
-			return b.sendMessage(reply)
-		}
-
 		slog.Error("failed to generate analysis",
 			"error", err,
 			"user_id", userID)
@@ -554,25 +509,29 @@ func (b *Bot) sendMessage(msg tgbotapi.MessageConfig) error {
 	return nil
 }
 
-// StartTyping sends periodic typing indicators.
-func (b *Bot) StartTyping(ctx context.Context, chatID int64) {
+// StartTyping sends periodic typing indicators until the returned channel is closed.
+func (b *Bot) StartTyping(chatID int64) chan struct{} {
+	done := make(chan struct{})
 	action := tgbotapi.NewChatAction(chatID, tgbotapi.ChatTyping)
+
+	// Send initial typing indicator
 	if _, err := b.api.Request(action); err != nil {
 		slog.Debug("failed to send typing action",
 			"error", err,
 			"chat_id", chatID)
 	}
 
+	// Keep sending typing indicators until done
 	go func() {
 		ticker := time.NewTicker(defaultTypingInterval)
 		defer ticker.Stop()
 
 		for {
 			select {
-			case <-ctx.Done():
+			case <-done:
 				return
 			case <-ticker.C:
-				if _, err := b.api.Request(tgbotapi.NewChatAction(chatID, tgbotapi.ChatTyping)); err != nil {
+				if _, err := b.api.Request(action); err != nil {
 					slog.Debug("failed to send typing action",
 						"error", err,
 						"chat_id", chatID)
@@ -580,4 +539,6 @@ func (b *Bot) StartTyping(ctx context.Context, chatID int64) {
 			}
 		}
 	}()
+
+	return done
 }

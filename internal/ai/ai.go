@@ -37,14 +37,14 @@ func New(cfg *config.Config, database Database) (*Client, error) {
 	return c, nil
 }
 
-// GenerateWithContext creates an AI response for a user message with context support.
-func (c *Client) GenerateWithContext(ctx context.Context, userID int64, userMsg string) (string, error) {
+// Generate creates an AI response for a user message.
+func (c *Client) Generate(userID int64, userMsg string) (string, error) {
 	userMsg = strings.TrimSpace(userMsg)
 	if userMsg == "" {
 		return "", ErrEmptyUserMessage
 	}
 
-	history, err := c.db.GetRecentWithContext(ctx, recentHistoryCount)
+	history, err := c.db.GetRecent(recentHistoryCount)
 	if err != nil {
 		return "", fmt.Errorf("failed to retrieve chat history: %w", err)
 	}
@@ -75,7 +75,7 @@ func (c *Client) GenerateWithContext(ctx context.Context, userID int64, userMsg 
 
 	var attemptCount uint
 
-	response, err := c.createCompletion(ctx, completionRequest{
+	response, err := c.createCompletion(completionRequest{
 		messages:   messages,
 		userID:     userID,
 		attemptNum: &attemptCount,
@@ -87,8 +87,8 @@ func (c *Client) GenerateWithContext(ctx context.Context, userID int64, userMsg 
 	return response, nil
 }
 
-// GenerateGroupAnalysisWithContext creates a behavioral analysis for all users with context support.
-func (c *Client) GenerateGroupAnalysisWithContext(ctx context.Context, messages []db.GroupMessage) (map[int64]*db.UserAnalysis, error) {
+// GenerateGroupAnalysis creates a behavioral analysis for all users.
+func (c *Client) GenerateGroupAnalysis(messages []db.GroupMessage) (map[int64]*db.UserAnalysis, error) {
 	if len(messages) == 0 {
 		return nil, ErrNoMessages
 	}
@@ -163,7 +163,7 @@ Ensure that:
 
 	var attemptCount uint
 
-	response, err := c.createCompletion(ctx, completionRequest{
+	response, err := c.createCompletion(completionRequest{
 		messages: chatMessages,
 		// These are just for logging purposes in the retry mechanism
 		userID:     0,
@@ -233,14 +233,14 @@ Ensure that:
 }
 
 // createCompletion handles the common logic for making API requests with retries.
-func (c *Client) createCompletion(ctx context.Context, req completionRequest) (string, error) {
+func (c *Client) createCompletion(req completionRequest) (string, error) {
 	var response string
 
 	err := retry.Do(
 		func() error {
 			*req.attemptNum++
 
-			resp, err := c.aiClient.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
+			resp, err := c.aiClient.CreateChatCompletion(context.Background(), openai.ChatCompletionRequest{
 				Model:       c.model,
 				Messages:    req.messages,
 				Temperature: c.temperature,
@@ -274,7 +274,6 @@ func (c *Client) createCompletion(ctx context.Context, req completionRequest) (s
 		retry.Delay(initialBackoffDuration),
 		retry.DelayType(retry.BackOffDelay),
 		retry.LastErrorOnly(true),
-		retry.Context(ctx),
 		retry.OnRetry(func(n uint, _ error) {
 			logFields := []any{
 				"attempt", n + 1,

@@ -7,7 +7,6 @@
 package db
 
 import (
-	"context"
 	"errors"
 	"time"
 
@@ -37,10 +36,9 @@ var (
 
 // Database defines the interface for chat history and analytics operations.
 type Database interface {
-	// GetRecentWithContext retrieves the most recent chat history entries.
+	// GetRecent retrieves the most recent chat history entries.
 	// It returns up to 'limit' entries ordered by timestamp descending.
-	// The context can be used to cancel long-running operations.
-	GetRecentWithContext(ctx context.Context, limit int) ([]ChatHistory, error)
+	GetRecent(limit int) ([]ChatHistory, error)
 
 	// Save stores a new chat interaction between a user and the bot.
 	// It returns an error if the storage operation fails.
@@ -51,20 +49,18 @@ type Database interface {
 	// It returns an error if the storage operation fails.
 	SaveGroupMessage(groupID int64, groupName string, userID int64, message string) error
 
-	// GetGroupMessagesInTimeRangeWithContext retrieves group messages between start and end times.
+	// GetGroupMessagesInTimeRange retrieves group messages between start and end times.
 	// Times should be in UTC to ensure consistent queries across timezones.
-	// The context can be used to cancel long-running operations.
-	GetGroupMessagesInTimeRangeWithContext(ctx context.Context, start, end time.Time) ([]GroupMessage, error)
+	GetGroupMessagesInTimeRange(start, end time.Time) ([]GroupMessage, error)
 
 	// SaveUserAnalysis stores personality/behavioral analysis for a user.
 	// Analysis timestamps are stored in UTC.
 	// It returns an error if the storage operation fails.
 	SaveUserAnalysis(analysis *UserAnalysis) error
 
-	// GetUserAnalysesInTimeRangeWithContext retrieves user analyses between start and end times.
+	// GetUserAnalysesInTimeRange retrieves user analyses between start and end times.
 	// Times should be in UTC to ensure consistent queries across timezones.
-	// The context can be used to cancel long-running operations.
-	GetUserAnalysesInTimeRangeWithContext(ctx context.Context, start, end time.Time) ([]UserAnalysis, error)
+	GetUserAnalysesInTimeRange(start, end time.Time) ([]UserAnalysis, error)
 
 	// DeleteAll removes all stored data, including chat history, group messages, and analyses.
 	// This operation cannot be undone.

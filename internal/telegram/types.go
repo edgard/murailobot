@@ -10,14 +10,13 @@ import (
 )
 
 const (
-	defaultUpdateOffset     = 0
-	defaultUpdateTimeout    = 60
-	defaultTypingInterval   = 5 * time.Second
-	defaultRetryAttempts    = 3
-	defaultRetryDelay       = 500 * time.Millisecond
-	dailySummaryOffset      = -7 // Days offset for weekly summary
-	hoursInDay              = 24
-	defaultOperationTimeout = 30 * time.Second // Default timeout for operations
+	defaultUpdateOffset   = 0
+	defaultUpdateTimeout  = 60
+	defaultTypingInterval = 5 * time.Second
+	defaultRetryAttempts  = 3
+	defaultRetryDelay     = 500 * time.Millisecond
+	dailySummaryOffset    = -7 // Days offset for weekly summary
+	hoursInDay            = 24
 )
 
 var (
