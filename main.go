@@ -28,7 +28,11 @@ func run() int {
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 
 	// Ensure scheduler is cleaned up on exit
-	defer scheduler.Stop()
+	defer func() {
+		if err := scheduler.Stop(); err != nil {
+			slog.Error("failed to close scheduler", "error", err)
+		}
+	}()
 
 	logger := slog.New(slog.NewJSONHandler(os.Stderr, nil))
 	slog.SetDefault(logger)

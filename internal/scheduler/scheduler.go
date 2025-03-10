@@ -12,30 +12,40 @@ import (
 var (
 	scheduler gocron.Scheduler
 	once      sync.Once
+	errInit   error
 )
 
 // Get the scheduler singleton
 //
 //nolint:ireturn // Intentionally returning interface type
-func getScheduler() gocron.Scheduler {
+func getScheduler() (gocron.Scheduler, error) {
 	once.Do(func() {
 		s, err := gocron.NewScheduler(gocron.WithLocation(time.UTC))
 		if err != nil {
-			panic(fmt.Sprintf("failed to create scheduler: %v", err))
+			errInit = fmt.Errorf("failed to create scheduler: %w", err)
+
+			return
 		}
 
 		s.Start()
 		scheduler = s
 	})
 
-	return scheduler
+	if errInit != nil {
+		return nil, errInit
+	}
+
+	return scheduler, nil
 }
 
 // AddJob adds a new job to the scheduler using a cron expression.
 func AddJob(name, cronExpr string, job func()) error {
-	s := getScheduler()
+	s, err := getScheduler()
+	if err != nil {
+		return fmt.Errorf("failed to initialize scheduler: %w", err)
+	}
 
-	_, err := s.NewJob(
+	_, err = s.NewJob(
 		gocron.CronJob(cronExpr, false),
 		gocron.NewTask(job),
 		gocron.WithName(name),
@@ -57,10 +67,15 @@ func AddJob(name, cronExpr string, job func()) error {
 }
 
 // Stop gracefully stops the scheduler.
-func Stop() {
-	if scheduler != nil {
-		if err := scheduler.Shutdown(); err != nil {
-			slog.Error("error shutting down scheduler", "error", err)
-		}
+func Stop() error {
+	s, err := getScheduler()
+	if err != nil {
+		return fmt.Errorf("failed to get scheduler for shutdown: %w", err)
 	}
+
+	if err := s.Shutdown(); err != nil {
+		return fmt.Errorf("failed to shutdown scheduler: %w", err)
+	}
+
+	return nil
 }
