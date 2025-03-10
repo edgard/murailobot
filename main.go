@@ -3,7 +3,6 @@
 package main
 
 import (
-	"log/slog"
 	"os"
 	"os/signal"
 	"syscall"
@@ -30,57 +29,53 @@ func run() int {
 	// Ensure scheduler is cleaned up on exit
 	defer func() {
 		if err := scheduler.Stop(); err != nil {
-			slog.Error("failed to close scheduler", "error", err)
+			logging.Error("failed to close scheduler", "error", err)
 		}
 	}()
 
-	logger := slog.New(slog.NewJSONHandler(os.Stderr, nil))
-	slog.SetDefault(logger)
-
 	cfg, err := config.LoadConfig()
 	if err != nil {
-		slog.Error("failed to load configuration", "error", err)
+		logging.Error("failed to load configuration", "error", err)
 
 		return 1
 	}
 
-	if err := logging.SetupLogger(cfg); err != nil {
-		slog.Error("failed to setup logger", "error", err)
+	if err := logging.Setup(cfg); err != nil {
+		logging.Error("failed to setup logger", "error", err)
 
 		return 1
 	}
 
-	slog.Info("configuration loaded successfully")
-	slog.Info("logger initialized", "level", cfg.LogLevel, "format", cfg.LogFormat)
+	logging.Info("configuration loaded successfully")
 
 	database, err := db.New()
 	if err != nil {
-		slog.Error("failed to initialize database", "error", err)
+		logging.Error("failed to initialize database", "error", err)
 
 		return 1
 	}
 
 	defer func() {
 		if err := database.Close(); err != nil {
-			slog.Error("failed to close database", "error", err)
+			logging.Error("failed to close database", "error", err)
 		}
 	}()
 
 	aiClient, err := ai.New(cfg, database)
 	if err != nil {
-		slog.Error("failed to initialize AI client", "error", err)
+		logging.Error("failed to initialize AI client", "error", err)
 
 		return 1
 	}
 
 	bot, err := telegram.New(cfg, database, aiClient)
 	if err != nil {
-		slog.Error("failed to initialize Telegram bot", "error", err)
+		logging.Error("failed to initialize Telegram bot", "error", err)
 
 		return 1
 	}
 
-	slog.Info("application initialized successfully",
+	logging.Info("application initialized successfully",
 		"version", version,
 		"commit", commit,
 		"build_date", date,
@@ -94,24 +89,24 @@ func run() int {
 	var exitCode int
 	select {
 	case sig := <-quit:
-		slog.Info("received shutdown signal", "signal", sig)
+		logging.Info("received shutdown signal", "signal", sig)
 
 		if err := bot.Stop(); err != nil {
-			slog.Error("failed to stop bot", "error", err)
+			logging.Error("failed to stop bot", "error", err)
 
 			exitCode = 1
 		}
 	case err := <-botErr:
 		if err != nil {
-			slog.Error("bot stopped with error", "error", err)
+			logging.Error("bot stopped with error", "error", err)
 
 			exitCode = 1
 		} else {
-			slog.Info("bot stopped gracefully")
+			logging.Info("bot stopped gracefully")
 		}
 	}
 
-	slog.Info("application shutdown complete")
+	logging.Info("application shutdown complete")
 
 	return exitCode
 }

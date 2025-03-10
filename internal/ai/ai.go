@@ -4,13 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log/slog"
 	"strings"
 	"time"
 
 	"github.com/avast/retry-go/v4"
 	"github.com/edgard/murailobot/internal/config"
 	"github.com/edgard/murailobot/internal/db"
+	"github.com/edgard/murailobot/internal/utils/logging"
 	"github.com/edgard/murailobot/internal/utils/text"
 	timeformats "github.com/edgard/murailobot/internal/utils/time"
 	"github.com/sashabaranov/go-openai"
@@ -152,7 +152,7 @@ Ensure that:
 		conversation.WriteString("\n")
 	}
 
-	slog.Info("analyzing group messages",
+	logging.Info("analyzing group messages",
 		"total_messages", totalMessages,
 		"unique_users", len(userMessages))
 
@@ -196,7 +196,7 @@ Ensure that:
 	for userIDStr, analysis := range analysisData.Users {
 		userID := int64(0)
 		if _, err := fmt.Sscanf(userIDStr, "%d", &userID); err != nil {
-			slog.Warn("invalid user ID in analysis response",
+			logging.Warn("invalid user ID in analysis response",
 				"user_id", userIDStr,
 				"error", err)
 
@@ -205,7 +205,7 @@ Ensure that:
 
 		// Skip if no messages exist for this user
 		if _, exists := userMessages[userID]; !exists {
-			slog.Warn("analysis received for unknown user",
+			logging.Warn("analysis received for unknown user",
 				"user_id", userID)
 
 			continue
@@ -225,7 +225,7 @@ Ensure that:
 		}
 	}
 
-	slog.Info("group analysis completed",
+	logging.Info("group analysis completed",
 		"users_analyzed", len(result),
 		"total_messages", totalMessages)
 
@@ -252,7 +252,7 @@ func (c *Client) createCompletion(req completionRequest) (string, error) {
 					"user_id", req.userID,
 				}
 
-				slog.Debug("completion attempt failed", logFields...)
+				logging.Debug("completion attempt failed", logFields...)
 
 				return fmt.Errorf("chat completion API call failed: %w", err)
 			}
@@ -281,7 +281,7 @@ func (c *Client) createCompletion(req completionRequest) (string, error) {
 				"user_id", req.userID,
 			}
 
-			slog.Debug("retrying request", logFields...)
+			logging.Debug("retrying request", logFields...)
 		}),
 	)
 	if err != nil {

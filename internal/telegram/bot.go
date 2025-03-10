@@ -3,7 +3,6 @@ package telegram
 import (
 	"errors"
 	"fmt"
-	"log/slog"
 	"sort"
 	"strings"
 	"time"
@@ -13,6 +12,7 @@ import (
 	"github.com/edgard/murailobot/internal/config"
 	"github.com/edgard/murailobot/internal/db"
 	"github.com/edgard/murailobot/internal/scheduler"
+	"github.com/edgard/murailobot/internal/utils/logging"
 	timeformats "github.com/edgard/murailobot/internal/utils/time"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
@@ -35,6 +35,9 @@ func New(cfg *config.Config, database db.Database, aiClient ai.Service) (*Bot, e
 	if err != nil {
 		return nil, fmt.Errorf("failed to create telegram bot: %w", err)
 	}
+
+	// Disable telegram bot's debug logging since we handle our own logging
+	api.Debug = false
 
 	bot := &Bot{
 		api: api,
@@ -68,7 +71,7 @@ func (b *Bot) Start() error {
 	updateConfig.Timeout = defaultUpdateTimeout
 	updates := b.api.GetUpdatesChan(updateConfig)
 
-	slog.Info("bot started successfully",
+	logging.Info("bot started successfully",
 		"admin_id", b.cfg.AdminID)
 
 	b.scheduleDailyAnalysis()
@@ -121,7 +124,7 @@ func (b *Bot) processUpdates(updates tgbotapi.UpdatesChannel) error {
 	for {
 		select {
 		case <-b.running:
-			slog.Info("bot stopping due to Stop call")
+			logging.Info("bot stopping due to Stop call")
 
 			return nil
 		case update := <-updates:
@@ -133,7 +136,7 @@ func (b *Bot) processUpdates(updates tgbotapi.UpdatesChannel) error {
 				b.handleCommand(update)
 			} else if update.Message.Chat.IsGroup() || update.Message.Chat.IsSuperGroup() {
 				if err := b.handleGroupMessage(update.Message); err != nil {
-					slog.Error("failed to handle group message",
+					logging.Error("failed to handle group message",
 						"error", err,
 						"chat_id", update.Message.Chat.ID)
 				}
@@ -162,13 +165,13 @@ func (b *Bot) handleCommand(update tgbotapi.Update) {
 
 	if err != nil {
 		if errors.Is(err, ErrUnauthorized) {
-			slog.Info("unauthorized access",
+			logging.Info("unauthorized access",
 				"error", err,
 				"command", msg.Command(),
 				"user_id", msg.From.ID,
 				"chat_id", msg.Chat.ID)
 		} else {
-			slog.Error("command handler error",
+			logging.Error("command handler error",
 				"error", err,
 				"command", msg.Command(),
 				"user_id", msg.From.ID,
@@ -201,7 +204,7 @@ func (b *Bot) handleMessage(msg *tgbotapi.Message) error {
 		return b.sendMessage(reply)
 	}
 
-	slog.Info("processing chat request",
+	logging.Info("processing chat request",
 		"user_id", msg.From.ID,
 		"message_length", len(text))
 
@@ -210,7 +213,7 @@ func (b *Bot) handleMessage(msg *tgbotapi.Message) error {
 
 	response, err := b.ai.Generate(msg.From.ID, text)
 	if err != nil {
-		slog.Error("failed to generate AI response",
+		logging.Error("failed to generate AI response",
 			"error", err,
 			"user_id", msg.From.ID,
 			"chat_id", msg.Chat.ID)
@@ -219,7 +222,7 @@ func (b *Bot) handleMessage(msg *tgbotapi.Message) error {
 
 		reply := tgbotapi.NewMessage(msg.Chat.ID, errMsg)
 		if sendErr := b.sendMessage(reply); sendErr != nil {
-			slog.Error("failed to send error message to user",
+			logging.Error("failed to send error message to user",
 				"error", sendErr,
 				"user_id", msg.From.ID)
 		}
@@ -229,7 +232,7 @@ func (b *Bot) handleMessage(msg *tgbotapi.Message) error {
 
 	// Always save to chat history for AI context
 	if err := b.db.Save(msg.From.ID, text, response); err != nil {
-		slog.Warn("failed to save chat history",
+		logging.Warn("failed to save chat history",
 			"error", err,
 			"user_id", msg.From.ID)
 	}
@@ -237,14 +240,14 @@ func (b *Bot) handleMessage(msg *tgbotapi.Message) error {
 	// If in a group, also save as group messages
 	if msg.Chat.IsGroup() || msg.Chat.IsSuperGroup() {
 		if err := b.db.SaveGroupMessage(msg.Chat.ID, msg.Chat.Title, msg.From.ID, msg.Text); err != nil {
-			slog.Warn("failed to save group message",
+			logging.Warn("failed to save group message",
 				"error", err,
 				"user_id", msg.From.ID,
 				"group_id", msg.Chat.ID)
 		}
 
 		if err := b.db.SaveGroupMessage(msg.Chat.ID, msg.Chat.Title, b.api.Self.ID, response); err != nil {
-			slog.Warn("failed to save bot response in group",
+			logging.Warn("failed to save bot response in group",
 				"error", err,
 				"group_id", msg.Chat.ID)
 		}
@@ -252,7 +255,7 @@ func (b *Bot) handleMessage(msg *tgbotapi.Message) error {
 
 	reply := tgbotapi.NewMessage(msg.Chat.ID, response)
 	if err := b.sendMessage(reply); err != nil {
-		slog.Error("failed to send AI response",
+		logging.Error("failed to send AI response",
 			"error", err,
 			"user_id", msg.From.ID)
 
@@ -287,13 +290,13 @@ func (b *Bot) handleReset(msg *tgbotapi.Message) error {
 
 	userID := msg.From.ID
 	if !b.isUserAuthorized(userID) {
-		slog.Warn("unauthorized access attempt",
+		logging.Warn("unauthorized access attempt",
 			"user_id", msg.From.ID,
 			"action", "reset_history")
 
 		reply := tgbotapi.NewMessage(msg.Chat.ID, b.cfg.Messages.Unauthorized)
 		if err := b.sendMessage(reply); err != nil {
-			slog.Error("failed to send unauthorized message",
+			logging.Error("failed to send unauthorized message",
 				"error", err,
 				"user_id", msg.From.ID)
 		}
@@ -301,16 +304,16 @@ func (b *Bot) handleReset(msg *tgbotapi.Message) error {
 		return ErrUnauthorized
 	}
 
-	slog.Info("resetting chat history", "user_id", userID)
+	logging.Info("resetting chat history", "user_id", userID)
 
 	if err := b.db.DeleteAll(); err != nil {
-		slog.Error("failed to reset chat history",
+		logging.Error("failed to reset chat history",
 			"error", err,
 			"user_id", userID)
 
 		reply := tgbotapi.NewMessage(msg.Chat.ID, b.cfg.Messages.GeneralError)
 		if sendErr := b.sendMessage(reply); sendErr != nil {
-			slog.Error("failed to send error message to user",
+			logging.Error("failed to send error message to user",
 				"error", sendErr,
 				"user_id", userID)
 		}
@@ -320,7 +323,7 @@ func (b *Bot) handleReset(msg *tgbotapi.Message) error {
 
 	reply := tgbotapi.NewMessage(msg.Chat.ID, b.cfg.Messages.HistoryReset)
 	if err := b.sendMessage(reply); err != nil {
-		slog.Error("failed to send reset confirmation",
+		logging.Error("failed to send reset confirmation",
 			"error", err,
 			"user_id", userID)
 
@@ -341,7 +344,7 @@ func (b *Bot) scheduleDailyAnalysis() {
 		},
 	)
 	if err != nil {
-		slog.Error("failed to schedule daily analysis",
+		logging.Error("failed to schedule daily analysis",
 			"error", err)
 
 		return
@@ -356,7 +359,7 @@ func (b *Bot) generateUserAnalyses(date time.Time) {
 	// Get all messages for the time period
 	messages, err := b.db.GetGroupMessagesInTimeRange(start, end)
 	if err != nil {
-		slog.Error("failed to get group messages",
+		logging.Error("failed to get group messages",
 			"error", err,
 			"date", date.Format(timeformats.DateOnly))
 
@@ -370,7 +373,7 @@ func (b *Bot) generateUserAnalyses(date time.Time) {
 	// Generate analysis for all users
 	analyses, err := b.ai.GenerateGroupAnalysis(messages)
 	if err != nil {
-		slog.Error("failed to generate group analysis",
+		logging.Error("failed to generate group analysis",
 			"error", err,
 			"date", date.Format(timeformats.DateOnly))
 
@@ -380,7 +383,7 @@ func (b *Bot) generateUserAnalyses(date time.Time) {
 	// Save all analyses
 	for _, analysis := range analyses {
 		if err := b.db.SaveUserAnalysis(analysis); err != nil {
-			slog.Error("failed to save user analysis",
+			logging.Error("failed to save user analysis",
 				"error", err,
 				"user_id", analysis.UserID,
 				"date", date.Format(timeformats.DateOnly))
@@ -396,13 +399,13 @@ func (b *Bot) handleUserAnalysis(msg *tgbotapi.Message) error {
 
 	userID := msg.From.ID
 	if !b.isUserAuthorized(userID) {
-		slog.Warn("unauthorized access attempt",
+		logging.Warn("unauthorized access attempt",
 			"user_id", msg.From.ID,
 			"action", "get_user_analysis")
 
 		reply := tgbotapi.NewMessage(msg.Chat.ID, b.cfg.Messages.Unauthorized)
 		if err := b.sendMessage(reply); err != nil {
-			slog.Error("failed to send unauthorized message",
+			logging.Error("failed to send unauthorized message",
 				"error", err,
 				"user_id", msg.From.ID)
 		}
@@ -419,7 +422,7 @@ func (b *Bot) handleUserAnalysis(msg *tgbotapi.Message) error {
 	// Get previously generated daily analyses
 	analyses, err := b.db.GetUserAnalysesInTimeRange(start, end)
 	if err != nil {
-		slog.Error("failed to get user analyses",
+		logging.Error("failed to get user analyses",
 			"error", err,
 			"user_id", userID,
 			"start", start,
@@ -511,7 +514,7 @@ func (b *Bot) StartTyping(chatID int64) chan struct{} {
 
 	// Send initial typing indicator
 	if _, err := b.api.Request(action); err != nil {
-		slog.Debug("failed to send typing action",
+		logging.Debug("failed to send typing action",
 			"error", err,
 			"chat_id", chatID)
 	}
@@ -527,7 +530,7 @@ func (b *Bot) StartTyping(chatID int64) chan struct{} {
 				return
 			case <-ticker.C:
 				if _, err := b.api.Request(action); err != nil {
-					slog.Debug("failed to send typing action",
+					logging.Debug("failed to send typing action",
 						"error", err,
 						"chat_id", chatID)
 				}

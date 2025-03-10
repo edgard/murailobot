@@ -4,15 +4,15 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/edgard/murailobot/internal/utils/logging"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
-	"gorm.io/gorm/logger"
 )
 
 // New creates a SQLite database connection.
 func New() (*SQLiteDB, error) {
 	gormCfg := &gorm.Config{
-		Logger: logger.Default.LogMode(logger.Silent),
+		Logger: logging.NewGormLogger(),
 	}
 
 	db, err := gorm.Open(sqlite.Open("storage.db"), gormCfg)

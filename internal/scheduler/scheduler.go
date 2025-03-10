@@ -2,10 +2,10 @@ package scheduler
 
 import (
 	"fmt"
-	"log/slog"
 	"sync"
 	"time"
 
+	"github.com/edgard/murailobot/internal/utils/logging"
 	"github.com/go-co-op/gocron/v2"
 )
 
@@ -20,7 +20,10 @@ var (
 //nolint:ireturn // Intentionally returning interface type
 func getScheduler() (gocron.Scheduler, error) {
 	once.Do(func() {
-		s, err := gocron.NewScheduler(gocron.WithLocation(time.UTC))
+		s, err := gocron.NewScheduler(
+			gocron.WithLocation(time.UTC),
+			gocron.WithLogger(logging.NewGocronLogger()),
+		)
 		if err != nil {
 			errInit = fmt.Errorf("failed to create scheduler: %w", err)
 
@@ -51,7 +54,7 @@ func AddJob(name, cronExpr string, job func()) error {
 		gocron.WithName(name),
 	)
 	if err != nil {
-		slog.Error("failed to add job",
+		logging.Error("failed to add job",
 			"name", name,
 			"cron", cronExpr,
 			"error", err)
@@ -59,7 +62,7 @@ func AddJob(name, cronExpr string, job func()) error {
 		return fmt.Errorf("failed to schedule job %q: %w", name, err)
 	}
 
-	slog.Info("job scheduled",
+	logging.Info("job scheduled",
 		"name", name,
 		"cron", cronExpr)
 
