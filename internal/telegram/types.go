@@ -47,10 +47,9 @@ type botConfig struct {
 
 // Bot implements a Telegram bot with AI capabilities.
 type Bot struct {
-	api      *tgbotapi.BotAPI
-	db       db.Database
-	ai       ai.Service
-	cfg      *botConfig
-	running  chan struct{}
-	analyzer chan struct{} // Channel to control analyzer goroutine
+	api     *tgbotapi.BotAPI
+	db      db.Database
+	ai      ai.Service
+	cfg     *botConfig
+	running chan struct{}
 }

@@ -11,6 +11,7 @@ import (
 	"github.com/edgard/murailobot/internal/ai"
 	"github.com/edgard/murailobot/internal/config"
 	"github.com/edgard/murailobot/internal/db"
+	"github.com/edgard/murailobot/internal/scheduler"
 	"github.com/edgard/murailobot/internal/telegram"
 	"github.com/edgard/murailobot/internal/utils/logging"
 )
@@ -25,6 +26,9 @@ func main() {
 func run() int {
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+
+	// Ensure scheduler is cleaned up on exit
+	defer scheduler.Stop()
 
 	logger := slog.New(slog.NewJSONHandler(os.Stderr, nil))
 	slog.SetDefault(logger)

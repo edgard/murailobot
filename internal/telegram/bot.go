@@ -12,6 +12,7 @@ import (
 	"github.com/edgard/murailobot/internal/ai"
 	"github.com/edgard/murailobot/internal/config"
 	"github.com/edgard/murailobot/internal/db"
+	"github.com/edgard/murailobot/internal/scheduler"
 	timeformats "github.com/edgard/murailobot/internal/utils/time"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
@@ -51,8 +52,7 @@ func New(cfg *config.Config, database db.Database, aiClient ai.Service) (*Bot, e
 				Timeout:      cfg.TelegramTimeoutMessage,
 			},
 		},
-		running:  make(chan struct{}),
-		analyzer: make(chan struct{}),
+		running: make(chan struct{}),
 	}
 
 	return bot, nil
@@ -71,7 +71,7 @@ func (b *Bot) Start() error {
 	slog.Info("bot started successfully",
 		"admin_id", b.cfg.AdminID)
 
-	go b.runDailyAnalysis()
+	b.scheduleDailyAnalysis()
 
 	return b.processUpdates(updates)
 }
@@ -80,7 +80,6 @@ func (b *Bot) Start() error {
 func (b *Bot) Stop() error {
 	b.api.StopReceivingUpdates()
 	close(b.running)
-	close(b.analyzer)
 
 	return nil
 }
@@ -331,22 +330,21 @@ func (b *Bot) handleReset(msg *tgbotapi.Message) error {
 	return nil
 }
 
-// runDailyAnalysis runs user analysis at midnight each day.
-func (b *Bot) runDailyAnalysis() {
-	ticker := time.NewTicker(1 * time.Hour)
-	defer ticker.Stop()
+// scheduleDailyAnalysis sets up the daily user analysis job to run at midnight UTC.
+func (b *Bot) scheduleDailyAnalysis() {
+	err := scheduler.AddJob(
+		"daily-user-analysis",
+		"0 0 * * *", // Run at midnight UTC
+		func() {
+			yesterday := time.Now().Add(-hoursInDay * time.Hour)
+			b.generateUserAnalyses(yesterday)
+		},
+	)
+	if err != nil {
+		slog.Error("failed to schedule daily analysis",
+			"error", err)
 
-	for {
-		select {
-		case <-b.analyzer:
-			return
-		case <-ticker.C:
-			now := time.Now()
-			if now.Hour() == 0 {
-				yesterday := now.Add(-hoursInDay * time.Hour)
-				b.generateUserAnalyses(yesterday)
-			}
-		}
+		return
 	}
 }
 
