@@ -228,10 +228,26 @@ func (b *Bot) handleMessage(msg *tgbotapi.Message) error {
 		return fmt.Errorf("AI generation failed: %w", err)
 	}
 
+	// Always save to chat history for AI context
 	if err := b.db.Save(msg.From.ID, text, response); err != nil {
 		slog.Warn("failed to save chat history",
 			"error", err,
 			"user_id", msg.From.ID)
+	}
+
+	// If in a group, also save as group messages
+	if msg.Chat.IsGroup() || msg.Chat.IsSuperGroup() {
+		if err := b.db.SaveGroupMessage(msg.Chat.ID, msg.Chat.Title, msg.From.ID, msg.Text); err != nil {
+			slog.Warn("failed to save group message",
+				"error", err,
+				"user_id", msg.From.ID,
+				"group_id", msg.Chat.ID)
+		}
+		if err := b.db.SaveGroupMessage(msg.Chat.ID, msg.Chat.Title, b.api.Self.ID, response); err != nil {
+			slog.Warn("failed to save bot response in group",
+				"error", err,
+				"group_id", msg.Chat.ID)
+		}
 	}
 
 	reply := tgbotapi.NewMessage(msg.Chat.ID, response)
