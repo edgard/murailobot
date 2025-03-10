@@ -13,12 +13,9 @@ import (
 	"gorm.io/gorm"
 )
 
-// SQLite configuration constants.
+// Database configuration constants.
 const (
-	defaultTempStore   = "MEMORY"
-	defaultCacheSizeKB = 4000
-	defaultDSNTimeout  = 10000
-	defaultMaxOpenConn = 1
+	defaultMaxOpenConn = 1 // Maximum number of open connections
 )
 
 var (

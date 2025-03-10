@@ -2,7 +2,6 @@ package db
 
 import (
 	"fmt"
-	"strconv"
 	"time"
 
 	"gorm.io/driver/sqlite"
@@ -10,19 +9,13 @@ import (
 	"gorm.io/gorm/logger"
 )
 
-// New creates a SQLite database connection optimized for chat history storage.
-// It configures WAL journaling, busy timeout, and memory-based temp storage.
+// New creates a SQLite database connection.
 func New() (*SQLiteDB, error) {
 	gormCfg := &gorm.Config{
 		Logger: logger.Default.LogMode(logger.Silent),
 	}
 
-	dsn := "storage.db?_journal=WAL" +
-		"&_timeout=" + strconv.Itoa(defaultDSNTimeout) +
-		"&_temp_store=" + defaultTempStore +
-		"&_cache_size=-" + strconv.Itoa(defaultCacheSizeKB)
-
-	db, err := gorm.Open(sqlite.Open(dsn), gormCfg)
+	db, err := gorm.Open(sqlite.Open("storage.db"), gormCfg)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open database: %w", err)
 	}
