@@ -40,6 +40,11 @@ func New(cfg *config.Config, db database) (Service, error) {
 	return c, nil
 }
 
+// SetBotUID sets the bot's Telegram User ID for filtering profiles.
+func (c *client) SetBotUID(uid int64) {
+	c.botUID = uid
+}
+
 // Generate creates an AI response for a user message.
 func (c *client) Generate(userID int64, userMsg string, userProfiles map[int64]*db.UserProfile) (string, error) {
 	userMsg = strings.TrimSpace(userMsg)
@@ -73,6 +78,10 @@ func (c *client) Generate(userID int64, userMsg string, userProfiles map[int64]*
 
 		// Add each profile in the pipe-delimited format
 		for _, id := range userIDs {
+			// Skip the bot's own UID
+			if id == c.botUID {
+				continue
+			}
 			profile := userProfiles[id]
 			profileInfo.WriteString(profile.FormatPipeDelimited() + "\n")
 		}
@@ -272,6 +281,12 @@ Respond ONLY with the JSON object and no additional text or explanation.`,
 		if userID == 0 {
 			logging.Warn("user ID is zero", "user_id_str", userIDStr)
 
+			continue
+		}
+
+		// Skip the bot's own UID
+		if userID == c.botUID {
+			logging.Debug("skipping bot's own profile", "bot_uid", c.botUID)
 			continue
 		}
 
