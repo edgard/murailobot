@@ -158,9 +158,11 @@ Analyze the messages and return a JSON object with the following structure:
   }
 }
 
-If existing profile information is provided, use it as a base and only update or add information when you have new evidence from the messages.
+CRITICALLY IMPORTANT: When existing profile information is provided, you MUST preserve it fully. DO NOT replace any existing profile fields unless you have clear and specific new evidence from the messages that contradicts or updates that information. If you are uncertain about a field, keep the existing information. For fields where you have no new information to add, return an empty string for that field rather than making assumptions.
 
-Important: Be analytical, perceptive, and detailed in your assessment while avoiding assumptions without evidence.
+For example, if an existing profile has "origin_location": "Germany" but the new messages don't mention location, you should not change this value. Only update it if there is clear evidence of a different origin location.
+
+Be analytical, perceptive, and detailed in your assessment while avoiding assumptions without evidence.
 Respond ONLY with the JSON object and no additional text or explanation.`,
 	})
 

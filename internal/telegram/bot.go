@@ -418,6 +418,34 @@ func (b *Bot) generateUserAnalyses(date time.Time) {
 		return
 	}
 
+	// Merge with existing profiles to preserve existing data
+	for userID, newProfile := range updatedProfiles {
+		if existingProfile, exists := existingProfiles[userID]; exists {
+			// Keep existing data if new data is empty
+			if newProfile.DisplayNames == "" {
+				newProfile.DisplayNames = existingProfile.DisplayNames
+			}
+			if newProfile.OriginLocation == "" {
+				newProfile.OriginLocation = existingProfile.OriginLocation
+			}
+			if newProfile.CurrentLocation == "" {
+				newProfile.CurrentLocation = existingProfile.CurrentLocation
+			}
+			if newProfile.AgeRange == "" {
+				newProfile.AgeRange = existingProfile.AgeRange
+			}
+			if newProfile.Traits == "" {
+				newProfile.Traits = existingProfile.Traits
+			}
+			// Preserve other metadata
+			newProfile.ID = existingProfile.ID
+			newProfile.CreatedAt = existingProfile.CreatedAt
+		}
+		logging.Debug("merging profile data",
+			"user_id", userID,
+			"has_existing", existingProfiles[userID] != nil)
+	}
+
 	// Save updated profiles
 	for _, profile := range updatedProfiles {
 		if err := b.db.SaveUserProfile(profile); err != nil {
