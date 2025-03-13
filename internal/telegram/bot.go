@@ -57,7 +57,6 @@ func New(cfg *config.Config, database db.Database, aiClient ai.Service, sched sc
 				Provide:      cfg.TelegramProvideMessage,
 				GeneralError: cfg.TelegramGeneralErrorMessage,
 				HistoryReset: cfg.TelegramHistoryResetMessage,
-				Timeout:      cfg.TelegramTimeoutMessage,
 			},
 		},
 		running: make(chan struct{}),
@@ -98,7 +97,8 @@ func (b *Bot) setupCommands() error {
 		{Command: "start", Description: "Start conversation with the bot"},
 		{Command: "mrl", Description: "Generate AI response"},
 		{Command: "mrl_reset", Description: "Reset chat history (admin only)"},
-		{Command: "mrl_analysis", Description: "Get previous daily user analyses (admin only)"},
+		{Command: "mrl_analyze", Description: "Analyze user messages and update profiles (admin only)"},
+		{Command: "mrl_profiles", Description: "Show user profiles (admin only)"},
 	}
 
 	cmdConfig := tgbotapi.NewSetMyCommands(commands...)
@@ -164,8 +164,10 @@ func (b *Bot) handleCommand(update tgbotapi.Update) {
 		err = b.handleMessage(msg)
 	case "mrl_reset":
 		err = b.handleReset(msg)
-	case "mrl_analysis":
-		err = b.handleUserAnalysis(msg)
+	case "mrl_analyze":
+		err = b.handleAnalyzeCommand(msg)
+	case "mrl_profiles":
+		err = b.handleProfilesCommand(msg)
 	}
 
 	if err != nil {
@@ -216,7 +218,25 @@ func (b *Bot) handleMessage(msg *tgbotapi.Message) error {
 	stopTyping := b.StartTyping(msg.Chat.ID)
 	defer close(stopTyping)
 
-	response, err := b.ai.Generate(msg.From.ID, text)
+	// Get all user profiles for better group context
+	userProfiles, err := b.db.GetAllUserProfiles()
+	if err != nil {
+		logging.Warn("failed to get user profiles",
+			"error", err,
+			"user_id", msg.From.ID)
+
+		userProfiles = make(map[int64]*db.UserProfile)
+	}
+
+	// Log some stats about available profiles
+	if len(userProfiles) > 0 {
+		logging.Debug("providing group context for message generation",
+			"user_id", msg.From.ID,
+			"total_profiles", len(userProfiles),
+			"has_user_profile", userProfiles[msg.From.ID] != nil)
+	}
+
+	response, err := b.ai.Generate(msg.From.ID, text, userProfiles)
 	if err != nil {
 		logging.Error("failed to generate AI response",
 			"error", err,
@@ -341,7 +361,7 @@ func (b *Bot) handleReset(msg *tgbotapi.Message) error {
 // scheduleDailyAnalysis sets up the daily user analysis job to run at midnight UTC.
 func (b *Bot) scheduleDailyAnalysis() {
 	err := b.scheduler.AddJob(
-		"daily-user-analysis",
+		"daily-profile-update",
 		"0 0 * * *", // Run at midnight UTC
 		func() {
 			yesterday := time.Now().Add(-hoursInDay * time.Hour)
@@ -356,7 +376,7 @@ func (b *Bot) scheduleDailyAnalysis() {
 	}
 }
 
-// generateUserAnalyses analyzes behavior for all active users.
+// generateUserAnalyses analyzes messages and updates user profiles.
 func (b *Bot) generateUserAnalyses(date time.Time) {
 	start := time.Date(date.Year(), date.Month(), date.Day(), 0, 0, 0, 0, time.UTC)
 	end := start.Add(hoursInDay * time.Hour)
@@ -372,32 +392,49 @@ func (b *Bot) generateUserAnalyses(date time.Time) {
 	}
 
 	if len(messages) == 0 {
+		logging.Info("no messages to analyze for the day",
+			"date", date.Format(timeformats.DateOnly))
+
 		return
 	}
 
-	// Generate analysis for all users
-	analyses, err := b.ai.GenerateGroupAnalysis(messages)
+	// Get existing profiles for context
+	existingProfiles, err := b.db.GetAllUserProfiles()
 	if err != nil {
-		logging.Error("failed to generate group analysis",
+		logging.Error("failed to get existing profiles",
+			"error", err,
+			"date", date.Format(timeformats.DateOnly))
+
+		existingProfiles = make(map[int64]*db.UserProfile)
+	}
+
+	// Generate/update profiles
+	updatedProfiles, err := b.ai.GenerateUserProfiles(messages, existingProfiles)
+	if err != nil {
+		logging.Error("failed to generate user profiles",
 			"error", err,
 			"date", date.Format(timeformats.DateOnly))
 
 		return
 	}
 
-	// Save all analyses
-	for _, analysis := range analyses {
-		if err := b.db.SaveUserAnalysis(analysis); err != nil {
-			logging.Error("failed to save user analysis",
+	// Save updated profiles
+	for _, profile := range updatedProfiles {
+		if err := b.db.SaveUserProfile(profile); err != nil {
+			logging.Error("failed to save user profile",
 				"error", err,
-				"user_id", analysis.UserID,
+				"user_id", profile.UserID,
 				"date", date.Format(timeformats.DateOnly))
 		}
 	}
+
+	logging.Info("daily profile update completed",
+		"profiles_updated", len(updatedProfiles),
+		"date", date.Format(timeformats.DateOnly))
 }
 
-// handleUserAnalysis retrieves and sends user analyses for the past week.
-func (b *Bot) handleUserAnalysis(msg *tgbotapi.Message) error {
+// handleAnalyzeCommand processes the /mrl_analyze command.
+func (b *Bot) handleAnalyzeCommand(msg *tgbotapi.Message) error {
 	if msg == nil {
 		return ErrNilMessage
 	}
@@ -406,7 +443,7 @@ func (b *Bot) handleUserAnalysis(msg *tgbotapi.Message) error {
 	if !b.isUserAuthorized(userID) {
 		logging.Warn("unauthorized access attempt",
 			"user_id", msg.From.ID,
-			"action", "get_user_analysis")
+			"action", "analyze_messages")
 
 		reply := tgbotapi.NewMessage(msg.Chat.ID, b.cfg.Messages.Unauthorized)
 		if err := b.sendMessage(reply); err != nil {
@@ -418,68 +455,91 @@ func (b *Bot) handleUserAnalysis(msg *tgbotapi.Message) error {
 		return ErrUnauthorized
 	}
 
-	// Calculate date range for retrieving past daily analyses
+	// Send processing message
+	reply := tgbotapi.NewMessage(msg.Chat.ID, "Analyzing messages and updating user profiles...")
+	if err := b.sendMessage(reply); err != nil {
+		return fmt.Errorf("failed to send processing message: %w", err)
+	}
+
+	stopTyping := b.StartTyping(msg.Chat.ID)
+	defer close(stopTyping)
+
+	// Get messages from past 24 hours
 	now := time.Now().UTC()
-	weekAgo := now.AddDate(0, 0, dailySummaryOffset)
-	start := time.Date(weekAgo.Year(), weekAgo.Month(), weekAgo.Day(), 0, 0, 0, 0, time.UTC)
-	end := time.Date(now.Year(), now.Month(), now.Day(), 23, 59, 59, 999999999, time.UTC)
+	yesterday := now.Add(-hoursInDay * time.Hour)
 
-	// Get previously generated daily analyses
-	analyses, err := b.db.GetUserAnalysesInTimeRange(start, end)
-	if err != nil {
-		logging.Error("failed to get user analyses",
-			"error", err,
-			"user_id", userID,
-			"start", start,
-			"end", end)
+	// Run the analysis
+	b.generateUserAnalyses(yesterday)
 
-		reply := tgbotapi.NewMessage(msg.Chat.ID, b.cfg.Messages.GeneralError)
+	// Get updated profiles to display
+	return b.sendUserProfiles(msg.Chat.ID)
+}
 
-		return b.sendMessage(reply)
+// handleProfilesCommand processes the /mrl_profiles command.
+func (b *Bot) handleProfilesCommand(msg *tgbotapi.Message) error {
+	if msg == nil {
+		return ErrNilMessage
 	}
 
-	if len(analyses) == 0 {
-		reply := tgbotapi.NewMessage(msg.Chat.ID, "No analyses available for the past week. They are generated automatically at midnight.")
+	userID := msg.From.ID
+	if !b.isUserAuthorized(userID) {
+		logging.Warn("unauthorized access attempt",
+			"user_id", msg.From.ID,
+			"action", "view_profiles")
 
-		return b.sendMessage(reply)
-	}
-
-	// Format analyses by date and user
-	var analysisReport strings.Builder
-
-	analysisReport.WriteString("👤 *Weekly User Analyses*\n\n")
-
-	currentDate := ""
-
-	// Sort analyses by date for consistent display
-	sort.Slice(analyses, func(i, j int) bool {
-		return analyses[i].Date.Before(analyses[j].Date)
-	})
-
-	for _, analysis := range analyses {
-		date := analysis.Date.Format(timeformats.DateOnly)
-		if date != currentDate {
-			if currentDate != "" {
-				analysisReport.WriteString("\n")
-			}
-
-			analysisReport.WriteString(fmt.Sprintf("*%s*\n", date))
-			currentDate = date
+		reply := tgbotapi.NewMessage(msg.Chat.ID, b.cfg.Messages.Unauthorized)
+		if err := b.sendMessage(reply); err != nil {
+			logging.Error("failed to send unauthorized message",
+				"error", err,
+				"user_id", msg.From.ID)
 		}
 
-		analysisReport.WriteString(fmt.Sprintf("\n*User ID:* %d\n", analysis.UserID))
-		analysisReport.WriteString(fmt.Sprintf("*Communication Style:* %s\n", analysis.CommunicationStyle))
-		analysisReport.WriteString(fmt.Sprintf("*Personality Traits:* %s\n", analysis.PersonalityTraits))
-		analysisReport.WriteString(fmt.Sprintf("*Behavioral Patterns:* %s\n", analysis.BehavioralPatterns))
-		analysisReport.WriteString(fmt.Sprintf("*Word Choice Patterns:* %s\n", analysis.WordChoicePatterns))
-		analysisReport.WriteString(fmt.Sprintf("*Interaction Habits:* %s\n", analysis.InteractionHabits))
-		analysisReport.WriteString(fmt.Sprintf("*Unique Quirks:* %s\n", analysis.UniqueQuirks))
-		analysisReport.WriteString(fmt.Sprintf("*Emotional Triggers:* %s\n", analysis.EmotionalTriggers))
-		analysisReport.WriteString(fmt.Sprintf("*Messages Analyzed:* %d\n", analysis.MessageCount))
+		return ErrUnauthorized
 	}
 
-	reply := tgbotapi.NewMessage(msg.Chat.ID, analysisReport.String())
-	reply.ParseMode = "Markdown"
+	return b.sendUserProfiles(msg.Chat.ID)
+}
+
+// sendUserProfiles formats and sends user profiles.
+func (b *Bot) sendUserProfiles(chatID int64) error {
+	// Get all profiles
+	profiles, err := b.db.GetAllUserProfiles()
+	if err != nil {
+		logging.Error("failed to get user profiles", "error", err)
+
+		reply := tgbotapi.NewMessage(chatID, b.cfg.Messages.GeneralError)
+
+		return b.sendMessage(reply)
+	}
+
+	if len(profiles) == 0 {
+		reply := tgbotapi.NewMessage(chatID, "No user profiles available. Run /mrl_analyze to generate profiles.")
+
+		return b.sendMessage(reply)
+	}
+
+	// Format profiles
+	var profilesReport strings.Builder
+
+	profilesReport.WriteString("👤 *User Profiles*\n\n")
+
+	// Sort users by ID for consistent display
+	userIDs := make([]int64, 0, len(profiles))
+	for userID := range profiles {
+		userIDs = append(userIDs, userID)
+	}
+
+	sort.Slice(userIDs, func(i, j int) bool {
+		return userIDs[i] < userIDs[j]
+	})
+
+	for _, userID := range userIDs {
+		profile := profiles[userID]
+		// Use the standardized formatting method
+		profilesReport.WriteString(profile.FormatPipeDelimited() + "\n\n")
+	}
+
+	reply := tgbotapi.NewMessage(chatID, profilesReport.String())
 
 	return b.sendMessage(reply)
 }

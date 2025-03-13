@@ -16,7 +16,6 @@ const (
 	defaultTypingInterval = 5 * time.Second
 	defaultRetryAttempts  = 3
 	defaultRetryDelay     = 500 * time.Millisecond
-	dailySummaryOffset    = -7 // Days offset for weekly summary
 	hoursInDay            = 24
 )
 
@@ -37,7 +36,6 @@ type messages struct {
 	Provide      string
 	GeneralError string
 	HistoryReset string
-	Timeout      string
 }
 
 // botConfig holds bot authentication and response configuration.

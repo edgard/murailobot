@@ -8,6 +8,7 @@ package db
 
 import (
 	"errors"
+	"fmt"
 	"time"
 
 	"gorm.io/gorm"
@@ -50,14 +51,15 @@ type Database interface {
 	// Times should be in UTC to ensure consistent queries across timezones.
 	GetGroupMessagesInTimeRange(start, end time.Time) ([]GroupMessage, error)
 
-	// SaveUserAnalysis stores personality/behavioral analysis for a user.
-	// Analysis timestamps are stored in UTC.
-	// It returns an error if the storage operation fails.
-	SaveUserAnalysis(analysis *UserAnalysis) error
+	// GetUserProfile retrieves a user's profile by user ID.
+	// Returns nil and no error if the profile does not exist.
+	GetUserProfile(userID int64) (*UserProfile, error)
 
-	// GetUserAnalysesInTimeRange retrieves user analyses between start and end times.
-	// Times should be in UTC to ensure consistent queries across timezones.
-	GetUserAnalysesInTimeRange(start, end time.Time) ([]UserAnalysis, error)
+	// SaveUserProfile creates or updates a user profile.
+	SaveUserProfile(profile *UserProfile) error
+
+	// GetAllUserProfiles retrieves all user profiles.
+	GetAllUserProfiles() (map[int64]*UserProfile, error)
 
 	// DeleteAll removes all stored data, including chat history, group messages, and analyses.
 	// This operation cannot be undone.
@@ -118,4 +120,29 @@ type UserAnalysis struct {
 	InteractionHabits  string `gorm:"type:text" json:"interaction_habits"`   // How user engages with others
 	UniqueQuirks       string `gorm:"type:text" json:"unique_quirks"`        // Distinctive characteristics
 	EmotionalTriggers  string `gorm:"type:text" json:"emotional_triggers"`   // Topics causing emotional responses
+}
+
+// UserProfile represents a user's accumulated profile information
+// built from ongoing analysis of their messages.
+type UserProfile struct {
+	gorm.Model
+	UserID          int64     `gorm:"not null;uniqueIndex" json:"user_id"`          // User identifier from Telegram
+	DisplayNames    string    `gorm:"type:text"            json:"display_names"`    // Known names/nicknames (comma-separated)
+	OriginLocation  string    `gorm:"type:text"            json:"origin_location"`  // Where the user is from
+	CurrentLocation string    `gorm:"type:text"            json:"current_location"` // Where the user currently lives
+	AgeRange        string    `gorm:"type:text"            json:"age_range"`        // Approximate age range
+	Traits          string    `gorm:"type:text"            json:"traits"`           // Personality traits and characteristics
+	LastUpdated     time.Time `gorm:"not null"             json:"last_updated"`     // When profile was last updated
+	MessageCount    int       `gorm:"not null"             json:"message_count"`    // Total messages analyzed
+}
+
+// Format: "UID [user_id] ([display_names]) | [origin_location] | [current_location] | [age_range] | [traits]".
+func (p *UserProfile) FormatPipeDelimited() string {
+	return fmt.Sprintf("UID %d (%s) | %s | %s | %s | %s",
+		p.UserID,
+		p.DisplayNames,
+		p.OriginLocation,
+		p.CurrentLocation,
+		p.AgeRange,
+		p.Traits)
 }

@@ -25,7 +25,6 @@ telegram:
     provide_message: "ℹ️ Please provide a message with your command."
     general_error: "❌ An error occurred. Please try again later."
     history_reset: "🔄 Chat history has been cleared."
-    timeout: "⏱️ Request timed out. Please try again later."
 
 #------------------------------------------------------------------------------
 # Logging Configuration
