@@ -365,61 +365,86 @@ func (b *Bot) handleReset(msg *tgbotapi.Message) error {
 
 // scheduleDailyAnalysis sets up the daily user analysis job to run at midnight UTC.
 func (b *Bot) scheduleDailyAnalysis() {
+	// Schedule the main analysis job
 	err := b.scheduler.AddJob(
 		"daily-profile-update",
 		"0 0 * * *", // Run at midnight UTC
 		func() {
-			yesterday := time.Now().Add(-hoursInDay * time.Hour)
-			b.generateUserAnalyses(yesterday)
+			// Process all messages, not just from a specific time period
+			b.generateUserAnalyses()
 		},
 	)
 	if err != nil {
 		logging.Error("failed to schedule daily analysis",
 			"error", err)
-
 		return
+	}
+
+	// Schedule a cleanup job to delete processed messages after a safety period
+	// Running 12 hours after the main job to ensure analysis is complete
+	err = b.scheduler.AddJob(
+		"cleanup-processed-messages",
+		"0 12 * * *", // Run at noon UTC (12 hours after main job)
+		func() {
+			// Delete messages that were processed more than 7 days ago
+			// This provides a safety window in case we need to reprocess them
+			cutoffTime := time.Now().AddDate(0, 0, -7)
+			b.cleanupProcessedMessages(cutoffTime)
+		},
+	)
+	if err != nil {
+		logging.Error("failed to schedule message cleanup",
+			"error", err)
 	}
 }
 
-// generateUserAnalyses analyzes messages and updates user profiles.
-func (b *Bot) generateUserAnalyses(date time.Time) {
-	start := time.Date(date.Year(), date.Month(), date.Day(), 0, 0, 0, 0, time.UTC)
-	end := start.Add(hoursInDay * time.Hour)
+// cleanupProcessedMessages deletes messages that were processed before the cutoff time.
+func (b *Bot) cleanupProcessedMessages(cutoffTime time.Time) {
+	logging.Info("starting cleanup of processed messages",
+		"cutoff_time", cutoffTime.Format(timeformats.FullTimestamp))
 
-	// Get all messages for the time period
-	messages, err := b.db.GetGroupMessagesInTimeRange(start, end)
-	if err != nil {
-		logging.Error("failed to get group messages",
+	if err := b.db.DeleteProcessedGroupMessages(cutoffTime); err != nil {
+		logging.Error("failed to delete processed messages",
 			"error", err,
-			"date", date.Format(timeformats.DateOnly))
-
+			"cutoff_time", cutoffTime.Format(timeformats.FullTimestamp))
 		return
 	}
 
-	if len(messages) == 0 {
-		logging.Info("no messages to analyze for the day",
-			"date", date.Format(timeformats.DateOnly))
+	logging.Info("successfully cleaned up processed messages",
+		"cutoff_time", cutoffTime.Format(timeformats.FullTimestamp))
+}
 
+// generateUserAnalyses analyzes all unprocessed messages and updates user profiles.
+func (b *Bot) generateUserAnalyses() {
+	// Get only unprocessed messages from the database
+	unprocessedMessages, err := b.db.GetUnprocessedGroupMessages()
+	if err != nil {
+		logging.Error("failed to get unprocessed group messages",
+			"error", err)
 		return
 	}
+
+	if len(unprocessedMessages) == 0 {
+		logging.Info("no unprocessed messages to analyze")
+		return
+	}
+
+	logging.Info("starting profile analysis",
+		"unprocessed_messages", len(unprocessedMessages))
 
 	// Get existing profiles for context
 	existingProfiles, err := b.db.GetAllUserProfiles()
 	if err != nil {
 		logging.Error("failed to get existing profiles",
-			"error", err,
-			"date", date.Format(timeformats.DateOnly))
-
+			"error", err)
 		existingProfiles = make(map[int64]*db.UserProfile)
 	}
 
-	// Generate/update profiles
-	updatedProfiles, err := b.ai.GenerateUserProfiles(messages, existingProfiles)
+	// Generate/update profiles with all unprocessed messages at once
+	updatedProfiles, err := b.ai.GenerateUserProfiles(unprocessedMessages, existingProfiles)
 	if err != nil {
 		logging.Error("failed to generate user profiles",
-			"error", err,
-			"date", date.Format(timeformats.DateOnly))
-
+			"error", err)
 		return
 	}
 
@@ -446,9 +471,6 @@ func (b *Bot) generateUserAnalyses(date time.Time) {
 			newProfile.ID = existingProfile.ID
 			newProfile.CreatedAt = existingProfile.CreatedAt
 		}
-		logging.Debug("merging profile data",
-			"user_id", userID,
-			"has_existing", existingProfiles[userID] != nil)
 	}
 
 	// Save updated profiles
@@ -456,14 +478,25 @@ func (b *Bot) generateUserAnalyses(date time.Time) {
 		if err := b.db.SaveUserProfile(profile); err != nil {
 			logging.Error("failed to save user profile",
 				"error", err,
-				"user_id", profile.UserID,
-				"date", date.Format(timeformats.DateOnly))
+				"user_id", profile.UserID)
 		}
 	}
 
-	logging.Info("daily profile update completed",
-		"profiles_updated", len(updatedProfiles),
-		"date", date.Format(timeformats.DateOnly))
+	// Collect IDs of processed messages
+	messageIDs := make([]uint, 0, len(unprocessedMessages))
+	for _, msg := range unprocessedMessages {
+		messageIDs = append(messageIDs, msg.ID)
+	}
+
+	// Mark all messages as processed
+	if err := b.db.MarkGroupMessagesAsProcessed(messageIDs); err != nil {
+		logging.Error("failed to mark messages as processed",
+			"error", err)
+	}
+
+	logging.Info("profile update completed",
+		"messages_processed", len(unprocessedMessages),
+		"profiles_updated", len(updatedProfiles))
 }
 
 // handleAnalyzeCommand processes the /mrl_analyze command.
@@ -497,12 +530,8 @@ func (b *Bot) handleAnalyzeCommand(msg *tgbotapi.Message) error {
 	stopTyping := b.StartTyping(msg.Chat.ID)
 	defer close(stopTyping)
 
-	// Get messages from past 24 hours
-	now := time.Now().UTC()
-	yesterday := now.Add(-hoursInDay * time.Hour)
-
-	// Run the analysis
-	b.generateUserAnalyses(yesterday)
+	// Run the analysis on all messages
+	b.generateUserAnalyses()
 
 	// Get updated profiles to display
 	return b.sendUserProfiles(msg.Chat.ID)

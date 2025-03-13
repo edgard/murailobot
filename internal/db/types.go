@@ -30,6 +30,8 @@ var (
 	ErrTimeRangeExceeded = errors.New("time range exceeds maximum allowed duration")
 	// ErrDatabaseOperation is returned when a database operation fails.
 	ErrDatabaseOperation = errors.New("database operation failed")
+	// ErrEmptyMessageIDs is returned when an empty slice of message IDs is provided.
+	ErrEmptyMessageIDs = errors.New("empty message IDs slice provided")
 )
 
 // Database defines the interface for chat history and analytics operations.
@@ -50,6 +52,24 @@ type Database interface {
 	// GetGroupMessagesInTimeRange retrieves group messages between start and end times.
 	// Times should be in UTC to ensure consistent queries across timezones.
 	GetGroupMessagesInTimeRange(start, end time.Time) ([]GroupMessage, error)
+
+	// GetAllGroupMessages retrieves all group messages stored in the database.
+	// This can be a potentially large dataset, so handle with care.
+	GetAllGroupMessages() ([]GroupMessage, error)
+
+	// GetUnprocessedGroupMessages retrieves all group messages that have not been processed yet
+	// (have a nil ProcessedAt field).
+	GetUnprocessedGroupMessages() ([]GroupMessage, error)
+
+	// MarkGroupMessagesAsProcessed marks a batch of group messages as processed
+	// by setting their ProcessedAt timestamp to the current time.
+	// This operation is used to track which messages have been analyzed for profiles.
+	MarkGroupMessagesAsProcessed(messageIDs []uint) error
+
+	// DeleteProcessedGroupMessages deletes all group messages that have been processed
+	// (have a non-nil ProcessedAt field) and were processed before the given cutoff time.
+	// This provides a safety window where messages remain available for re-processing if needed.
+	DeleteProcessedGroupMessages(cutoffTime time.Time) error
 
 	// GetUserProfile retrieves a user's profile by user ID.
 	// Returns nil and no error if the profile does not exist.
@@ -106,6 +126,9 @@ type GroupMessage struct {
 	UserID    int64     `gorm:"not null;index"     json:"user_id"`   // Message sender's identifier
 	Message   string    `gorm:"not null;type:text" json:"message"`   // Content of the message
 	Timestamp time.Time `gorm:"not null;index"     json:"timestamp"` // When the message was sent
+
+	// Processing tracking
+	ProcessedAt *time.Time `gorm:"index" json:"processed_at"` // When this message was processed for profiles
 }
 
 // UserProfile represents a user's accumulated profile information

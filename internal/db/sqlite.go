@@ -103,6 +103,67 @@ func (d *sqliteDB) GetGroupMessagesInTimeRange(start, end time.Time) ([]GroupMes
 	return groupMsgs, nil
 }
 
+// GetAllGroupMessages retrieves all group messages stored in the database.
+func (d *sqliteDB) GetAllGroupMessages() ([]GroupMessage, error) {
+	var groupMsgs []GroupMessage
+
+	// We'll order by timestamp to process messages chronologically
+	if err := d.db.Order("timestamp asc").
+		Find(&groupMsgs).Error; err != nil {
+		return nil, fmt.Errorf("failed to get all group messages: %w", err)
+	}
+
+	return groupMsgs, nil
+}
+
+// GetUnprocessedGroupMessages retrieves all group messages that have not been processed yet.
+func (d *sqliteDB) GetUnprocessedGroupMessages() ([]GroupMessage, error) {
+	var groupMsgs []GroupMessage
+
+	// Get only messages where processed_at is NULL, ordered chronologically
+	if err := d.db.Where("processed_at IS NULL").
+		Order("timestamp asc").
+		Find(&groupMsgs).Error; err != nil {
+		return nil, fmt.Errorf("failed to get unprocessed group messages: %w", err)
+	}
+
+	return groupMsgs, nil
+}
+
+// MarkGroupMessagesAsProcessed marks a batch of group messages as processed.
+func (d *sqliteDB) MarkGroupMessagesAsProcessed(messageIDs []uint) error {
+	if len(messageIDs) == 0 {
+		return ErrEmptyMessageIDs
+	}
+
+	now := time.Now().UTC()
+
+	// Update all messages in the batch with the current timestamp
+	if err := d.db.Model(&GroupMessage{}).
+		Where("id IN ?", messageIDs).
+		Update("processed_at", now).Error; err != nil {
+		return fmt.Errorf("%w: failed to mark messages as processed: %w", ErrDatabaseOperation, err)
+	}
+
+	return nil
+}
+
+// DeleteProcessedGroupMessages deletes processed messages older than the cutoff time.
+func (d *sqliteDB) DeleteProcessedGroupMessages(cutoffTime time.Time) error {
+	if cutoffTime.IsZero() {
+		return ErrZeroTimeValue
+	}
+
+	// Only delete messages that have been processed (non-nil processed_at)
+	// and whose processed_at timestamp is older than the cutoff time
+	if err := d.db.Where("processed_at IS NOT NULL AND processed_at < ?", cutoffTime).
+		Delete(&GroupMessage{}).Error; err != nil {
+		return fmt.Errorf("%w: failed to delete processed messages: %w", ErrDatabaseOperation, err)
+	}
+
+	return nil
+}
+
 const maxTimeRange = 31 * 24 * time.Hour // Maximum 31 days range
 
 // validateTimeRange ensures the time range is valid.
