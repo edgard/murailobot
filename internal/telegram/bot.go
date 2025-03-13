@@ -62,9 +62,6 @@ func New(cfg *config.Config, database db.Database, aiClient ai.Service, sched sc
 		running: make(chan struct{}),
 	}
 
-	// Set the bot's UID in the AI client to filter it from user profiles
-	aiClient.SetBotUID(api.Self.ID)
-
 	return bot, nil
 }
 
@@ -557,10 +554,6 @@ func (b *Bot) sendUserProfiles(chatID int64) error {
 	// Sort users by ID for consistent display
 	userIDs := make([]int64, 0, len(profiles))
 	for userID := range profiles {
-		// Skip the bot's own UID
-		if userID == b.api.Self.ID {
-			continue
-		}
 		userIDs = append(userIDs, userID)
 	}
 
