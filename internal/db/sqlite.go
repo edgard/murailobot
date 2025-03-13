@@ -122,6 +122,15 @@ func validateTimeRange(start, end time.Time) error {
 	return nil
 }
 
+// DeleteChatHistory removes only the chat history, preserving user profiles and group messages.
+func (d *sqliteDB) DeleteChatHistory() error {
+	if err := d.db.Session(&gorm.Session{AllowGlobalUpdate: true}).Delete(&ChatHistory{}).Error; err != nil {
+		return fmt.Errorf("%w: failed to delete chat history: %w", ErrDatabaseOperation, err)
+	}
+
+	return nil
+}
+
 // DeleteAll removes all stored data in a single transaction.
 func (d *sqliteDB) DeleteAll() error {
 	if err := d.db.Transaction(func(tx *gorm.DB) error {

@@ -61,6 +61,11 @@ type Database interface {
 	// GetAllUserProfiles retrieves all user profiles.
 	GetAllUserProfiles() (map[int64]*UserProfile, error)
 
+	// DeleteChatHistory removes only the chat history, preserving user profiles and group messages.
+	// This operation cannot be undone.
+	// It returns an error if the deletion fails.
+	DeleteChatHistory() error
+
 	// DeleteAll removes all stored data, including chat history, group messages, and analyses.
 	// This operation cannot be undone.
 	// It returns an error if the deletion fails.

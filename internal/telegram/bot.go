@@ -331,7 +331,7 @@ func (b *Bot) handleReset(msg *tgbotapi.Message) error {
 
 	logging.Info("resetting chat history", "user_id", userID)
 
-	if err := b.db.DeleteAll(); err != nil {
+	if err := b.db.DeleteChatHistory(); err != nil {
 		logging.Error("failed to reset chat history",
 			"error", err,
 			"user_id", userID)
