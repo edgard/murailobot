@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -104,6 +105,7 @@ func (b *Bot) setupCommands() error {
 		{Command: "mrl_reset", Description: "Reset chat history (admin only)"},
 		{Command: "mrl_analyze", Description: "Analyze user messages and update profiles (admin only)"},
 		{Command: "mrl_profiles", Description: "Show user profiles (admin only)"},
+		{Command: "mrl_edit_user", Description: "Edit user profile traits (admin only)"},
 	}
 
 	cmdConfig := tgbotapi.NewSetMyCommands(commands...)
@@ -173,6 +175,8 @@ func (b *Bot) handleCommand(update tgbotapi.Update) {
 		err = b.handleAnalyzeCommand(msg)
 	case "mrl_profiles":
 		err = b.handleProfilesCommand(msg)
+	case "mrl_edit_user":
+		err = b.handleEditUserCommand(msg)
 	}
 
 	if err != nil {
@@ -603,6 +607,124 @@ func (b *Bot) sendUserProfiles(chatID int64) error {
 
 	reply := tgbotapi.NewMessage(chatID, profilesReport.String())
 
+	return b.sendMessage(reply)
+}
+
+// handleEditUserCommand processes the /mrl_edit_user command.
+// Format: /mrl_edit_user [user_id] [field] [new_value]
+// Fields: displaynames, origin, location, age, traits
+func (b *Bot) handleEditUserCommand(msg *tgbotapi.Message) error {
+	if msg == nil {
+		return ErrNilMessage
+	}
+
+	// Check if user is admin
+	userID := msg.From.ID
+	if !b.isUserAuthorized(userID) {
+		logging.Warn("unauthorized access attempt",
+			"user_id", msg.From.ID,
+			"action", "edit_user_profile")
+
+		reply := tgbotapi.NewMessage(msg.Chat.ID, b.cfg.Messages.Unauthorized)
+		if err := b.sendMessage(reply); err != nil {
+			logging.Error("failed to send unauthorized message",
+				"error", err,
+				"user_id", msg.From.ID)
+		}
+
+		return ErrUnauthorized
+	}
+
+	// Parse command arguments
+	// Format: /mrl_edit_user [user_id] [field] [new_value]
+	args := strings.Fields(strings.TrimSpace(strings.TrimPrefix(msg.Text, "/mrl_edit_user")))
+
+	if len(args) < 3 {
+		usage := "Usage: /mrl_edit_user [user_id] [field] [new_value]\n\n" +
+			"Fields:\n" +
+			"- displaynames: User's display names\n" +
+			"- origin: Origin location\n" +
+			"- location: Current location\n" +
+			"- age: Age range\n" +
+			"- traits: Personality traits\n\n" +
+			"Example: /mrl_edit_user 123456789 traits friendly, helpful, technical"
+
+		reply := tgbotapi.NewMessage(msg.Chat.ID, usage)
+		return b.sendMessage(reply)
+	}
+
+	// Parse target user ID
+	targetUserID, err := strconv.ParseInt(args[0], 10, 64)
+	if err != nil {
+		reply := tgbotapi.NewMessage(msg.Chat.ID, "Invalid user ID. Please provide a valid numeric ID.")
+		return b.sendMessage(reply)
+	}
+
+	// Get the field to edit
+	field := strings.ToLower(args[1])
+
+	// Get the new value (everything after the field)
+	newValue := strings.Join(args[2:], " ")
+
+	// Get the user profile
+	profile, err := b.db.GetUserProfile(targetUserID)
+	if err != nil {
+		logging.Error("failed to get user profile",
+			"error", err,
+			"target_user_id", targetUserID)
+
+		reply := tgbotapi.NewMessage(msg.Chat.ID, b.cfg.Messages.GeneralError)
+		return b.sendMessage(reply)
+	}
+
+	// Create profile if it doesn't exist
+	if profile == nil {
+		profile = &db.UserProfile{
+			UserID:      targetUserID,
+			LastUpdated: time.Now().UTC(),
+		}
+	}
+
+	// Update the appropriate field
+	var fieldName string
+	switch field {
+	case "displaynames":
+		profile.DisplayNames = newValue
+		fieldName = "Display Names"
+	case "origin":
+		profile.OriginLocation = newValue
+		fieldName = "Origin Location"
+	case "location":
+		profile.CurrentLocation = newValue
+		fieldName = "Current Location"
+	case "age":
+		profile.AgeRange = newValue
+		fieldName = "Age Range"
+	case "traits":
+		profile.Traits = newValue
+		fieldName = "Traits"
+	default:
+		reply := tgbotapi.NewMessage(msg.Chat.ID,
+			"Invalid field. Please use: displaynames, origin, location, age, or traits.")
+		return b.sendMessage(reply)
+	}
+
+	// Update last updated timestamp
+	profile.LastUpdated = time.Now().UTC()
+
+	// Save the updated profile
+	if err := b.db.SaveUserProfile(profile); err != nil {
+		logging.Error("failed to save user profile",
+			"error", err,
+			"target_user_id", targetUserID)
+
+		reply := tgbotapi.NewMessage(msg.Chat.ID, b.cfg.Messages.GeneralError)
+		return b.sendMessage(reply)
+	}
+
+	// Send confirmation
+	confirmation := fmt.Sprintf("✅ Successfully updated %s for user %d to: %s", fieldName, targetUserID, newValue)
+	reply := tgbotapi.NewMessage(msg.Chat.ID, confirmation)
 	return b.sendMessage(reply)
 }
 
