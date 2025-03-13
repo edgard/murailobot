@@ -1,3 +1,4 @@
+// Package scheduler provides job scheduling functionality with cron expressions.
 package scheduler
 
 import (

@@ -1,3 +1,5 @@
+// Package telegram implements the Telegram bot functionality, handling
+// commands, messages, and user interactions.
 package telegram
 
 import (

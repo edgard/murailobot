@@ -15,24 +15,24 @@ const (
 
 // Regular expression patterns and character replacers used for text sanitization.
 var (
-	// - DEL (0x7F): Delete character.
-	ControlCharsRegex = regexp.MustCompile(`[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]`)
+	// controlCharsRegex matches ASCII control characters (including DEL 0x7F) that should be removed.
+	controlCharsRegex = regexp.MustCompile(`[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]`)
 
-	// MultipleNewlinesRegex matches sequences of 3 or more newlines.
+	// multipleNewlinesRegex matches sequences of 3 or more newlines.
 	// Used to normalize excessive line breaks into a consistent double newline format
 	// to maintain paragraph separation while removing unnecessary extra blank lines.
-	MultipleNewlinesRegex = regexp.MustCompile("\n{" + strconv.Itoa(minNewlinesThreshold) + ",}")
+	multipleNewlinesRegex = regexp.MustCompile("\n{" + strconv.Itoa(minNewlinesThreshold) + ",}")
 
-	// MetadataFormatRegex matches timestamp metadata prefixes in the format:
+	// metadataFormatRegex matches timestamp metadata prefixes in the format:
 	// "[2025-03-06T22:30:11+01:00] USER:" or with fractional seconds or UTC 'Z' timezone.
 	// Used to remove bot message metadata prefixes that may appear in logs and automated messages.
 	// The regex matches everything up to the last colon (and its trailing whitespace) after the timestamp,
 	// allowing for identifiers that contain colons (like "System:Log:Info:").
-	MetadataFormatRegex = regexp.MustCompile(`^\s*\[\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})\]\s+[^:]*(?::[^:]*)*:\s*`)
+	metadataFormatRegex = regexp.MustCompile(`^\s*\[\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})\]\s+[^:]*(?::[^:]*)*:\s*`)
 
-	// UnicodeReplacer defines mappings for Unicode character normalization to ensure consistent
+	// unicodeReplacer defines mappings for Unicode character normalization to ensure consistent
 	// text formatting by handling special Unicode characters that may cause display issues.
-	UnicodeReplacer = strings.NewReplacer(
+	unicodeReplacer = strings.NewReplacer(
 		// Invisible format control characters - remove these
 		"\u2060", "", // Word Joiner - remove (invisible character used to prevent line breaks)
 		"\uFEFF", "", // Byte Order Mark - remove (can cause issues at start of text)

@@ -9,13 +9,16 @@ import (
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
+// Default bot operational parameters.
 const (
-	defaultUpdateOffset   = 0
-	defaultUpdateTimeout  = 60
+	// defaultUpdateOffset defines the starting point for update retrieval (0 = from latest).
+	defaultUpdateOffset = 0
+
+	// defaultUpdateTimeout defines how long to wait for updates (in seconds).
+	defaultUpdateTimeout = 60
+
+	// defaultTypingInterval defines how often to send typing indicators to show the bot is active.
 	defaultTypingInterval = 5 * time.Second
-	defaultRetryAttempts  = 3
-	defaultRetryDelay     = 500 * time.Millisecond
-	hoursInDay            = 24
 )
 
 // messages defines bot response templates.

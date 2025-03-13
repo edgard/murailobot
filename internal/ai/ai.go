@@ -327,7 +327,7 @@ func (c *client) GenerateUserProfiles(messages []db.GroupMessage, existingProfil
 	return updatedProfiles, nil
 }
 
-// createCompletion handles the common logic for making API requests with retries.
+// createCompletion handles the common logic for making API requests.
 func (c *client) createCompletion(req completionRequest) (string, error) {
 	var response string
 

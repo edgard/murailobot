@@ -60,12 +60,12 @@ func Sanitize(input string) (string, error) {
 		return "", errs.NewValidationError("empty input string", nil)
 	}
 
-	input = MetadataFormatRegex.ReplaceAllString(input, "")
+	input = metadataFormatRegex.ReplaceAllString(input, "")
 
 	s := strings.ReplaceAll(input, "\r\n", "\n")
 	s = strings.ReplaceAll(s, "\r", "\n")
-	s = UnicodeReplacer.Replace(s)
-	s = ControlCharsRegex.ReplaceAllString(s, " ")
+	s = unicodeReplacer.Replace(s)
+	s = controlCharsRegex.ReplaceAllString(s, " ")
 
 	parts := strings.Split(s, "\n")
 	for i := range parts {
@@ -73,7 +73,7 @@ func Sanitize(input string) (string, error) {
 	}
 
 	s = strings.Join(parts, "\n")
-	s = MultipleNewlinesRegex.ReplaceAllString(s, "\n\n")
+	s = multipleNewlinesRegex.ReplaceAllString(s, "\n\n")
 
 	result := strings.TrimSpace(s)
 	if result == "" {

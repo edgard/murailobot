@@ -1,3 +1,5 @@
+// Package errors provides structured error types for the application with error codes
+// that can be used for error handling and reporting.
 package errors
 
 import (
@@ -5,7 +7,7 @@ import (
 	"fmt"
 )
 
-// Standard error codes for the application.
+// Error code constants for categorizing application errors.
 const (
 	CodeUnknown      = "UNKNOWN"
 	CodeDatabase     = "DATABASE"
@@ -15,14 +17,16 @@ const (
 	CodeUnauthorized = "UNAUTHORIZED"
 )
 
-// ApplicationError is the interface that all our custom errors implement.
+// ApplicationError is the interface that all custom application errors implement.
+// It extends the standard error interface with methods to retrieve error codes
+// and unwrap nested errors.
 type ApplicationError interface {
 	error
 	Code() string
 	Unwrap() error
 }
 
-// Error represents a basic application error.
+// Error represents a basic application error with code, message and wrapped error.
 type Error struct {
 	code    string
 	message string
@@ -45,7 +49,8 @@ func (e *Error) Unwrap() error {
 	return e.err
 }
 
-// or CodeUnknown if it doesn't.
+// Code returns the error code of an application error
+// or CodeUnknown if it doesn't implement ApplicationError.
 func Code(err error) string {
 	var appErr ApplicationError
 	if errors.As(err, &appErr) {
@@ -55,8 +60,7 @@ func Code(err error) string {
 	return CodeUnknown
 }
 
-// Specific error types and constructors
-
+// DatabaseError represents database-related errors.
 type DatabaseError struct {
 	base Error
 }
@@ -73,6 +77,7 @@ func (e *DatabaseError) Unwrap() error {
 	return e.base.Unwrap()
 }
 
+// NewDatabaseError creates a new error for database operations.
 func NewDatabaseError(message string, cause error) error {
 	return &DatabaseError{
 		base: Error{
@@ -83,6 +88,7 @@ func NewDatabaseError(message string, cause error) error {
 	}
 }
 
+// ValidationError represents input validation errors.
 type ValidationError struct {
 	base Error
 }
@@ -99,6 +105,7 @@ func (e *ValidationError) Unwrap() error {
 	return e.base.Unwrap()
 }
 
+// NewValidationError creates a new error for validation failures.
 func NewValidationError(message string, cause error) error {
 	return &ValidationError{
 		base: Error{
@@ -109,6 +116,7 @@ func NewValidationError(message string, cause error) error {
 	}
 }
 
+// APIError represents errors from external API calls.
 type APIError struct {
 	base Error
 }
@@ -125,6 +133,7 @@ func (e *APIError) Unwrap() error {
 	return e.base.Unwrap()
 }
 
+// NewAPIError creates a new error for API operation failures.
 func NewAPIError(message string, cause error) error {
 	return &APIError{
 		base: Error{
@@ -135,6 +144,7 @@ func NewAPIError(message string, cause error) error {
 	}
 }
 
+// ConfigError represents configuration-related errors.
 type ConfigError struct {
 	base Error
 }
@@ -151,6 +161,7 @@ func (e *ConfigError) Unwrap() error {
 	return e.base.Unwrap()
 }
 
+// NewConfigError creates a new error for configuration issues.
 func NewConfigError(message string, cause error) error {
 	return &ConfigError{
 		base: Error{
@@ -161,6 +172,7 @@ func NewConfigError(message string, cause error) error {
 	}
 }
 
+// UnauthorizedError represents authentication or permission errors.
 type UnauthorizedError struct {
 	base Error
 }
@@ -177,6 +189,7 @@ func (e *UnauthorizedError) Unwrap() error {
 	return e.base.Unwrap()
 }
 
+// NewUnauthorizedError creates a new error for authorization failures.
 func NewUnauthorizedError(message string) error {
 	return &UnauthorizedError{
 		base: Error{
