@@ -40,6 +40,12 @@ func New(cfg *config.Config, db database) (Service, error) {
 	return c, nil
 }
 
+// SetBotInfo sets the bot's Telegram User ID and username for profile handling.
+func (c *client) SetBotInfo(uid int64, username string) {
+	c.botUID = uid
+	c.botUsername = username
+}
+
 // Generate creates an AI response for a user message.
 func (c *client) Generate(userID int64, userMsg string, userProfiles map[int64]*db.UserProfile) (string, error) {
 	userMsg = strings.TrimSpace(userMsg)
@@ -73,6 +79,11 @@ func (c *client) Generate(userID int64, userMsg string, userProfiles map[int64]*
 
 		// Add each profile in the pipe-delimited format
 		for _, id := range userIDs {
+			// Add special handling for bot's profile
+			if id == c.botUID {
+				profileInfo.WriteString(fmt.Sprintf("UID %d (%s) | Internet | Internet | N/A | Group Chat Bot\n", id, c.botUsername))
+				continue
+			}
 			profile := userProfiles[id]
 			profileInfo.WriteString(profile.FormatPipeDelimited() + "\n")
 		}
@@ -272,6 +283,35 @@ Respond ONLY with the JSON object and no additional text or explanation.`,
 		if userID == 0 {
 			logging.Warn("user ID is zero", "user_id_str", userIDStr)
 
+			continue
+		}
+
+		// Add special handling for bot's profile
+		if userID == c.botUID {
+			logging.Debug("adding bot's own profile with special handling", "bot_uid", c.botUID)
+
+			// Calculate message count for bot
+			botMessageCount := 0
+			if msgs, exists := userMessages[userID]; exists {
+				botMessageCount = len(msgs)
+			}
+
+			// Add existing message count if profile exists
+			if existingProfile, exists := existingProfiles[userID]; exists {
+				botMessageCount += existingProfile.MessageCount
+			}
+
+			// Create a special profile for the bot
+			updatedProfiles[userID] = &db.UserProfile{
+				UserID:          userID,
+				DisplayNames:    c.botUsername,
+				OriginLocation:  "Internet",
+				CurrentLocation: "Internet",
+				AgeRange:        "N/A",
+				Traits:          "Group Chat Bot",
+				LastUpdated:     time.Now().UTC(),
+				MessageCount:    botMessageCount,
+			}
 			continue
 		}
 

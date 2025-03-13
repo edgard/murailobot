@@ -64,6 +64,12 @@ type Service interface {
 	// - ErrNoMessages if messages slice is empty
 	// - ErrJSONUnmarshal if the API response cannot be parsed
 	GenerateUserProfiles(messages []db.GroupMessage, existingProfiles map[int64]*db.UserProfile) (map[int64]*db.UserProfile, error)
+
+	// Configuration methods
+
+	// SetBotInfo sets the bot's Telegram User ID and username for profile handling.
+	// This information will be used to add special handling for the bot in user profiles.
+	SetBotInfo(uid int64, username string)
 }
 
 // client implements the Service interface using OpenAI's API.
@@ -80,6 +86,10 @@ type client struct {
 
 	// Dependencies
 	db database // Database for conversation history
+
+	// Bot information
+	botUID      int64  // Bot's Telegram User ID
+	botUsername string // Bot's Telegram username
 }
 
 // database defines the required database operations for AI functionality.

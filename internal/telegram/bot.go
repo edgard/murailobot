@@ -62,6 +62,9 @@ func New(cfg *config.Config, database db.Database, aiClient ai.Service, sched sc
 		running: make(chan struct{}),
 	}
 
+	// Set the bot's info in the AI client for special handling in profiles
+	aiClient.SetBotInfo(api.Self.ID, api.Self.UserName)
+
 	return bot, nil
 }
 
