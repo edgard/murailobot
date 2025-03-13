@@ -2,7 +2,7 @@
 // It currently implements a SQLite-based storage backend with support for:
 // - Chat history management
 // - Group message tracking
-// - User behavior analysis
+// - User profiles
 // - Context-aware operations
 package db
 
@@ -106,25 +106,6 @@ type GroupMessage struct {
 	UserID    int64     `gorm:"not null;index"     json:"user_id"`   // Message sender's identifier
 	Message   string    `gorm:"not null;type:text" json:"message"`   // Content of the message
 	Timestamp time.Time `gorm:"not null;index"     json:"timestamp"` // When the message was sent
-}
-
-// UserAnalysis represents a comprehensive behavioral and personality analysis
-// for a specific user based on their chat interactions.
-type UserAnalysis struct {
-	gorm.Model
-	// Analysis metadata
-	UserID       int64     `gorm:"not null;index" json:"user_id"`       // User being analyzed
-	Date         time.Time `gorm:"not null;index" json:"date"`          // When analysis was performed
-	MessageCount int       `gorm:"not null"       json:"message_count"` // Number of messages analyzed
-
-	// Analysis results
-	CommunicationStyle string `gorm:"type:text" json:"communication_style"`  // How the user communicates
-	PersonalityTraits  string `gorm:"type:text" json:"personality_traits"`   // Observed personality characteristics
-	BehavioralPatterns string `gorm:"type:text" json:"behavioral_patterns"`  // Consistent behavior patterns
-	WordChoicePatterns string `gorm:"type:text" json:"word_choice_patterns"` // Language and vocabulary usage
-	InteractionHabits  string `gorm:"type:text" json:"interaction_habits"`   // How user engages with others
-	UniqueQuirks       string `gorm:"type:text" json:"unique_quirks"`        // Distinctive characteristics
-	EmotionalTriggers  string `gorm:"type:text" json:"emotional_triggers"`   // Topics causing emotional responses
 }
 
 // UserProfile represents a user's accumulated profile information

@@ -29,7 +29,7 @@ func New() (Database, error) {
 
 	sqlDB.SetMaxOpenConns(defaultMaxOpenConn)
 
-	if err := db.AutoMigrate(&ChatHistory{}, &GroupMessage{}, &UserAnalysis{}, &UserProfile{}); err != nil {
+	if err := db.AutoMigrate(&ChatHistory{}, &GroupMessage{}, &UserProfile{}); err != nil {
 		return nil, fmt.Errorf("failed to run migrations: %w", err)
 	}
 
@@ -140,10 +140,6 @@ func (d *sqliteDB) DeleteAll() error {
 
 		if err := tx.Session(&gorm.Session{AllowGlobalUpdate: true}).Delete(&GroupMessage{}).Error; err != nil {
 			return fmt.Errorf("failed to delete group messages: %w", err)
-		}
-
-		if err := tx.Session(&gorm.Session{AllowGlobalUpdate: true}).Delete(&UserAnalysis{}).Error; err != nil {
-			return fmt.Errorf("failed to delete user analyses: %w", err)
 		}
 
 		if err := tx.Session(&gorm.Session{AllowGlobalUpdate: true}).Delete(&UserProfile{}).Error; err != nil {
