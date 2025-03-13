@@ -76,6 +76,8 @@ func (b *Bot) Start() error {
 	updates := b.api.GetUpdatesChan(updateConfig)
 
 	logging.Info("bot started successfully",
+		"bot_username", b.api.Self.UserName,
+		"bot_id", b.api.Self.ID,
 		"admin_id", b.cfg.AdminID)
 
 	b.scheduleDailyAnalysis()
