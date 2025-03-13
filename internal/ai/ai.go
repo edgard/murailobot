@@ -40,10 +40,11 @@ func New(cfg *config.Config, db database) (Service, error) {
 	return c, nil
 }
 
-// SetBotInfo sets the bot's Telegram User ID and username for profile handling.
-func (c *client) SetBotInfo(uid int64, username string) {
+// SetBotInfo sets the bot's Telegram User ID, username, and display name for profile handling.
+func (c *client) SetBotInfo(uid int64, username string, displayName string) {
 	c.botUID = uid
 	c.botUsername = username
+	c.botDisplayName = displayName
 }
 
 // Generate creates an AI response for a user message.
@@ -81,7 +82,12 @@ func (c *client) Generate(userID int64, userMsg string, userProfiles map[int64]*
 		for _, id := range userIDs {
 			// Add special handling for bot's profile
 			if id == c.botUID {
-				profileInfo.WriteString(fmt.Sprintf("UID %d (%s) | Internet | Internet | N/A | Group Chat Bot\n", id, c.botUsername))
+				// Create display names by combining username and display name
+				botDisplayNames := c.botUsername
+				if c.botDisplayName != "" && c.botDisplayName != c.botUsername {
+					botDisplayNames = fmt.Sprintf("%s, %s", c.botDisplayName, c.botUsername)
+				}
+				profileInfo.WriteString(fmt.Sprintf("UID %d (%s) | Internet | Internet | N/A | Group Chat Bot\n", id, botDisplayNames))
 				continue
 			}
 			profile := userProfiles[id]
@@ -290,10 +296,16 @@ Respond ONLY with the JSON object and no additional text or explanation.`,
 		if userID == c.botUID {
 			logging.Debug("adding bot's own profile with special handling", "bot_uid", c.botUID)
 
+			// Create display names by combining username and display name
+			botDisplayNames := c.botUsername
+			if c.botDisplayName != "" && c.botDisplayName != c.botUsername {
+				botDisplayNames = fmt.Sprintf("%s, %s", c.botDisplayName, c.botUsername)
+			}
+
 			// Create a special profile for the bot
 			updatedProfiles[userID] = &db.UserProfile{
 				UserID:          userID,
-				DisplayNames:    c.botUsername,
+				DisplayNames:    botDisplayNames,
 				OriginLocation:  "Internet",
 				CurrentLocation: "Internet",
 				AgeRange:        "N/A",

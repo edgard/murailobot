@@ -63,7 +63,7 @@ func New(cfg *config.Config, database db.Database, aiClient ai.Service, sched sc
 	}
 
 	// Set the bot's info in the AI client for special handling in profiles
-	aiClient.SetBotInfo(api.Self.ID, api.Self.UserName)
+	aiClient.SetBotInfo(api.Self.ID, api.Self.UserName, api.Self.FirstName)
 
 	return bot, nil
 }

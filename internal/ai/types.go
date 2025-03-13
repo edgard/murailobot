@@ -67,9 +67,9 @@ type Service interface {
 
 	// Configuration methods
 
-	// SetBotInfo sets the bot's Telegram User ID and username for profile handling.
+	// SetBotInfo sets the bot's Telegram User ID, username, and display name for profile handling.
 	// This information will be used to add special handling for the bot in user profiles.
-	SetBotInfo(uid int64, username string)
+	SetBotInfo(uid int64, username string, displayName string)
 }
 
 // client implements the Service interface using OpenAI's API.
@@ -88,8 +88,9 @@ type client struct {
 	db database // Database for conversation history
 
 	// Bot information
-	botUID      int64  // Bot's Telegram User ID
-	botUsername string // Bot's Telegram username
+	botUID         int64  // Bot's Telegram User ID
+	botUsername    string // Bot's Telegram username
+	botDisplayName string // Bot's Telegram display name
 }
 
 // database defines the required database operations for AI functionality.
