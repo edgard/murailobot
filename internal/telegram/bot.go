@@ -381,6 +381,7 @@ func (b *Bot) scheduleDailyAnalysis() {
 	if err != nil {
 		logging.Error("failed to schedule daily analysis",
 			"error", err)
+
 		return
 	}
 
@@ -411,6 +412,7 @@ func (b *Bot) cleanupProcessedMessages(cutoffTime time.Time) {
 		logging.Error("failed to delete processed messages",
 			"error", err,
 			"cutoff_time", cutoffTime.Format(timeformats.FullTimestamp))
+
 		return
 	}
 
@@ -425,11 +427,13 @@ func (b *Bot) generateUserAnalyses() {
 	if err != nil {
 		logging.Error("failed to get unprocessed group messages",
 			"error", err)
+
 		return
 	}
 
 	if len(unprocessedMessages) == 0 {
 		logging.Info("no unprocessed messages to analyze")
+
 		return
 	}
 
@@ -441,6 +445,7 @@ func (b *Bot) generateUserAnalyses() {
 	if err != nil {
 		logging.Error("failed to get existing profiles",
 			"error", err)
+
 		existingProfiles = make(map[int64]*db.UserProfile)
 	}
 
@@ -449,6 +454,7 @@ func (b *Bot) generateUserAnalyses() {
 	if err != nil {
 		logging.Error("failed to generate user profiles",
 			"error", err)
+
 		return
 	}
 
@@ -459,15 +465,19 @@ func (b *Bot) generateUserAnalyses() {
 			if newProfile.DisplayNames == "" {
 				newProfile.DisplayNames = existingProfile.DisplayNames
 			}
+
 			if newProfile.OriginLocation == "" {
 				newProfile.OriginLocation = existingProfile.OriginLocation
 			}
+
 			if newProfile.CurrentLocation == "" {
 				newProfile.CurrentLocation = existingProfile.CurrentLocation
 			}
+
 			if newProfile.AgeRange == "" {
 				newProfile.AgeRange = existingProfile.AgeRange
 			}
+
 			if newProfile.Traits == "" {
 				newProfile.Traits = existingProfile.Traits
 			}
@@ -610,9 +620,7 @@ func (b *Bot) sendUserProfiles(chatID int64) error {
 	return b.sendMessage(reply)
 }
 
-// handleEditUserCommand processes the /mrl_edit_user command.
-// Format: /mrl_edit_user [user_id] [field] [new_value]
-// Fields: displaynames, origin, location, age, traits
+// Fields: displaynames, origin, location, age, traits.
 func (b *Bot) handleEditUserCommand(msg *tgbotapi.Message) error {
 	if msg == nil {
 		return ErrNilMessage
@@ -650,6 +658,7 @@ func (b *Bot) handleEditUserCommand(msg *tgbotapi.Message) error {
 			"Example: /mrl_edit_user 123456789 traits friendly, helpful, technical"
 
 		reply := tgbotapi.NewMessage(msg.Chat.ID, usage)
+
 		return b.sendMessage(reply)
 	}
 
@@ -657,6 +666,7 @@ func (b *Bot) handleEditUserCommand(msg *tgbotapi.Message) error {
 	targetUserID, err := strconv.ParseInt(args[0], 10, 64)
 	if err != nil {
 		reply := tgbotapi.NewMessage(msg.Chat.ID, "Invalid user ID. Please provide a valid numeric ID.")
+
 		return b.sendMessage(reply)
 	}
 
@@ -674,6 +684,7 @@ func (b *Bot) handleEditUserCommand(msg *tgbotapi.Message) error {
 			"target_user_id", targetUserID)
 
 		reply := tgbotapi.NewMessage(msg.Chat.ID, b.cfg.Messages.GeneralError)
+
 		return b.sendMessage(reply)
 	}
 
@@ -687,6 +698,7 @@ func (b *Bot) handleEditUserCommand(msg *tgbotapi.Message) error {
 
 	// Update the appropriate field
 	var fieldName string
+
 	switch field {
 	case "displaynames":
 		profile.DisplayNames = newValue
@@ -706,6 +718,7 @@ func (b *Bot) handleEditUserCommand(msg *tgbotapi.Message) error {
 	default:
 		reply := tgbotapi.NewMessage(msg.Chat.ID,
 			"Invalid field. Please use: displaynames, origin, location, age, or traits.")
+
 		return b.sendMessage(reply)
 	}
 
@@ -719,12 +732,14 @@ func (b *Bot) handleEditUserCommand(msg *tgbotapi.Message) error {
 			"target_user_id", targetUserID)
 
 		reply := tgbotapi.NewMessage(msg.Chat.ID, b.cfg.Messages.GeneralError)
+
 		return b.sendMessage(reply)
 	}
 
 	// Send confirmation
 	confirmation := fmt.Sprintf("✅ Successfully updated %s for user %d to: %s", fieldName, targetUserID, newValue)
 	reply := tgbotapi.NewMessage(msg.Chat.ID, confirmation)
+
 	return b.sendMessage(reply)
 }
 

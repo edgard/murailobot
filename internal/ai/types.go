@@ -26,6 +26,29 @@ const (
 	extraMessageSlots = 2 // Additional slots for system and user context
 )
 
+// Fixed part of the profile instruction that must not be configurable.
+const profileInstructionFixed = `
+### Bot Influence Awareness
+- DO NOT attribute traits based on topics introduced by the bot
+- If the bot mentions a topic and the user merely responds, this is not evidence of a personal trait
+- Only identify traits from topics and interests the user has independently demonstrated
+- Ignore creative embellishments that might have been added by the bot in previous responses
+
+## OUTPUT FORMAT [VERY CRITICAL]
+Return ONLY a JSON object, no additional text, with this structure:
+{
+  "users": {
+    "[user_id]": {
+      "display_names": "Comma-separated list of names/nicknames",
+      "origin_location": "Where the user is from",
+      "current_location": "Where the user currently lives",
+      "age_range": "Approximate age range (20s, 30s, etc.)",
+      "traits": "Comma-separated list of personality traits and characteristics"
+    }
+  }
+}
+`
+
 // Error definitions for the AI package.
 var (
 	// Configuration errors.
@@ -81,8 +104,9 @@ type client struct {
 	temperature float32        // Response randomness (0.0-1.0)
 
 	// Behavioral configuration
-	instruction string        // System instruction for chat context
-	timeout     time.Duration // Maximum time for API operations
+	instruction        string        // System instruction for chat context
+	profileInstruction string        // System instruction for profile generation
+	timeout            time.Duration // Maximum time for API operations
 
 	// Dependencies
 	db database // Database for conversation history

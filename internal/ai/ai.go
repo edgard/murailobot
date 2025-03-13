@@ -29,12 +29,13 @@ func New(cfg *config.Config, db database) (Service, error) {
 	aiCfg.BaseURL = cfg.AIBaseURL
 
 	c := &client{
-		aiClient:    openai.NewClientWithConfig(aiCfg),
-		model:       cfg.AIModel,
-		temperature: cfg.AITemperature,
-		instruction: cfg.AIInstruction,
-		timeout:     cfg.AITimeout,
-		db:          db,
+		aiClient:           openai.NewClientWithConfig(aiCfg),
+		model:              cfg.AIModel,
+		temperature:        cfg.AITemperature,
+		instruction:        cfg.AIInstruction,
+		profileInstruction: cfg.AIProfileInstruction,
+		timeout:            cfg.AITimeout,
+		db:                 db,
 	}
 
 	return c, nil
@@ -87,9 +88,12 @@ func (c *client) Generate(userID int64, userMsg string, userProfiles map[int64]*
 				if c.botDisplayName != "" && c.botDisplayName != c.botUsername {
 					botDisplayNames = fmt.Sprintf("%s, %s", c.botDisplayName, c.botUsername)
 				}
+
 				profileInfo.WriteString(fmt.Sprintf("UID %d (%s) | Internet | Internet | N/A | Group Chat Bot\n", id, botDisplayNames))
+
 				continue
 			}
+
 			profile := userProfiles[id]
 			profileInfo.WriteString(profile.FormatPipeDelimited() + "\n")
 		}
@@ -149,57 +153,11 @@ func (c *client) GenerateUserProfiles(messages []db.GroupMessage, existingProfil
 
 	// Format messages for profile analysis
 	chatMessages := make([]openai.ChatCompletionMessage, 0, len(messages)+extraMessageSlots)
+	// Combine configurable instruction with fixed required parts
+	fullInstruction := fmt.Sprintf("%s\n\n%s", c.profileInstruction, profileInstructionFixed)
 	chatMessages = append(chatMessages, openai.ChatCompletionMessage{
-		Role: "system",
-		Content: `You are a behavioral analyst with expertise in psychology, linguistics, and social dynamics.
-Your task is to analyze chat messages and build detailed psychological profiles of users.
-
-## ANALYSIS APPROACH
-When analyzing messages, pay attention to:
-1. Language patterns, word choice, and communication style
-2. Emotional expressions and reactions to different topics
-3. Recurring themes or topics in their communications
-4. Interaction patterns with other users
-5. Cultural references and personal details they reveal
-
-## DATA PRESERVATION GUIDELINES
-- When existing profile information is provided, you MUST preserve it fully
-- DO NOT replace existing profile fields unless you have clear and specific new evidence that contradicts or updates that information
-- If uncertain about a field, keep the existing information
-- For fields where you have no new information, return an empty string rather than making assumptions
-
-Example: If an existing profile has "origin_location": "Germany" but the messages don't mention location,
-keep this value. Only update if there is clear evidence of a different origin location.
-
-## TRAIT QUALITY GUIDELINES
-- Individual User Traits:
-  - Keep traits distinct and non-redundant within each user profile
-  - Consolidate similar traits (e.g., "interested in gaming news" and "follows gaming trends")
-  - Use precise, concise language without repetition
-  - Focus on breadth of characteristics rather than variations of the same trait
-
-- Bot Influence Awareness:
-  - DO NOT attribute traits based on topics introduced by the bot
-  - If the bot mentions a topic and the user merely responds, this is not evidence of a personal trait
-  - Only identify traits from topics and interests the user has independently demonstrated
-  - Ignore creative embellishments that might have been added by the bot in previous responses
-
-## OUTPUT FORMAT (CRITICALLY IMPORTANT)
-Return a JSON object with this structure:
-{
-  "users": {
-    "[user_id]": {
-      "display_names": "Comma-separated list of names/nicknames",
-      "origin_location": "Where the user is from",
-      "current_location": "Where the user currently lives",
-      "age_range": "Approximate age range (20s, 30s, etc.)",
-      "traits": "Comma-separated list of personality traits and characteristics"
-    }
-  }
-}
-
-Be analytical, perceptive, and detailed while avoiding assumptions without evidence.
-Respond ONLY with the JSON object, no additional text.`,
+		Role:    "system",
+		Content: fullInstruction,
 	})
 
 	// Build the conversation context
@@ -331,6 +289,7 @@ Respond ONLY with the JSON object, no additional text.`,
 				Traits:          "Group Chat Bot",
 				LastUpdated:     time.Now().UTC(),
 			}
+
 			continue
 		}
 
