@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -40,7 +41,7 @@ func New(cfg *config.Config, db database) (Service, error) {
 }
 
 // Generate creates an AI response for a user message.
-func (c *client) Generate(userID int64, userMsg string) (string, error) {
+func (c *client) Generate(userID int64, userMsg string, userProfiles map[int64]*db.UserProfile) (string, error) {
 	userMsg = strings.TrimSpace(userMsg)
 	if userMsg == "" {
 		return "", ErrEmptyUserMessage
@@ -51,10 +52,38 @@ func (c *client) Generate(userID int64, userMsg string) (string, error) {
 		return "", fmt.Errorf("failed to retrieve chat history: %w", err)
 	}
 
+	// Prepare system instruction with user profiles if available
+	systemPrompt := c.instruction
+
+	if len(userProfiles) > 0 {
+		var profileInfo strings.Builder
+
+		profileInfo.WriteString("\n\n## USER PROFILES\n")
+		profileInfo.WriteString("Format: UID [user_id] ([display_names]) | [origin_location] | [current_location] | [age_range] | [traits]\n\n")
+
+		// Sort user IDs for consistent order
+		userIDs := make([]int64, 0, len(userProfiles))
+		for id := range userProfiles {
+			userIDs = append(userIDs, id)
+		}
+
+		sort.Slice(userIDs, func(i, j int) bool {
+			return userIDs[i] < userIDs[j]
+		})
+
+		// Add each profile in the pipe-delimited format
+		for _, id := range userIDs {
+			profile := userProfiles[id]
+			profileInfo.WriteString(profile.FormatPipeDelimited() + "\n")
+		}
+
+		systemPrompt += profileInfo.String()
+	}
+
 	messages := make([]openai.ChatCompletionMessage, 0, messagesSliceCapacity)
 	messages = append(messages, openai.ChatCompletionMessage{
 		Role:    "system",
-		Content: c.instruction,
+		Content: systemPrompt,
 	})
 
 	if len(history) > 0 {
@@ -89,53 +118,86 @@ func (c *client) Generate(userID int64, userMsg string) (string, error) {
 	return response, nil
 }
 
-// GenerateGroupAnalysis creates a behavioral analysis for all users.
-func (c *client) GenerateGroupAnalysis(messages []db.GroupMessage) (map[int64]*db.UserAnalysis, error) {
+// GenerateUserProfiles creates or updates user profiles based on message analysis.
+func (c *client) GenerateUserProfiles(messages []db.GroupMessage, existingProfiles map[int64]*db.UserProfile) (map[int64]*db.UserProfile, error) {
 	if len(messages) == 0 {
 		return nil, ErrNoMessages
 	}
 
 	// Group messages by user
 	userMessages := make(map[int64][]db.GroupMessage)
-
 	for _, msg := range messages {
 		userMessages[msg.UserID] = append(userMessages[msg.UserID], msg)
 	}
 
-	// Format messages for behavior analysis
+	// Format messages for profile analysis
 	chatMessages := make([]openai.ChatCompletionMessage, 0, len(messages)+extraMessageSlots)
 	chatMessages = append(chatMessages, openai.ChatCompletionMessage{
 		Role: "system",
-		Content: `You are a behavioral analyst analyzing chat messages from multiple users in a group.
-Analyze the chat messages and return a JSON object with the following exact structure:
+		Content: `You are a behavioral analyst with expertise in psychology, linguistics, and social dynamics.
+Your task is to analyze chat messages and build detailed psychological profiles of users.
+
+When analyzing messages, consider:
+1. Language patterns, word choice, and communication style
+2. Emotional expressions and reactions to different topics
+3. Recurring themes or topics in their communications
+4. Interaction patterns with other users
+5. Cultural references and personal details they reveal
+
+Analyze the messages and return a JSON object with the following structure:
 
 {
   "users": {
-    "<user_id>": {
-      "communication_style": "Description of how the user communicates",
-      "personality_traits": "Description of personality traits observed in messages",
-      "behavioral_patterns": "Description of consistent behaviors shown in interactions",
-      "word_choice_patterns": "Description of vocabulary, slang, and language patterns used",
-      "interaction_habits": "Description of how the user engages with others",
-      "unique_quirks": "Description of distinctive characteristics",
-      "emotional_triggers": "Description of topics or interactions that cause emotional responses"
+    "[user_id]": {
+      "display_names": "Comma-separated list of names/nicknames",
+      "origin_location": "Where the user is from",
+      "current_location": "Where the user currently lives",
+      "age_range": "Approximate age range (20s, 30s, etc.)",
+      "traits": "Comma-separated list of personality traits and characteristics"
     }
   }
 }
 
-Ensure that:
-1. You include analysis for all users.
-2. The user_id in the JSON must be a string representation of the numeric ID.
-3. All field names use snake_case format as shown above.
-4. All fields must be plain text paragraphs without any nested objects or arrays.
-5. Each description should be concise but informative, ideally 1-2 sentences.
-6. Follow the exact field names shown in the example above - no additional or missing fields.`,
+CRITICALLY IMPORTANT: When existing profile information is provided, you MUST preserve it fully. DO NOT replace any existing profile fields unless you have clear and specific new evidence from the messages that contradicts or updates that information. If you are uncertain about a field, keep the existing information. For fields where you have no new information to add, return an empty string for that field rather than making assumptions.
+
+For example, if an existing profile has "origin_location": "Germany" but the new messages don't mention location, you should not change this value. Only update it if there is clear evidence of a different origin location.
+
+Be analytical, perceptive, and detailed in your assessment while avoiding assumptions without evidence.
+Respond ONLY with the JSON object and no additional text or explanation.`,
 	})
 
 	// Build the conversation context
 	var msgBuilder strings.Builder
 
-	msgBuilder.WriteString("Group Chat Messages:\n\n")
+	// Add existing profile information if available
+	if len(existingProfiles) > 0 {
+		msgBuilder.WriteString("Existing User Profiles:\n\n")
+
+		// Format existing profiles as JSON for consistency
+		msgBuilder.WriteString("{\n  \"users\": {\n")
+
+		i := 0
+		for userID, profile := range existingProfiles {
+			if i > 0 {
+				msgBuilder.WriteString(",\n")
+			}
+
+			msgBuilder.WriteString(fmt.Sprintf("    \"%d\": {\n", userID))
+			msgBuilder.WriteString(fmt.Sprintf("      \"display_names\": \"%s\",\n", profile.DisplayNames))
+			msgBuilder.WriteString(fmt.Sprintf("      \"origin_location\": \"%s\",\n", profile.OriginLocation))
+			msgBuilder.WriteString(fmt.Sprintf("      \"current_location\": \"%s\",\n", profile.CurrentLocation))
+			msgBuilder.WriteString(fmt.Sprintf("      \"age_range\": \"%s\",\n", profile.AgeRange))
+			msgBuilder.WriteString(fmt.Sprintf("      \"traits\": \"%s\"\n", profile.Traits))
+			msgBuilder.WriteString("    }")
+
+			i++
+		}
+
+		msgBuilder.WriteString("\n  }\n}\n\n")
+	}
+
+	// Add new messages
+	msgBuilder.WriteString("New Group Chat Messages:\n\n")
 
 	// Track total messages for logging
 	totalMessages := 0
@@ -154,9 +216,10 @@ Ensure that:
 		msgBuilder.WriteString("\n")
 	}
 
-	logging.Info("analyzing group messages",
+	logging.Info("analyzing group messages for profile updates",
 		"total_messages", totalMessages,
-		"unique_users", len(userMessages))
+		"unique_users", len(userMessages),
+		"existing_profiles", len(existingProfiles))
 
 	chatMessages = append(chatMessages, openai.ChatCompletionMessage{
 		Role:    "user",
@@ -166,72 +229,91 @@ Ensure that:
 	var attemptCount uint
 
 	response, err := c.createCompletion(completionRequest{
-		messages: chatMessages,
-		// These are just for logging purposes in the retry mechanism
-		userID:     0,
+		messages:   chatMessages,
+		userID:     0, // Just for logging
 		attemptNum: &attemptCount,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to generate analysis: %w", err)
+		return nil, fmt.Errorf("failed to generate profiles: %w", err)
 	}
 
 	// Parse the JSON response
-	var userAnalysisResponse struct {
+	var profileResponse struct {
 		Users map[string]struct {
-			CommunicationStyle string `json:"communication_style"`
-			PersonalityTraits  string `json:"personality_traits"`
-			BehavioralPatterns string `json:"behavioral_patterns"`
-			WordChoicePatterns string `json:"word_choice_patterns"`
-			InteractionHabits  string `json:"interaction_habits"`
-			UniqueQuirks       string `json:"unique_quirks"`
-			EmotionalTriggers  string `json:"emotional_triggers"`
+			DisplayNames    string `json:"display_names"`
+			OriginLocation  string `json:"origin_location"`
+			CurrentLocation string `json:"current_location"`
+			AgeRange        string `json:"age_range"`
+			Traits          string `json:"traits"`
 		} `json:"users"`
 	}
 
-	if err := json.Unmarshal([]byte(response), &userAnalysisResponse); err != nil {
+	if err := json.Unmarshal([]byte(response), &profileResponse); err != nil {
+		logging.Error("failed to parse JSON response", "error", err, "response", response)
+
 		return nil, fmt.Errorf("%w: %w", ErrJSONUnmarshal, err)
 	}
 
-	// Convert user analyses to return format
-	result := make(map[int64]*db.UserAnalysis)
+	// Convert to UserProfile objects
+	updatedProfiles := make(map[int64]*db.UserProfile)
 
-	for userIDStr, analysis := range userAnalysisResponse.Users {
+	for userIDStr, profile := range profileResponse.Users {
+		// Convert user ID string to int64
 		userID := int64(0)
 		if _, err := fmt.Sscanf(userIDStr, "%d", &userID); err != nil {
-			logging.Warn("invalid user ID in analysis response",
+			logging.Warn("invalid user ID in profile response",
 				"user_id", userIDStr,
 				"error", err)
 
 			continue
 		}
 
-		// Skip if no messages exist for this user
-		if _, exists := userMessages[userID]; !exists {
-			logging.Warn("analysis received for unknown user",
-				"user_id", userID)
+		// Skip if user ID invalid
+		if userID == 0 {
+			logging.Warn("user ID is zero", "user_id_str", userIDStr)
 
 			continue
 		}
 
-		result[userID] = &db.UserAnalysis{
-			UserID:             userID,
-			Date:               time.Now().UTC(),
-			CommunicationStyle: analysis.CommunicationStyle,
-			PersonalityTraits:  analysis.PersonalityTraits,
-			BehavioralPatterns: analysis.BehavioralPatterns,
-			WordChoicePatterns: analysis.WordChoicePatterns,
-			InteractionHabits:  analysis.InteractionHabits,
-			UniqueQuirks:       analysis.UniqueQuirks,
-			EmotionalTriggers:  analysis.EmotionalTriggers,
-			MessageCount:       len(userMessages[userID]),
+		// Skip if no messages exist for this user and it's not an existing profile
+		if _, hasMessages := userMessages[userID]; !hasMessages {
+			if _, hasProfile := existingProfiles[userID]; !hasProfile {
+				logging.Warn("profile received for user with no messages and no existing profile",
+					"user_id", userID)
+
+				continue
+			}
+		}
+
+		// Calculate message count
+		messageCount := 0
+		if msgs, exists := userMessages[userID]; exists {
+			messageCount = len(msgs)
+		}
+
+		// Add existing message count if profile exists
+		if existingProfile, exists := existingProfiles[userID]; exists {
+			messageCount += existingProfile.MessageCount
+		}
+
+		// Create or update profile
+		updatedProfiles[userID] = &db.UserProfile{
+			UserID:          userID,
+			DisplayNames:    profile.DisplayNames,
+			OriginLocation:  profile.OriginLocation,
+			CurrentLocation: profile.CurrentLocation,
+			AgeRange:        profile.AgeRange,
+			Traits:          profile.Traits,
+			LastUpdated:     time.Now().UTC(),
+			MessageCount:    messageCount,
 		}
 	}
 
-	logging.Info("group analysis completed",
-		"users_analyzed", len(result),
+	logging.Info("user profiles generated",
+		"profiles_created", len(updatedProfiles),
 		"total_messages", totalMessages)
 
-	return result, nil
+	return updatedProfiles, nil
 }
 
 // createCompletion handles the common logic for making API requests with retries.

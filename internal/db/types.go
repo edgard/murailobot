@@ -2,12 +2,13 @@
 // It currently implements a SQLite-based storage backend with support for:
 // - Chat history management
 // - Group message tracking
-// - User behavior analysis
+// - User profiles
 // - Context-aware operations
 package db
 
 import (
 	"errors"
+	"fmt"
 	"time"
 
 	"gorm.io/gorm"
@@ -50,14 +51,20 @@ type Database interface {
 	// Times should be in UTC to ensure consistent queries across timezones.
 	GetGroupMessagesInTimeRange(start, end time.Time) ([]GroupMessage, error)
 
-	// SaveUserAnalysis stores personality/behavioral analysis for a user.
-	// Analysis timestamps are stored in UTC.
-	// It returns an error if the storage operation fails.
-	SaveUserAnalysis(analysis *UserAnalysis) error
+	// GetUserProfile retrieves a user's profile by user ID.
+	// Returns nil and no error if the profile does not exist.
+	GetUserProfile(userID int64) (*UserProfile, error)
 
-	// GetUserAnalysesInTimeRange retrieves user analyses between start and end times.
-	// Times should be in UTC to ensure consistent queries across timezones.
-	GetUserAnalysesInTimeRange(start, end time.Time) ([]UserAnalysis, error)
+	// SaveUserProfile creates or updates a user profile.
+	SaveUserProfile(profile *UserProfile) error
+
+	// GetAllUserProfiles retrieves all user profiles.
+	GetAllUserProfiles() (map[int64]*UserProfile, error)
+
+	// DeleteChatHistory removes only the chat history, preserving user profiles and group messages.
+	// This operation cannot be undone.
+	// It returns an error if the deletion fails.
+	DeleteChatHistory() error
 
 	// DeleteAll removes all stored data, including chat history, group messages, and analyses.
 	// This operation cannot be undone.
@@ -101,21 +108,27 @@ type GroupMessage struct {
 	Timestamp time.Time `gorm:"not null;index"     json:"timestamp"` // When the message was sent
 }
 
-// UserAnalysis represents a comprehensive behavioral and personality analysis
-// for a specific user based on their chat interactions.
-type UserAnalysis struct {
+// UserProfile represents a user's accumulated profile information
+// built from ongoing analysis of their messages.
+type UserProfile struct {
 	gorm.Model
-	// Analysis metadata
-	UserID       int64     `gorm:"not null;index" json:"user_id"`       // User being analyzed
-	Date         time.Time `gorm:"not null;index" json:"date"`          // When analysis was performed
-	MessageCount int       `gorm:"not null"       json:"message_count"` // Number of messages analyzed
+	UserID          int64     `gorm:"not null;uniqueIndex" json:"user_id"`          // User identifier from Telegram
+	DisplayNames    string    `gorm:"type:text"            json:"display_names"`    // Known names/nicknames (comma-separated)
+	OriginLocation  string    `gorm:"type:text"            json:"origin_location"`  // Where the user is from
+	CurrentLocation string    `gorm:"type:text"            json:"current_location"` // Where the user currently lives
+	AgeRange        string    `gorm:"type:text"            json:"age_range"`        // Approximate age range
+	Traits          string    `gorm:"type:text"            json:"traits"`           // Personality traits and characteristics
+	LastUpdated     time.Time `gorm:"not null"             json:"last_updated"`     // When profile was last updated
+	MessageCount    int       `gorm:"not null"             json:"message_count"`    // Total messages analyzed
+}
 
-	// Analysis results
-	CommunicationStyle string `gorm:"type:text" json:"communication_style"`  // How the user communicates
-	PersonalityTraits  string `gorm:"type:text" json:"personality_traits"`   // Observed personality characteristics
-	BehavioralPatterns string `gorm:"type:text" json:"behavioral_patterns"`  // Consistent behavior patterns
-	WordChoicePatterns string `gorm:"type:text" json:"word_choice_patterns"` // Language and vocabulary usage
-	InteractionHabits  string `gorm:"type:text" json:"interaction_habits"`   // How user engages with others
-	UniqueQuirks       string `gorm:"type:text" json:"unique_quirks"`        // Distinctive characteristics
-	EmotionalTriggers  string `gorm:"type:text" json:"emotional_triggers"`   // Topics causing emotional responses
+// Format: "UID [user_id] ([display_names]) | [origin_location] | [current_location] | [age_range] | [traits]".
+func (p *UserProfile) FormatPipeDelimited() string {
+	return fmt.Sprintf("UID %d (%s) | %s | %s | %s | %s",
+		p.UserID,
+		p.DisplayNames,
+		p.OriginLocation,
+		p.CurrentLocation,
+		p.AgeRange,
+		p.Traits)
 }

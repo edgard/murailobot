@@ -26,7 +26,6 @@ const (
 	DefaultProvideMessagePrompt = "ℹ️ Please provide a message with your command."
 	DefaultGeneralErrorMessage  = "❌ An error occurred. Please try again later."
 	DefaultHistoryResetMessage  = "🔄 Chat history has been cleared."
-	DefaultTimeoutErrorMessage  = "⏱️ Request timed out. Please try again later."
 )
 
 // ErrValidation indicates a configuration validation error.
@@ -45,7 +44,6 @@ var defaultConfig = map[string]any{
 	"telegram.messages.provide_message": DefaultProvideMessagePrompt,
 	"telegram.messages.general_error":   DefaultGeneralErrorMessage,
 	"telegram.messages.history_reset":   DefaultHistoryResetMessage,
-	"telegram.messages.timeout":         DefaultTimeoutErrorMessage,
 
 	"log.level":  DefaultLogLevel,
 	"log.format": DefaultLogFormat,
@@ -91,7 +89,6 @@ type Config struct {
 	TelegramProvideMessage       string `koanf:"telegram.messages.provide_message" validate:"required"`
 	TelegramGeneralErrorMessage  string `koanf:"telegram.messages.general_error"   validate:"required"`
 	TelegramHistoryResetMessage  string `koanf:"telegram.messages.history_reset"   validate:"required"`
-	TelegramTimeoutMessage       string `koanf:"telegram.messages.timeout"         validate:"required"`
 
 	// Logging Configuration
 	//

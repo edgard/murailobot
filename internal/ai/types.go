@@ -47,20 +47,23 @@ type Service interface {
 	// Message generation methods
 
 	// Generate creates an AI response for a user message.
+	// If userProfiles is provided, it will be used to personalize the response
+	// with awareness of all users in the group.
 	// The response is sanitized and validated before being returned.
 	// Returns:
 	// - ErrEmptyUserMessage if the message is empty
 	// - ErrNoChoices if the API returns no completion choices
 	// - ErrEmptyResponse if the API returns an empty response
-	Generate(userID int64, userMsg string) (string, error)
+	Generate(userID int64, userMsg string, userProfiles map[int64]*db.UserProfile) (string, error)
 
 	// Analysis methods
 
-	// GenerateGroupAnalysis creates a behavioral analysis.
+	// GenerateUserProfiles creates or updates user profiles based on message analysis.
+	// It considers existing profiles when performing the analysis.
 	// Returns:
 	// - ErrNoMessages if messages slice is empty
 	// - ErrJSONUnmarshal if the API response cannot be parsed
-	GenerateGroupAnalysis(messages []db.GroupMessage) (map[int64]*db.UserAnalysis, error)
+	GenerateUserProfiles(messages []db.GroupMessage, existingProfiles map[int64]*db.UserProfile) (map[int64]*db.UserProfile, error)
 }
 
 // client implements the Service interface using OpenAI's API.
@@ -80,11 +83,14 @@ type client struct {
 }
 
 // database defines the required database operations for AI functionality.
-// It provides access to conversation history.
+// It provides access to conversation history and user profiles.
 type database interface {
 	// GetRecent retrieves recent chat history.
 	// It returns up to 'limit' entries ordered by timestamp descending.
 	GetRecent(limit int) ([]db.ChatHistory, error)
+
+	// GetUserProfile retrieves a user's profile by user ID.
+	GetUserProfile(userID int64) (*db.UserProfile, error)
 }
 
 // completionRequest encapsulates parameters for an AI completion API call.

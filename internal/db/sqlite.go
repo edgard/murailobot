@@ -29,7 +29,7 @@ func New() (Database, error) {
 
 	sqlDB.SetMaxOpenConns(defaultMaxOpenConn)
 
-	if err := db.AutoMigrate(&ChatHistory{}, &GroupMessage{}, &UserAnalysis{}); err != nil {
+	if err := db.AutoMigrate(&ChatHistory{}, &GroupMessage{}, &UserProfile{}); err != nil {
 		return nil, fmt.Errorf("failed to run migrations: %w", err)
 	}
 
@@ -103,15 +103,6 @@ func (d *sqliteDB) GetGroupMessagesInTimeRange(start, end time.Time) ([]GroupMes
 	return groupMsgs, nil
 }
 
-// SaveUserAnalysis stores personality/behavioral analysis for a user.
-func (d *sqliteDB) SaveUserAnalysis(analysis *UserAnalysis) error {
-	if err := d.db.Create(analysis).Error; err != nil {
-		return fmt.Errorf("failed to save user analysis: %w", err)
-	}
-
-	return nil
-}
-
 const maxTimeRange = 31 * 24 * time.Hour // Maximum 31 days range
 
 // validateTimeRange ensures the time range is valid.
@@ -131,23 +122,16 @@ func validateTimeRange(start, end time.Time) error {
 	return nil
 }
 
-// GetUserAnalysesInTimeRange retrieves user analyses within a time range.
-func (d *sqliteDB) GetUserAnalysesInTimeRange(start, end time.Time) ([]UserAnalysis, error) {
-	if err := validateTimeRange(start, end); err != nil {
-		return nil, fmt.Errorf("invalid time range: %w", err)
+// DeleteChatHistory removes only the chat history, preserving user profiles and group messages.
+func (d *sqliteDB) DeleteChatHistory() error {
+	if err := d.db.Session(&gorm.Session{AllowGlobalUpdate: true}).Delete(&ChatHistory{}).Error; err != nil {
+		return fmt.Errorf("%w: failed to delete chat history: %w", ErrDatabaseOperation, err)
 	}
 
-	var userAnalyses []UserAnalysis
-	if err := d.db.Where("date >= ? AND date < ?", start, end).
-		Order("date asc, user_id asc").
-		Find(&userAnalyses).Error; err != nil {
-		return nil, fmt.Errorf("failed to get user analyses: %w", err)
-	}
-
-	return userAnalyses, nil
+	return nil
 }
 
-// DeleteAll removes all chat history entries in a single transaction.
+// DeleteAll removes all stored data in a single transaction.
 func (d *sqliteDB) DeleteAll() error {
 	if err := d.db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Session(&gorm.Session{AllowGlobalUpdate: true}).Delete(&ChatHistory{}).Error; err != nil {
@@ -158,8 +142,8 @@ func (d *sqliteDB) DeleteAll() error {
 			return fmt.Errorf("failed to delete group messages: %w", err)
 		}
 
-		if err := tx.Session(&gorm.Session{AllowGlobalUpdate: true}).Delete(&UserAnalysis{}).Error; err != nil {
-			return fmt.Errorf("failed to delete user analyses: %w", err)
+		if err := tx.Session(&gorm.Session{AllowGlobalUpdate: true}).Delete(&UserProfile{}).Error; err != nil {
+			return fmt.Errorf("failed to delete user profiles: %w", err)
 		}
 
 		return nil
@@ -168,6 +152,68 @@ func (d *sqliteDB) DeleteAll() error {
 	}
 
 	return nil
+}
+
+// GetUserProfile retrieves a user's profile by user ID.
+func (d *sqliteDB) GetUserProfile(userID int64) (*UserProfile, error) {
+	var profile UserProfile
+	result := d.db.Where("user_id = ?", userID).First(&profile)
+
+	if result.Error != nil {
+		if result.Error == gorm.ErrRecordNotFound {
+			return nil, nil // Profile doesn't exist yet
+		}
+
+		return nil, fmt.Errorf("failed to get user profile: %w", result.Error)
+	}
+
+	return &profile, nil
+}
+
+// SaveUserProfile creates or updates a user profile.
+func (d *sqliteDB) SaveUserProfile(profile *UserProfile) error {
+	// Check if profile exists
+	existingProfile, err := d.GetUserProfile(profile.UserID)
+	if err != nil {
+		return fmt.Errorf("failed to check existing profile: %w", err)
+	}
+
+	// If profile exists, update it
+	if existingProfile != nil {
+		profile.ID = existingProfile.ID
+		profile.CreatedAt = existingProfile.CreatedAt
+		profile.LastUpdated = time.Now().UTC()
+
+		if err := d.db.Save(profile).Error; err != nil {
+			return fmt.Errorf("failed to update user profile: %w", err)
+		}
+
+		return nil
+	}
+
+	// Otherwise create a new profile
+	profile.LastUpdated = time.Now().UTC()
+	if err := d.db.Create(profile).Error; err != nil {
+		return fmt.Errorf("failed to create user profile: %w", err)
+	}
+
+	return nil
+}
+
+// GetAllUserProfiles retrieves all user profiles.
+func (d *sqliteDB) GetAllUserProfiles() (map[int64]*UserProfile, error) {
+	var profiles []UserProfile
+	if err := d.db.Find(&profiles).Error; err != nil {
+		return nil, fmt.Errorf("failed to get all user profiles: %w", err)
+	}
+
+	// Map profiles by user ID for easy lookup
+	result := make(map[int64]*UserProfile, len(profiles))
+	for i := range profiles {
+		result[profiles[i].UserID] = &profiles[i]
+	}
+
+	return result, nil
 }
 
 // Close ensures all pending operations are completed and resources are released.
