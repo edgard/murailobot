@@ -1,7 +1,6 @@
 package telegram
 
 import (
-	"errors"
 	"time"
 
 	"github.com/edgard/murailobot/internal/ai"
@@ -17,16 +16,6 @@ const (
 	defaultRetryAttempts  = 3
 	defaultRetryDelay     = 500 * time.Millisecond
 	hoursInDay            = 24
-)
-
-var (
-	// Error definitions.
-	ErrNilConfig    = errors.New("config is nil")
-	ErrNilDatabase  = errors.New("database is nil")
-	ErrNilAIService = errors.New("AI service is nil")
-	ErrNilScheduler = errors.New("scheduler is nil")
-	ErrNilMessage   = errors.New("message is nil")
-	ErrUnauthorized = errors.New("unauthorized access")
 )
 
 // messages defines bot response templates.

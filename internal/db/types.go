@@ -7,7 +7,6 @@
 package db
 
 import (
-	"errors"
 	"fmt"
 	"time"
 
@@ -17,21 +16,6 @@ import (
 // Database configuration constants.
 const (
 	defaultMaxOpenConn = 1 // Maximum number of open connections
-)
-
-var (
-	// ErrInvalidLimit is returned when the limit parameter is invalid.
-	ErrInvalidLimit = errors.New("invalid limit")
-	// ErrZeroTimeValue is returned when a time value is zero.
-	ErrZeroTimeValue = errors.New("zero time values not allowed")
-	// ErrInvalidTimeRange is returned when start time is after end time.
-	ErrInvalidTimeRange = errors.New("start time must be before end time")
-	// ErrTimeRangeExceeded is returned when time range exceeds maximum allowed duration.
-	ErrTimeRangeExceeded = errors.New("time range exceeds maximum allowed duration")
-	// ErrDatabaseOperation is returned when a database operation fails.
-	ErrDatabaseOperation = errors.New("database operation failed")
-	// ErrEmptyMessageIDs is returned when an empty slice of message IDs is provided.
-	ErrEmptyMessageIDs = errors.New("empty message IDs slice provided")
 )
 
 // Database defines the interface for chat history and analytics operations.

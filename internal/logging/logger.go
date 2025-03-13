@@ -2,18 +2,18 @@
 package logging
 
 import (
-	"fmt"
 	"log/slog"
 	"os"
 	"strings"
 
 	"github.com/edgard/murailobot/internal/config"
+	errs "github.com/edgard/murailobot/internal/errors"
 )
 
 // Setup configures the global logger with the specified configuration.
 func Setup(cfg *config.Config) error {
 	if cfg == nil {
-		return nil
+		return errs.NewValidationError("nil config", nil)
 	}
 
 	level := slog.LevelInfo
@@ -27,7 +27,7 @@ func Setup(cfg *config.Config) error {
 		level = slog.LevelError
 	case logLevelInfo:
 	default:
-		return fmt.Errorf("%w: %s", ErrInvalidLogLevel, cfg.LogLevel)
+		return errs.NewValidationError("invalid log level", nil)
 	}
 
 	opts := &slog.HandlerOptions{Level: level}
@@ -40,13 +40,15 @@ func Setup(cfg *config.Config) error {
 	case logFormatJSON:
 		handler = slog.NewJSONHandler(os.Stderr, opts)
 	default:
-		return fmt.Errorf("%w: %s", ErrInvalidLogFormat, cfg.LogFormat)
+		return errs.NewValidationError("invalid log format", nil)
 	}
 
 	logger := slog.New(handler)
 	slog.SetDefault(logger)
 
-	Info("logger initialized", "level", cfg.LogLevel, "format", cfg.LogFormat)
+	Info("logger initialized",
+		"level", cfg.LogLevel,
+		"format", cfg.LogFormat)
 
 	return nil
 }

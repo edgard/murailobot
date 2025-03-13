@@ -3,7 +3,6 @@
 package config
 
 import (
-	"errors"
 	"time"
 )
 
@@ -27,9 +26,6 @@ const (
 	DefaultGeneralErrorMessage  = "❌ An error occurred. Please try again later."
 	DefaultHistoryResetMessage  = "🔄 Chat history has been cleared."
 )
-
-// ErrValidation indicates a configuration validation error.
-var ErrValidation = errors.New("validation error")
 
 // defaultConfig holds the default configuration values.
 var defaultConfig = map[string]any{

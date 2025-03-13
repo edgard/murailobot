@@ -8,12 +8,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/avast/retry-go/v4"
 	"github.com/edgard/murailobot/internal/config"
 	"github.com/edgard/murailobot/internal/db"
-	"github.com/edgard/murailobot/internal/utils/logging"
-	"github.com/edgard/murailobot/internal/utils/text"
-	timeformats "github.com/edgard/murailobot/internal/utils/time"
+	errs "github.com/edgard/murailobot/internal/errors"
+	"github.com/edgard/murailobot/internal/logging"
+	"github.com/edgard/murailobot/internal/text"
 	"github.com/sashabaranov/go-openai"
 )
 
@@ -22,7 +21,7 @@ import (
 //nolint:ireturn // Interface return is intentional for better abstraction
 func New(cfg *config.Config, db database) (Service, error) {
 	if cfg == nil {
-		return nil, ErrNilConfig
+		return nil, errs.NewValidationError("nil config", nil)
 	}
 
 	aiCfg := openai.DefaultConfig(cfg.AIToken)
@@ -42,22 +41,36 @@ func New(cfg *config.Config, db database) (Service, error) {
 }
 
 // SetBotInfo sets the bot's Telegram User ID, username, and display name for profile handling.
-func (c *client) SetBotInfo(uid int64, username string, displayName string) {
+func (c *client) SetBotInfo(uid int64, username string, displayName string) error {
+	if uid <= 0 {
+		return errs.NewValidationError("invalid bot user ID", nil)
+	}
+
+	if username == "" {
+		return errs.NewValidationError("empty bot username", nil)
+	}
+
 	c.botUID = uid
 	c.botUsername = username
 	c.botDisplayName = displayName
+
+	return nil
 }
 
 // Generate creates an AI response for a user message.
 func (c *client) Generate(userID int64, userMsg string, userProfiles map[int64]*db.UserProfile) (string, error) {
+	if userID <= 0 {
+		return "", errs.NewValidationError("invalid user ID", nil)
+	}
+
 	userMsg = strings.TrimSpace(userMsg)
 	if userMsg == "" {
-		return "", ErrEmptyUserMessage
+		return "", errs.NewValidationError("empty user message", nil)
 	}
 
 	history, err := c.db.GetRecent(recentHistoryCount)
 	if err != nil {
-		return "", fmt.Errorf("failed to retrieve chat history: %w", err)
+		return "", errs.NewAPIError("failed to retrieve chat history", err)
 	}
 
 	// Prepare system instruction with user profiles if available
@@ -115,7 +128,7 @@ func (c *client) Generate(userID int64, userMsg string, userProfiles map[int64]*
 	}
 
 	currentMsg := fmt.Sprintf("[%s] UID %d: %s",
-		time.Now().Format(timeformats.FullTimestamp),
+		time.Now().Format(time.RFC3339),
 		userID,
 		userMsg,
 	)
@@ -125,15 +138,12 @@ func (c *client) Generate(userID int64, userMsg string, userProfiles map[int64]*
 		Content: currentMsg,
 	})
 
-	var attemptCount uint
-
 	response, err := c.createCompletion(completionRequest{
-		messages:   messages,
-		userID:     userID,
-		attemptNum: &attemptCount,
+		messages: messages,
+		userID:   userID,
 	})
 	if err != nil {
-		return "", fmt.Errorf("failed to generate AI response: %w", err)
+		return "", errs.NewAPIError("failed to generate AI response", err)
 	}
 
 	return response, nil
@@ -142,7 +152,7 @@ func (c *client) Generate(userID int64, userMsg string, userProfiles map[int64]*
 // GenerateUserProfiles creates or updates user profiles based on message analysis.
 func (c *client) GenerateUserProfiles(messages []db.GroupMessage, existingProfiles map[int64]*db.UserProfile) (map[int64]*db.UserProfile, error) {
 	if len(messages) == 0 {
-		return nil, ErrNoMessages
+		return nil, errs.NewValidationError("no messages to analyze", nil)
 	}
 
 	// Group messages by user
@@ -201,7 +211,7 @@ func (c *client) GenerateUserProfiles(messages []db.GroupMessage, existingProfil
 
 		for _, msg := range userMsgs {
 			msgBuilder.WriteString(fmt.Sprintf("[%s] %s\n",
-				msg.Timestamp.Format(timeformats.FullTimestamp),
+				msg.Timestamp.Format(time.RFC3339),
 				msg.Message))
 
 			totalMessages++
@@ -220,15 +230,12 @@ func (c *client) GenerateUserProfiles(messages []db.GroupMessage, existingProfil
 		Content: msgBuilder.String(),
 	})
 
-	var attemptCount uint
-
 	response, err := c.createCompletion(completionRequest{
-		messages:   chatMessages,
-		userID:     0, // Just for logging
-		attemptNum: &attemptCount,
+		messages: chatMessages,
+		userID:   0, // Just for logging
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to generate profiles: %w", err)
+		return nil, errs.NewAPIError("failed to generate profiles", err)
 	}
 
 	// Parse the JSON response
@@ -243,9 +250,7 @@ func (c *client) GenerateUserProfiles(messages []db.GroupMessage, existingProfil
 	}
 
 	if err := json.Unmarshal([]byte(response), &profileResponse); err != nil {
-		logging.Error("failed to parse JSON response", "error", err, "response", response)
-
-		return nil, fmt.Errorf("%w: %w", ErrJSONUnmarshal, err)
+		return nil, errs.NewAPIError("failed to parse profile response", err)
 	}
 
 	// Convert to UserProfile objects
@@ -326,57 +331,25 @@ func (c *client) GenerateUserProfiles(messages []db.GroupMessage, existingProfil
 func (c *client) createCompletion(req completionRequest) (string, error) {
 	var response string
 
-	err := retry.Do(
-		func() error {
-			*req.attemptNum++
-
-			resp, err := c.aiClient.CreateChatCompletion(context.Background(), openai.ChatCompletionRequest{
-				Model:       c.model,
-				Messages:    req.messages,
-				Temperature: c.temperature,
-			})
-			if err != nil {
-				logFields := []any{
-					"error", err,
-					"attempt", *req.attemptNum,
-					"user_id", req.userID,
-				}
-
-				logging.Debug("completion attempt failed", logFields...)
-
-				return fmt.Errorf("chat completion API call failed: %w", err)
-			}
-
-			if len(resp.Choices) == 0 {
-				return ErrNoChoices
-			}
-
-			result := text.Sanitize(resp.Choices[0].Message.Content)
-			if result == "" {
-				return ErrEmptyResponse
-			}
-
-			response = result
-
-			return nil
-		},
-		retry.Attempts(retryMaxAttempts),
-		retry.Delay(initialBackoffDuration),
-		retry.DelayType(retry.BackOffDelay),
-		retry.LastErrorOnly(true),
-		retry.OnRetry(func(n uint, _ error) {
-			logFields := []any{
-				"attempt", n + 1,
-				"max_attempts", retryMaxAttempts,
-				"user_id", req.userID,
-			}
-
-			logging.Debug("retrying request", logFields...)
-		}),
-	)
+	resp, err := c.aiClient.CreateChatCompletion(context.Background(), openai.ChatCompletionRequest{
+		Model:       c.model,
+		Messages:    req.messages,
+		Temperature: c.temperature,
+	})
 	if err != nil {
-		return "", fmt.Errorf("failed to complete API request: %w", err)
+		return "", errs.NewAPIError("chat completion API call failed", err)
 	}
+
+	if len(resp.Choices) == 0 {
+		return "", errs.NewAPIError("no choices in response", nil)
+	}
+
+	result, err := text.Sanitize(resp.Choices[0].Message.Content)
+	if err != nil {
+		return "", errs.NewAPIError("failed to sanitize response", err)
+	}
+
+	response = result
 
 	return response, nil
 }
@@ -415,7 +388,7 @@ func (c *client) formatHistory(history []db.ChatHistory) []openai.ChatCompletion
 		botMsg := strings.TrimSpace(msg.BotMsg)
 
 		formattedMsg := fmt.Sprintf("[%s] UID %d: %s",
-			msg.Timestamp.Format(timeformats.FullTimestamp),
+			msg.Timestamp.Format(time.RFC3339),
 			msg.UserID,
 			userMsg,
 		)

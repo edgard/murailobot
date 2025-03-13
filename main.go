@@ -10,9 +10,10 @@ import (
 	"github.com/edgard/murailobot/internal/ai"
 	"github.com/edgard/murailobot/internal/config"
 	"github.com/edgard/murailobot/internal/db"
+	errs "github.com/edgard/murailobot/internal/errors"
+	"github.com/edgard/murailobot/internal/logging"
 	"github.com/edgard/murailobot/internal/scheduler"
 	"github.com/edgard/murailobot/internal/telegram"
-	"github.com/edgard/murailobot/internal/utils/logging"
 )
 
 func main() {
@@ -26,15 +27,17 @@ func run() int {
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 
+	// Initialize components in order of dependency
 	cfg, err := config.LoadConfig()
 	if err != nil {
-		logging.Error("failed to load configuration", "error", err)
+		logging.Error("initialization failed", "component", "config", "error", err)
 
 		return 1
 	}
 
 	if err := logging.Setup(cfg); err != nil {
-		logging.Error("failed to setup logger", "error", err)
+		// Use basic error logging since logger isn't set up yet
+		logging.Error("initialization failed", "component", "logger", "error", err)
 
 		return 1
 	}
@@ -43,7 +46,7 @@ func run() int {
 
 	s, err := scheduler.New()
 	if err != nil {
-		logging.Error("failed to create scheduler", "error", err)
+		logging.Error("initialization failed", "component", "scheduler", "error", err)
 
 		return 1
 	}
@@ -51,33 +54,33 @@ func run() int {
 	// Ensure scheduler is cleaned up on exit
 	defer func() {
 		if err := s.Stop(); err != nil {
-			logging.Error("failed to close scheduler", "error", err)
+			logging.Error("shutdown failed", "component", "scheduler", "error", err)
 		}
 	}()
 
 	database, err := db.New()
 	if err != nil {
-		logging.Error("failed to initialize database", "error", err)
+		logging.Error("initialization failed", "component", "database", "error", err)
 
 		return 1
 	}
 
 	defer func() {
 		if err := database.Close(); err != nil {
-			logging.Error("failed to close database", "error", err)
+			logging.Error("shutdown failed", "component", "database", "error", err)
 		}
 	}()
 
 	aiClient, err := ai.New(cfg, database)
 	if err != nil {
-		logging.Error("failed to initialize AI client", "error", err)
+		logging.Error("initialization failed", "component", "ai_client", "error", err)
 
 		return 1
 	}
 
 	bot, err := telegram.New(cfg, database, aiClient, s)
 	if err != nil {
-		logging.Error("failed to initialize Telegram bot", "error", err)
+		logging.Error("initialization failed", "component", "telegram_bot", "error", err)
 
 		return 1
 	}
@@ -88,9 +91,17 @@ func run() int {
 		"build_date", date,
 		"built_by", builtBy)
 
+	// Start bot in a goroutine and handle shutdown
 	botErr := make(chan error, 1)
+
 	go func() {
-		botErr <- bot.Start()
+		if err := bot.Start(); err != nil {
+			// Wrap bot errors for better context
+			if _, ok := err.(*errs.Error); !ok {
+				err = errs.NewAPIError("bot runtime error", err)
+			}
+			botErr <- err
+		}
 	}()
 
 	var exitCode int
@@ -99,13 +110,17 @@ func run() int {
 		logging.Info("received shutdown signal", "signal", sig)
 
 		if err := bot.Stop(); err != nil {
-			logging.Error("failed to stop bot", "error", err)
+			logging.Error("shutdown failed",
+				"component", "telegram_bot",
+				"error", err)
 
 			exitCode = 1
 		}
 	case err := <-botErr:
 		if err != nil {
-			logging.Error("bot stopped with error", "error", err)
+			logging.Error("bot stopped with error",
+				"error", err,
+				"error_type", errs.Code(err))
 
 			exitCode = 1
 		} else {
@@ -113,7 +128,7 @@ func run() int {
 		}
 	}
 
-	logging.Info("application shutdown complete")
+	logging.Info("application shutdown complete", "exit_code", exitCode)
 
 	return exitCode
 }

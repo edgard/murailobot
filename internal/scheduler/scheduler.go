@@ -1,10 +1,10 @@
 package scheduler
 
 import (
-	"fmt"
 	"time"
 
-	"github.com/edgard/murailobot/internal/utils/logging"
+	errs "github.com/edgard/murailobot/internal/errors"
+	"github.com/edgard/murailobot/internal/logging"
 	"github.com/go-co-op/gocron/v2"
 )
 
@@ -17,7 +17,7 @@ func New() (Scheduler, error) {
 		gocron.WithLogger(logging.NewGocronLogger()),
 	)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create scheduler: %w", err)
+		return nil, errs.NewConfigError("failed to create scheduler", err)
 	}
 
 	s.Start()
@@ -27,23 +27,26 @@ func New() (Scheduler, error) {
 
 // AddJob adds a new job to the scheduler using a cron expression.
 func (s *scheduler) AddJob(name, cronExpr string, job func()) error {
+	if name == "" {
+		return errs.NewValidationError("empty job name", nil)
+	}
+
+	if cronExpr == "" {
+		return errs.NewValidationError("empty cron expression", nil)
+	}
+
+	if job == nil {
+		return errs.NewValidationError("nil job function", nil)
+	}
+
 	_, err := s.scheduler.NewJob(
 		gocron.CronJob(cronExpr, false),
 		gocron.NewTask(job),
 		gocron.WithName(name),
 	)
 	if err != nil {
-		logging.Error("failed to add job",
-			"name", name,
-			"cron", cronExpr,
-			"error", err)
-
-		return fmt.Errorf("failed to schedule job %q: %w", name, err)
+		return errs.NewConfigError("failed to schedule job", err)
 	}
-
-	logging.Info("job scheduled",
-		"name", name,
-		"cron", cronExpr)
 
 	return nil
 }
@@ -51,7 +54,7 @@ func (s *scheduler) AddJob(name, cronExpr string, job func()) error {
 // Stop gracefully stops the scheduler.
 func (s *scheduler) Stop() error {
 	if err := s.scheduler.Shutdown(); err != nil {
-		return fmt.Errorf("failed to shutdown scheduler: %w", err)
+		return errs.NewConfigError("failed to shutdown scheduler", err)
 	}
 
 	return nil

@@ -8,37 +8,36 @@ import (
 	"strings"
 	"time"
 
-	"github.com/avast/retry-go/v4"
 	"github.com/edgard/murailobot/internal/ai"
 	"github.com/edgard/murailobot/internal/config"
 	"github.com/edgard/murailobot/internal/db"
+	errs "github.com/edgard/murailobot/internal/errors"
+	"github.com/edgard/murailobot/internal/logging"
 	"github.com/edgard/murailobot/internal/scheduler"
-	"github.com/edgard/murailobot/internal/utils/logging"
-	timeformats "github.com/edgard/murailobot/internal/utils/time"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
 // New creates a new bot instance.
 func New(cfg *config.Config, database db.Database, aiClient ai.Service, sched scheduler.Scheduler) (*Bot, error) {
 	if cfg == nil {
-		return nil, ErrNilConfig
+		return nil, errs.NewValidationError("nil config", nil)
 	}
 
 	if database == nil {
-		return nil, ErrNilDatabase
+		return nil, errs.NewValidationError("nil database", nil)
 	}
 
 	if aiClient == nil {
-		return nil, ErrNilAIService
+		return nil, errs.NewValidationError("nil AI service", nil)
 	}
 
 	if sched == nil {
-		return nil, ErrNilScheduler
+		return nil, errs.NewValidationError("nil scheduler", nil)
 	}
 
 	api, err := tgbotapi.NewBotAPI(cfg.TelegramToken)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create telegram bot: %w", err)
+		return nil, errs.NewConfigError("failed to create telegram bot", err)
 	}
 
 	// Disable telegram bot's debug logging since we handle our own logging
@@ -64,7 +63,9 @@ func New(cfg *config.Config, database db.Database, aiClient ai.Service, sched sc
 	}
 
 	// Set the bot's info in the AI client for special handling in profiles
-	aiClient.SetBotInfo(api.Self.ID, api.Self.UserName, api.Self.FirstName)
+	if err := aiClient.SetBotInfo(api.Self.ID, api.Self.UserName, api.Self.FirstName); err != nil {
+		return nil, errs.NewConfigError("failed to set bot info in AI client", err)
+	}
 
 	return bot, nil
 }
@@ -72,7 +73,7 @@ func New(cfg *config.Config, database db.Database, aiClient ai.Service, sched sc
 // Start begins processing incoming updates.
 func (b *Bot) Start() error {
 	if err := b.setupCommands(); err != nil {
-		return fmt.Errorf("failed to setup commands: %w", err)
+		return errs.NewConfigError("failed to setup commands", err)
 	}
 
 	updateConfig := tgbotapi.NewUpdate(defaultUpdateOffset)
@@ -84,7 +85,9 @@ func (b *Bot) Start() error {
 		"bot_id", b.api.Self.ID,
 		"admin_id", b.cfg.AdminID)
 
-	b.scheduleDailyAnalysis()
+	if err := b.scheduleDailyAnalysis(); err != nil {
+		return err
+	}
 
 	return b.processUpdates(updates)
 }
@@ -99,6 +102,10 @@ func (b *Bot) Stop() error {
 
 // setupCommands registers bot commands.
 func (b *Bot) setupCommands() error {
+	if b.api == nil {
+		return errs.NewConfigError("nil telegram API client", nil)
+	}
+
 	commands := []tgbotapi.BotCommand{
 		{Command: "start", Description: "Start conversation with the bot"},
 		{Command: "mrl", Description: "Generate AI response"},
@@ -110,22 +117,9 @@ func (b *Bot) setupCommands() error {
 
 	cmdConfig := tgbotapi.NewSetMyCommands(commands...)
 
-	err := retry.Do(
-		func() error {
-			_, err := b.api.Request(cmdConfig)
-			if err != nil {
-				return fmt.Errorf("telegram API request failed: %w", err)
-			}
-
-			return nil
-		},
-		retry.Attempts(defaultRetryAttempts),
-		retry.Delay(defaultRetryDelay),
-		retry.DelayType(retry.BackOffDelay),
-		retry.LastErrorOnly(true),
-	)
+	_, err := b.api.Request(cmdConfig)
 	if err != nil {
-		return fmt.Errorf("failed to setup bot commands: %w", err)
+		return errs.NewAPIError("failed to setup bot commands", err)
 	}
 
 	return nil
@@ -180,7 +174,8 @@ func (b *Bot) handleCommand(update tgbotapi.Update) {
 	}
 
 	if err != nil {
-		if errors.Is(err, ErrUnauthorized) {
+		var unauthorizedErr *errs.UnauthorizedError
+		if errors.As(err, &unauthorizedErr) {
 			logging.Info("unauthorized access",
 				"error", err,
 				"command", msg.Command(),
@@ -199,7 +194,7 @@ func (b *Bot) handleCommand(update tgbotapi.Update) {
 // handleStart processes the /start command.
 func (b *Bot) handleStart(msg *tgbotapi.Message) error {
 	if msg == nil {
-		return ErrNilMessage
+		return errs.NewValidationError("nil message", nil)
 	}
 
 	reply := tgbotapi.NewMessage(msg.Chat.ID, b.cfg.Messages.Welcome)
@@ -210,7 +205,7 @@ func (b *Bot) handleStart(msg *tgbotapi.Message) error {
 // handleMessage processes the /mrl command.
 func (b *Bot) handleMessage(msg *tgbotapi.Message) error {
 	if msg == nil {
-		return ErrNilMessage
+		return errs.NewValidationError("nil message", nil)
 	}
 
 	text := strings.TrimSpace(strings.TrimPrefix(msg.Text, "/mrl"))
@@ -230,70 +225,48 @@ func (b *Bot) handleMessage(msg *tgbotapi.Message) error {
 	// Get all user profiles for better group context
 	userProfiles, err := b.db.GetAllUserProfiles()
 	if err != nil {
-		logging.Warn("failed to get user profiles",
-			"error", err,
-			"user_id", msg.From.ID)
-
 		userProfiles = make(map[int64]*db.UserProfile)
-	}
-
-	// Log some stats about available profiles
-	if len(userProfiles) > 0 {
-		logging.Debug("providing group context for message generation",
-			"user_id", msg.From.ID,
-			"total_profiles", len(userProfiles),
-			"has_user_profile", userProfiles[msg.From.ID] != nil)
 	}
 
 	response, err := b.ai.Generate(msg.From.ID, text, userProfiles)
 	if err != nil {
-		logging.Error("failed to generate AI response",
-			"error", err,
-			"user_id", msg.From.ID,
-			"chat_id", msg.Chat.ID)
-
-		errMsg := b.cfg.Messages.GeneralError
-
-		reply := tgbotapi.NewMessage(msg.Chat.ID, errMsg)
+		reply := tgbotapi.NewMessage(msg.Chat.ID, b.cfg.Messages.GeneralError)
 		if sendErr := b.sendMessage(reply); sendErr != nil {
-			logging.Error("failed to send error message to user",
-				"error", sendErr,
-				"user_id", msg.From.ID)
+			logging.Error("failed to send error message", "error", sendErr)
 		}
 
-		return fmt.Errorf("AI generation failed: %w", err)
+		return errs.NewAPIError("failed to generate AI response", err)
 	}
 
-	// Always save to chat history for AI context
-	if err := b.db.Save(msg.From.ID, text, response); err != nil {
-		logging.Warn("failed to save chat history",
-			"error", err,
-			"user_id", msg.From.ID)
-	}
-
-	// If in a group, also save as group messages
-	if msg.Chat.IsGroup() || msg.Chat.IsSuperGroup() {
-		if err := b.db.SaveGroupMessage(msg.Chat.ID, msg.Chat.Title, msg.From.ID, msg.Text); err != nil {
-			logging.Warn("failed to save group message",
-				"error", err,
-				"user_id", msg.From.ID,
-				"group_id", msg.Chat.ID)
-		}
-
-		if err := b.db.SaveGroupMessage(msg.Chat.ID, msg.Chat.Title, b.api.Self.ID, response); err != nil {
-			logging.Warn("failed to save bot response in group",
-				"error", err,
-				"group_id", msg.Chat.ID)
-		}
+	// Save the interaction
+	if err := b.saveInteraction(msg, text, response); err != nil {
+		logging.Error("failed to save interaction", "error", err)
 	}
 
 	reply := tgbotapi.NewMessage(msg.Chat.ID, response)
 	if err := b.sendMessage(reply); err != nil {
-		logging.Error("failed to send AI response",
-			"error", err,
-			"user_id", msg.From.ID)
+		return errs.NewAPIError("failed to send AI response", err)
+	}
 
-		return fmt.Errorf("failed to send AI response: %w", err)
+	return nil
+}
+
+// saveInteraction saves both chat history and group messages if applicable.
+func (b *Bot) saveInteraction(msg *tgbotapi.Message, userText, botResponse string) error {
+	// Save to chat history
+	if err := b.db.Save(msg.From.ID, userText, botResponse); err != nil {
+		return errs.NewDatabaseError("failed to save chat history", err)
+	}
+
+	// If in a group, save both messages
+	if msg.Chat.IsGroup() || msg.Chat.IsSuperGroup() {
+		if err := b.db.SaveGroupMessage(msg.Chat.ID, msg.Chat.Title, msg.From.ID, msg.Text); err != nil {
+			return errs.NewDatabaseError("failed to save user group message", err)
+		}
+
+		if err := b.db.SaveGroupMessage(msg.Chat.ID, msg.Chat.Title, b.api.Self.ID, botResponse); err != nil {
+			return errs.NewDatabaseError("failed to save bot group message", err)
+		}
 	}
 
 	return nil
@@ -305,12 +278,8 @@ func (b *Bot) handleGroupMessage(msg *tgbotapi.Message) error {
 		return nil
 	}
 
-	groupID := msg.Chat.ID
-	groupName := msg.Chat.Title
-	userID := msg.From.ID
-
-	if err := b.db.SaveGroupMessage(groupID, groupName, userID, msg.Text); err != nil {
-		return fmt.Errorf("failed to save group message: %w", err)
+	if err := b.db.SaveGroupMessage(msg.Chat.ID, msg.Chat.Title, msg.From.ID, msg.Text); err != nil {
+		return errs.NewDatabaseError("failed to save group message", err)
 	}
 
 	return nil
@@ -319,70 +288,50 @@ func (b *Bot) handleGroupMessage(msg *tgbotapi.Message) error {
 // handleReset processes the /mrl_reset command.
 func (b *Bot) handleReset(msg *tgbotapi.Message) error {
 	if msg == nil {
-		return ErrNilMessage
+		return errs.NewValidationError("nil message", nil)
 	}
 
 	userID := msg.From.ID
 	if !b.isUserAuthorized(userID) {
-		logging.Warn("unauthorized access attempt",
-			"user_id", msg.From.ID,
-			"action", "reset_history")
-
 		reply := tgbotapi.NewMessage(msg.Chat.ID, b.cfg.Messages.Unauthorized)
 		if err := b.sendMessage(reply); err != nil {
-			logging.Error("failed to send unauthorized message",
-				"error", err,
-				"user_id", msg.From.ID)
+			logging.Error("failed to send unauthorized message", "error", err)
 		}
 
-		return ErrUnauthorized
+		return errs.NewUnauthorizedError("unauthorized access attempt")
 	}
 
-	logging.Info("resetting chat history", "user_id", userID)
-
 	if err := b.db.DeleteChatHistory(); err != nil {
-		logging.Error("failed to reset chat history",
-			"error", err,
-			"user_id", userID)
-
 		reply := tgbotapi.NewMessage(msg.Chat.ID, b.cfg.Messages.GeneralError)
 		if sendErr := b.sendMessage(reply); sendErr != nil {
-			logging.Error("failed to send error message to user",
-				"error", sendErr,
-				"user_id", userID)
+			logging.Error("failed to send error message", "error", sendErr)
 		}
 
-		return fmt.Errorf("history reset failed: %w", err)
+		return errs.NewDatabaseError("failed to reset chat history", err)
 	}
 
 	reply := tgbotapi.NewMessage(msg.Chat.ID, b.cfg.Messages.HistoryReset)
 	if err := b.sendMessage(reply); err != nil {
-		logging.Error("failed to send reset confirmation",
-			"error", err,
-			"user_id", userID)
-
-		return fmt.Errorf("history reset succeeded but failed to confirm: %w", err)
+		return errs.NewAPIError("failed to send reset confirmation", err)
 	}
 
 	return nil
 }
 
 // scheduleDailyAnalysis sets up the daily user analysis job to run at midnight UTC.
-func (b *Bot) scheduleDailyAnalysis() {
+func (b *Bot) scheduleDailyAnalysis() error {
 	// Schedule the main analysis job
 	err := b.scheduler.AddJob(
 		"daily-profile-update",
 		"0 0 * * *", // Run at midnight UTC
 		func() {
-			// Process all messages, not just from a specific time period
-			b.generateUserAnalyses()
+			if err := b.generateUserAnalyses(); err != nil {
+				logging.Error("daily analysis failed", "error", err)
+			}
 		},
 	)
 	if err != nil {
-		logging.Error("failed to schedule daily analysis",
-			"error", err)
-
-		return
+		return errs.NewConfigError("failed to schedule daily analysis", err)
 	}
 
 	// Schedule a cleanup job to delete processed messages after a safety period
@@ -391,50 +340,42 @@ func (b *Bot) scheduleDailyAnalysis() {
 		"cleanup-processed-messages",
 		"0 12 * * *", // Run at noon UTC (12 hours after main job)
 		func() {
-			// Delete messages that were processed more than 7 days ago
-			// This provides a safety window in case we need to reprocess them
-			cutoffTime := time.Now().AddDate(0, 0, -7)
-			b.cleanupProcessedMessages(cutoffTime)
+			if err := b.cleanupProcessedMessages(time.Now().AddDate(0, 0, -7)); err != nil {
+				logging.Error("message cleanup failed", "error", err)
+			}
 		},
 	)
 	if err != nil {
-		logging.Error("failed to schedule message cleanup",
-			"error", err)
+		return errs.NewConfigError("failed to schedule message cleanup", err)
 	}
+
+	return nil
 }
 
 // cleanupProcessedMessages deletes messages that were processed before the cutoff time.
-func (b *Bot) cleanupProcessedMessages(cutoffTime time.Time) {
-	logging.Info("starting cleanup of processed messages",
-		"cutoff_time", cutoffTime.Format(timeformats.FullTimestamp))
-
+func (b *Bot) cleanupProcessedMessages(cutoffTime time.Time) error {
 	if err := b.db.DeleteProcessedGroupMessages(cutoffTime); err != nil {
-		logging.Error("failed to delete processed messages",
-			"error", err,
-			"cutoff_time", cutoffTime.Format(timeformats.FullTimestamp))
-
-		return
+		return errs.NewDatabaseError("failed to delete processed messages", err)
 	}
 
 	logging.Info("successfully cleaned up processed messages",
-		"cutoff_time", cutoffTime.Format(timeformats.FullTimestamp))
+		"cutoff_time", cutoffTime.Format(time.RFC3339))
+
+	return nil
 }
 
 // generateUserAnalyses analyzes all unprocessed messages and updates user profiles.
-func (b *Bot) generateUserAnalyses() {
+func (b *Bot) generateUserAnalyses() error {
 	// Get only unprocessed messages from the database
 	unprocessedMessages, err := b.db.GetUnprocessedGroupMessages()
 	if err != nil {
-		logging.Error("failed to get unprocessed group messages",
-			"error", err)
-
-		return
+		return errs.NewDatabaseError("failed to get unprocessed group messages", err)
 	}
 
 	if len(unprocessedMessages) == 0 {
 		logging.Info("no unprocessed messages to analyze")
 
-		return
+		return nil
 	}
 
 	logging.Info("starting profile analysis",
@@ -443,19 +384,13 @@ func (b *Bot) generateUserAnalyses() {
 	// Get existing profiles for context
 	existingProfiles, err := b.db.GetAllUserProfiles()
 	if err != nil {
-		logging.Error("failed to get existing profiles",
-			"error", err)
-
 		existingProfiles = make(map[int64]*db.UserProfile)
 	}
 
 	// Generate/update profiles with all unprocessed messages at once
 	updatedProfiles, err := b.ai.GenerateUserProfiles(unprocessedMessages, existingProfiles)
 	if err != nil {
-		logging.Error("failed to generate user profiles",
-			"error", err)
-
-		return
+		return errs.NewAPIError("failed to generate user profiles", err)
 	}
 
 	// Merge with existing profiles to preserve existing data
@@ -490,9 +425,7 @@ func (b *Bot) generateUserAnalyses() {
 	// Save updated profiles
 	for _, profile := range updatedProfiles {
 		if err := b.db.SaveUserProfile(profile); err != nil {
-			logging.Error("failed to save user profile",
-				"error", err,
-				"user_id", profile.UserID)
+			return errs.NewDatabaseError("failed to save user profile", err)
 		}
 	}
 
@@ -504,48 +437,45 @@ func (b *Bot) generateUserAnalyses() {
 
 	// Mark all messages as processed
 	if err := b.db.MarkGroupMessagesAsProcessed(messageIDs); err != nil {
-		logging.Error("failed to mark messages as processed",
-			"error", err)
+		return errs.NewDatabaseError("failed to mark messages as processed", err)
 	}
 
 	logging.Info("profile update completed",
 		"messages_processed", len(unprocessedMessages),
 		"profiles_updated", len(updatedProfiles))
+
+	return nil
 }
 
 // handleAnalyzeCommand processes the /mrl_analyze command.
 func (b *Bot) handleAnalyzeCommand(msg *tgbotapi.Message) error {
 	if msg == nil {
-		return ErrNilMessage
+		return errs.NewValidationError("nil message", nil)
 	}
 
 	userID := msg.From.ID
 	if !b.isUserAuthorized(userID) {
-		logging.Warn("unauthorized access attempt",
-			"user_id", msg.From.ID,
-			"action", "analyze_messages")
-
 		reply := tgbotapi.NewMessage(msg.Chat.ID, b.cfg.Messages.Unauthorized)
 		if err := b.sendMessage(reply); err != nil {
-			logging.Error("failed to send unauthorized message",
-				"error", err,
-				"user_id", msg.From.ID)
+			logging.Error("failed to send unauthorized message", "error", err)
 		}
 
-		return ErrUnauthorized
+		return errs.NewUnauthorizedError("unauthorized access attempt")
 	}
 
 	// Send processing message
 	reply := tgbotapi.NewMessage(msg.Chat.ID, "Analyzing messages and updating user profiles...")
 	if err := b.sendMessage(reply); err != nil {
-		return fmt.Errorf("failed to send processing message: %w", err)
+		return errs.NewAPIError("failed to send processing message", err)
 	}
 
 	stopTyping := b.StartTyping(msg.Chat.ID)
 	defer close(stopTyping)
 
 	// Run the analysis on all messages
-	b.generateUserAnalyses()
+	if err := b.generateUserAnalyses(); err != nil {
+		return errs.NewAPIError("failed to analyze user messages", err)
+	}
 
 	// Get updated profiles to display
 	return b.sendUserProfiles(msg.Chat.ID)
@@ -554,23 +484,17 @@ func (b *Bot) handleAnalyzeCommand(msg *tgbotapi.Message) error {
 // handleProfilesCommand processes the /mrl_profiles command.
 func (b *Bot) handleProfilesCommand(msg *tgbotapi.Message) error {
 	if msg == nil {
-		return ErrNilMessage
+		return errs.NewValidationError("nil message", nil)
 	}
 
 	userID := msg.From.ID
 	if !b.isUserAuthorized(userID) {
-		logging.Warn("unauthorized access attempt",
-			"user_id", msg.From.ID,
-			"action", "view_profiles")
-
 		reply := tgbotapi.NewMessage(msg.Chat.ID, b.cfg.Messages.Unauthorized)
 		if err := b.sendMessage(reply); err != nil {
-			logging.Error("failed to send unauthorized message",
-				"error", err,
-				"user_id", msg.From.ID)
+			logging.Error("failed to send unauthorized message", "error", err)
 		}
 
-		return ErrUnauthorized
+		return errs.NewUnauthorizedError("unauthorized access attempt")
 	}
 
 	return b.sendUserProfiles(msg.Chat.ID)
@@ -623,24 +547,18 @@ func (b *Bot) sendUserProfiles(chatID int64) error {
 // Fields: displaynames, origin, location, age, traits.
 func (b *Bot) handleEditUserCommand(msg *tgbotapi.Message) error {
 	if msg == nil {
-		return ErrNilMessage
+		return errs.NewValidationError("nil message", nil)
 	}
 
 	// Check if user is admin
 	userID := msg.From.ID
 	if !b.isUserAuthorized(userID) {
-		logging.Warn("unauthorized access attempt",
-			"user_id", msg.From.ID,
-			"action", "edit_user_profile")
-
 		reply := tgbotapi.NewMessage(msg.Chat.ID, b.cfg.Messages.Unauthorized)
 		if err := b.sendMessage(reply); err != nil {
-			logging.Error("failed to send unauthorized message",
-				"error", err,
-				"user_id", msg.From.ID)
+			logging.Error("failed to send unauthorized message", "error", err)
 		}
 
-		return ErrUnauthorized
+		return errs.NewUnauthorizedError("unauthorized access attempt")
 	}
 
 	// Parse command arguments
@@ -750,22 +668,13 @@ func (b *Bot) isUserAuthorized(userID int64) bool {
 
 // sendMessage sends a message with retry logic.
 func (b *Bot) sendMessage(msg tgbotapi.MessageConfig) error {
-	err := retry.Do(
-		func() error {
-			_, err := b.api.Send(msg)
-			if err != nil {
-				return fmt.Errorf("telegram API send failed: %w", err)
-			}
+	if b.api == nil {
+		return errs.NewConfigError("nil telegram API client", nil)
+	}
 
-			return nil
-		},
-		retry.Attempts(defaultRetryAttempts),
-		retry.Delay(defaultRetryDelay),
-		retry.DelayType(retry.BackOffDelay),
-		retry.LastErrorOnly(true),
-	)
+	_, err := b.api.Send(msg)
 	if err != nil {
-		return fmt.Errorf("failed to send message: %w", err)
+		return errs.NewAPIError("failed to send message", err)
 	}
 
 	return nil

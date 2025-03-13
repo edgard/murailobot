@@ -1,10 +1,10 @@
 package db
 
 import (
-	"fmt"
 	"time"
 
-	"github.com/edgard/murailobot/internal/utils/logging"
+	errs "github.com/edgard/murailobot/internal/errors"
+	"github.com/edgard/murailobot/internal/logging"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
@@ -19,18 +19,18 @@ func New() (Database, error) {
 
 	db, err := gorm.Open(sqlite.Open("storage.db"), gormCfg)
 	if err != nil {
-		return nil, fmt.Errorf("failed to open database: %w", err)
+		return nil, errs.NewDatabaseError("failed to open database", err)
 	}
 
 	sqlDB, err := db.DB()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get database instance: %w", err)
+		return nil, errs.NewDatabaseError("failed to get database instance", err)
 	}
 
 	sqlDB.SetMaxOpenConns(defaultMaxOpenConn)
 
 	if err := db.AutoMigrate(&ChatHistory{}, &GroupMessage{}, &UserProfile{}); err != nil {
-		return nil, fmt.Errorf("failed to run migrations: %w", err)
+		return nil, errs.NewDatabaseError("failed to run migrations", err)
 	}
 
 	return &sqliteDB{
@@ -41,14 +41,14 @@ func New() (Database, error) {
 // GetRecent retrieves the most recent chat history entries.
 func (d *sqliteDB) GetRecent(limit int) ([]ChatHistory, error) {
 	if limit <= 0 {
-		return nil, fmt.Errorf("%w: %d", ErrInvalidLimit, limit)
+		return nil, errs.NewValidationError("invalid limit", nil)
 	}
 
 	var chatHistory []ChatHistory
 	if err := d.db.Order("timestamp desc").
 		Limit(limit).
 		Find(&chatHistory).Error; err != nil {
-		return nil, fmt.Errorf("failed to get recent history: %w", err)
+		return nil, errs.NewDatabaseError("failed to get recent history", err)
 	}
 
 	return chatHistory, nil
@@ -64,7 +64,7 @@ func (d *sqliteDB) Save(userID int64, userMsg, botMsg string) error {
 	}
 
 	if err := d.db.Create(&chatEntry).Error; err != nil {
-		return fmt.Errorf("failed to save chat history: %w", err)
+		return errs.NewDatabaseError("failed to save chat history", err)
 	}
 
 	return nil
@@ -81,7 +81,7 @@ func (d *sqliteDB) SaveGroupMessage(groupID int64, groupName string, userID int6
 	}
 
 	if err := d.db.Create(&groupMsg).Error; err != nil {
-		return fmt.Errorf("failed to save group message: %w", err)
+		return errs.NewDatabaseError("failed to save group message", err)
 	}
 
 	return nil
@@ -90,14 +90,14 @@ func (d *sqliteDB) SaveGroupMessage(groupID int64, groupName string, userID int6
 // GetGroupMessagesInTimeRange retrieves all group messages within a time range.
 func (d *sqliteDB) GetGroupMessagesInTimeRange(start, end time.Time) ([]GroupMessage, error) {
 	if err := validateTimeRange(start, end); err != nil {
-		return nil, fmt.Errorf("invalid time range: %w", err)
+		return nil, errs.NewValidationError("invalid time range", err)
 	}
 
 	var groupMsgs []GroupMessage
 	if err := d.db.Where("timestamp >= ? AND timestamp < ?", start, end).
 		Order("timestamp asc").
 		Find(&groupMsgs).Error; err != nil {
-		return nil, fmt.Errorf("failed to get group messages: %w", err)
+		return nil, errs.NewDatabaseError("failed to get group messages", err)
 	}
 
 	return groupMsgs, nil
@@ -110,7 +110,7 @@ func (d *sqliteDB) GetAllGroupMessages() ([]GroupMessage, error) {
 	// We'll order by timestamp to process messages chronologically
 	if err := d.db.Order("timestamp asc").
 		Find(&groupMsgs).Error; err != nil {
-		return nil, fmt.Errorf("failed to get all group messages: %w", err)
+		return nil, errs.NewDatabaseError("failed to get all group messages", err)
 	}
 
 	return groupMsgs, nil
@@ -124,7 +124,7 @@ func (d *sqliteDB) GetUnprocessedGroupMessages() ([]GroupMessage, error) {
 	if err := d.db.Where("processed_at IS NULL").
 		Order("timestamp asc").
 		Find(&groupMsgs).Error; err != nil {
-		return nil, fmt.Errorf("failed to get unprocessed group messages: %w", err)
+		return nil, errs.NewDatabaseError("failed to get unprocessed group messages", err)
 	}
 
 	return groupMsgs, nil
@@ -133,7 +133,7 @@ func (d *sqliteDB) GetUnprocessedGroupMessages() ([]GroupMessage, error) {
 // MarkGroupMessagesAsProcessed marks a batch of group messages as processed.
 func (d *sqliteDB) MarkGroupMessagesAsProcessed(messageIDs []uint) error {
 	if len(messageIDs) == 0 {
-		return ErrEmptyMessageIDs
+		return errs.NewValidationError("empty message IDs", nil)
 	}
 
 	now := time.Now().UTC()
@@ -142,7 +142,7 @@ func (d *sqliteDB) MarkGroupMessagesAsProcessed(messageIDs []uint) error {
 	if err := d.db.Model(&GroupMessage{}).
 		Where("id IN ?", messageIDs).
 		Update("processed_at", now).Error; err != nil {
-		return fmt.Errorf("%w: failed to mark messages as processed: %w", ErrDatabaseOperation, err)
+		return errs.NewDatabaseError("failed to mark messages as processed", err)
 	}
 
 	return nil
@@ -151,14 +151,14 @@ func (d *sqliteDB) MarkGroupMessagesAsProcessed(messageIDs []uint) error {
 // DeleteProcessedGroupMessages deletes processed messages older than the cutoff time.
 func (d *sqliteDB) DeleteProcessedGroupMessages(cutoffTime time.Time) error {
 	if cutoffTime.IsZero() {
-		return ErrZeroTimeValue
+		return errs.NewValidationError("zero cutoff time", nil)
 	}
 
 	// Only delete messages that have been processed (non-nil processed_at)
 	// and whose processed_at timestamp is older than the cutoff time
 	if err := d.db.Where("processed_at IS NOT NULL AND processed_at < ?", cutoffTime).
 		Delete(&GroupMessage{}).Error; err != nil {
-		return fmt.Errorf("%w: failed to delete processed messages: %w", ErrDatabaseOperation, err)
+		return errs.NewDatabaseError("failed to delete processed messages", err)
 	}
 
 	return nil
@@ -169,15 +169,15 @@ const maxTimeRange = 31 * 24 * time.Hour // Maximum 31 days range
 // validateTimeRange ensures the time range is valid.
 func validateTimeRange(start, end time.Time) error {
 	if start.IsZero() || end.IsZero() {
-		return ErrZeroTimeValue
+		return errs.NewValidationError("zero time value", nil)
 	}
 
 	if start.After(end) {
-		return ErrInvalidTimeRange
+		return errs.NewValidationError("invalid time range: start after end", nil)
 	}
 
 	if end.Sub(start) > maxTimeRange {
-		return fmt.Errorf("%w: %v", ErrTimeRangeExceeded, maxTimeRange)
+		return errs.NewValidationError("time range exceeds maximum", nil)
 	}
 
 	return nil
@@ -186,7 +186,7 @@ func validateTimeRange(start, end time.Time) error {
 // DeleteChatHistory removes only the chat history, preserving user profiles and group messages.
 func (d *sqliteDB) DeleteChatHistory() error {
 	if err := d.db.Session(&gorm.Session{AllowGlobalUpdate: true}).Delete(&ChatHistory{}).Error; err != nil {
-		return fmt.Errorf("%w: failed to delete chat history: %w", ErrDatabaseOperation, err)
+		return errs.NewDatabaseError("failed to delete chat history", err)
 	}
 
 	return nil
@@ -196,20 +196,20 @@ func (d *sqliteDB) DeleteChatHistory() error {
 func (d *sqliteDB) DeleteAll() error {
 	if err := d.db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Session(&gorm.Session{AllowGlobalUpdate: true}).Delete(&ChatHistory{}).Error; err != nil {
-			return fmt.Errorf("failed to delete chat history: %w", err)
+			return errs.NewDatabaseError("failed to delete chat history", err)
 		}
 
 		if err := tx.Session(&gorm.Session{AllowGlobalUpdate: true}).Delete(&GroupMessage{}).Error; err != nil {
-			return fmt.Errorf("failed to delete group messages: %w", err)
+			return errs.NewDatabaseError("failed to delete group messages", err)
 		}
 
 		if err := tx.Session(&gorm.Session{AllowGlobalUpdate: true}).Delete(&UserProfile{}).Error; err != nil {
-			return fmt.Errorf("failed to delete user profiles: %w", err)
+			return errs.NewDatabaseError("failed to delete user profiles", err)
 		}
 
 		return nil
 	}); err != nil {
-		return fmt.Errorf("%w: %w", ErrDatabaseOperation, err)
+		return errs.NewDatabaseError("transaction failed during delete all", err)
 	}
 
 	return nil
@@ -225,7 +225,7 @@ func (d *sqliteDB) GetUserProfile(userID int64) (*UserProfile, error) {
 			return nil, nil // Profile doesn't exist yet
 		}
 
-		return nil, fmt.Errorf("failed to get user profile: %w", result.Error)
+		return nil, errs.NewDatabaseError("failed to get user profile", result.Error)
 	}
 
 	return &profile, nil
@@ -233,10 +233,14 @@ func (d *sqliteDB) GetUserProfile(userID int64) (*UserProfile, error) {
 
 // SaveUserProfile creates or updates a user profile.
 func (d *sqliteDB) SaveUserProfile(profile *UserProfile) error {
+	if profile == nil {
+		return errs.NewValidationError("nil profile", nil)
+	}
+
 	// Check if profile exists
 	existingProfile, err := d.GetUserProfile(profile.UserID)
 	if err != nil {
-		return fmt.Errorf("failed to check existing profile: %w", err)
+		return errs.NewDatabaseError("failed to check existing profile", err)
 	}
 
 	// If profile exists, update it
@@ -246,7 +250,7 @@ func (d *sqliteDB) SaveUserProfile(profile *UserProfile) error {
 		profile.LastUpdated = time.Now().UTC()
 
 		if err := d.db.Save(profile).Error; err != nil {
-			return fmt.Errorf("failed to update user profile: %w", err)
+			return errs.NewDatabaseError("failed to update user profile", err)
 		}
 
 		return nil
@@ -255,7 +259,7 @@ func (d *sqliteDB) SaveUserProfile(profile *UserProfile) error {
 	// Otherwise create a new profile
 	profile.LastUpdated = time.Now().UTC()
 	if err := d.db.Create(profile).Error; err != nil {
-		return fmt.Errorf("failed to create user profile: %w", err)
+		return errs.NewDatabaseError("failed to create user profile", err)
 	}
 
 	return nil
@@ -265,7 +269,7 @@ func (d *sqliteDB) SaveUserProfile(profile *UserProfile) error {
 func (d *sqliteDB) GetAllUserProfiles() (map[int64]*UserProfile, error) {
 	var profiles []UserProfile
 	if err := d.db.Find(&profiles).Error; err != nil {
-		return nil, fmt.Errorf("failed to get all user profiles: %w", err)
+		return nil, errs.NewDatabaseError("failed to get all user profiles", err)
 	}
 
 	// Map profiles by user ID for easy lookup
@@ -281,11 +285,11 @@ func (d *sqliteDB) GetAllUserProfiles() (map[int64]*UserProfile, error) {
 func (d *sqliteDB) Close() error {
 	sqlDB, err := d.db.DB()
 	if err != nil {
-		return fmt.Errorf("failed to get database instance: %w", err)
+		return errs.NewDatabaseError("failed to get database instance", err)
 	}
 
 	if err := sqlDB.Close(); err != nil {
-		return fmt.Errorf("failed to close database: %w", err)
+		return errs.NewDatabaseError("failed to close database", err)
 	}
 
 	return nil
