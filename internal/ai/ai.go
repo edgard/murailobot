@@ -290,17 +290,6 @@ Respond ONLY with the JSON object and no additional text or explanation.`,
 		if userID == c.botUID {
 			logging.Debug("adding bot's own profile with special handling", "bot_uid", c.botUID)
 
-			// Calculate message count for bot
-			botMessageCount := 0
-			if msgs, exists := userMessages[userID]; exists {
-				botMessageCount = len(msgs)
-			}
-
-			// Add existing message count if profile exists
-			if existingProfile, exists := existingProfiles[userID]; exists {
-				botMessageCount += existingProfile.MessageCount
-			}
-
 			// Create a special profile for the bot
 			updatedProfiles[userID] = &db.UserProfile{
 				UserID:          userID,
@@ -310,7 +299,6 @@ Respond ONLY with the JSON object and no additional text or explanation.`,
 				AgeRange:        "N/A",
 				Traits:          "Group Chat Bot",
 				LastUpdated:     time.Now().UTC(),
-				MessageCount:    botMessageCount,
 			}
 			continue
 		}
@@ -325,17 +313,6 @@ Respond ONLY with the JSON object and no additional text or explanation.`,
 			}
 		}
 
-		// Calculate message count
-		messageCount := 0
-		if msgs, exists := userMessages[userID]; exists {
-			messageCount = len(msgs)
-		}
-
-		// Add existing message count if profile exists
-		if existingProfile, exists := existingProfiles[userID]; exists {
-			messageCount += existingProfile.MessageCount
-		}
-
 		// Create or update profile
 		updatedProfiles[userID] = &db.UserProfile{
 			UserID:          userID,
@@ -345,7 +322,6 @@ Respond ONLY with the JSON object and no additional text or explanation.`,
 			AgeRange:        profile.AgeRange,
 			Traits:          profile.Traits,
 			LastUpdated:     time.Now().UTC(),
-			MessageCount:    messageCount,
 		}
 	}
 

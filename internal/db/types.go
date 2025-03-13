@@ -119,7 +119,6 @@ type UserProfile struct {
 	AgeRange        string    `gorm:"type:text"            json:"age_range"`        // Approximate age range
 	Traits          string    `gorm:"type:text"            json:"traits"`           // Personality traits and characteristics
 	LastUpdated     time.Time `gorm:"not null"             json:"last_updated"`     // When profile was last updated
-	MessageCount    int       `gorm:"not null"             json:"message_count"`    // Total messages analyzed
 }
 
 // Format: "UID [user_id] ([display_names]) | [origin_location] | [current_location] | [age_range] | [traits]".
