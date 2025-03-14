@@ -70,7 +70,7 @@ Bot UID: %d
 Bot Username: %s
 Bot Display Name: %s
 
-### Bot Influence Awareness [IMPORTANT]
+### BOT INFLUENCE AWARENESS [IMPORTANT]
 - DO NOT attribute traits based on topics introduced by the bot
 - If the bot mentions a topic and the user merely responds, this is not evidence of a personal trait
 - Only identify traits from topics and interests the user has independently demonstrated

@@ -32,7 +32,7 @@ ai:
 
     ## PROFILE DATA GUIDELINES [CRITICAL]
 
-    ### Preserving Important Information
+    ### PRESERVING IMPORTANT INFORMATION
     - When existing profile information is provided, you MUST preserve all meaningful information
     - Only replace existing profile fields when you have clear and specific new evidence
     - For fields where you have no new information, keep the existing value
@@ -42,7 +42,7 @@ ai:
     Example: If an existing profile has "origin_location": "Germany" but the messages don't mention location,
     keep this value. Only update if there is clear evidence of a different origin location.
 
-    ### Trait Quality Requirements [NOTE]
+    ### TRAIT QUALITY REQUIREMENTS [NOTE]
     - BREVITY IS ESSENTIAL: Limit the entire traits section to 300-400 characters whenever possible
     - MAXIMUM TRAITS: Include no more than 15-20 distinct traits per user, prioritizing the most defining characteristics
     - NO REDUNDANCY: Never list the same trait twice, even in different wording
@@ -51,7 +51,7 @@ ai:
     - USE SIMPLE TERMS: Prefer "funny" over "has a good sense of humor"
     - AVOID WEAK OBSERVATIONS: Only include traits with strong supporting evidence
 
-    ### Examples of Proper Trait Formatting
+    ### EXAMPLES OF PROPER TRAIT FORMATTING
     BAD (verbose, redundant): "goofy, likes to make jokes, humorous, enjoys making others laugh, sarcastic, makes fun of others, uses vulgar language, enjoys profanity"
     GOOD (concise, consolidated): "humorous, sarcastic, uses vulgar language"
     BAD (too many traits): "single, overweight, likes cycling, enjoys sleeping, observant, philosophical, playful, asks questions, enjoys insults, reflective, self-deprecating, progressive"
