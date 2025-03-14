@@ -26,8 +26,8 @@ var (
 	// metadataFormatRegex matches timestamp metadata prefixes in the format:
 	// "[2025-03-06T22:30:11+01:00] USER:" or with fractional seconds or UTC 'Z' timezone.
 	// Used to remove bot message metadata prefixes that may appear in logs and automated messages.
-	// The regex matches everything up to the last colon (and its trailing whitespace) after the timestamp,
-	// allowing for identifiers that contain colons (like "System:Log:Info:").
+	// Handles multiple colons in identifiers like "System:Log:Info:" and ensures only
+	// removing metadata prefixes at the start of the content.
 	metadataFormatRegex = regexp.MustCompile(`^\s*\[\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})\]\s+[^:]*(?::[^:]*)*:\s*`)
 
 	// unicodeReplacer defines mappings for Unicode character normalization to ensure consistent

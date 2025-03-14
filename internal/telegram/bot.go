@@ -3,6 +3,7 @@
 package telegram
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"sort"
@@ -229,6 +230,19 @@ func (b *Bot) handleGroupMessage(msg *tgbotapi.Message) error {
 		return nil
 	}
 
+	// Validate required message fields
+	if msg.Chat == nil {
+		return errs.NewValidationError("nil chat in message", nil)
+	}
+
+	if msg.From == nil {
+		return errs.NewValidationError("nil sender in message", nil)
+	}
+
+	if msg.Chat.ID == 0 || msg.From.ID == 0 {
+		return errs.NewValidationError("invalid chat or user ID", nil)
+	}
+
 	// Save the message to the database
 	if err := b.db.SaveGroupMessage(msg.Chat.ID, msg.Chat.Title, msg.From.ID, msg.Text); err != nil {
 		return errs.NewDatabaseError("failed to save group message", err)
@@ -256,12 +270,24 @@ func (b *Bot) handleGroupMessage(msg *tgbotapi.Message) error {
 					"error", err,
 					"chat_id", msg.Chat.ID)
 
-				recentMessages = []db.GroupMessage{} // Empty slice on error
+				// Send error message to user rather than continuing with empty context
+				reply := tgbotapi.NewMessage(msg.Chat.ID, b.cfg.Messages.GeneralError)
+				if sendErr := b.sendMessage(reply); sendErr != nil {
+					logging.Error("failed to send error message", "error", sendErr)
+				}
+
+				return errs.NewDatabaseError("failed to get recent messages", err)
 			}
 
 			// Get all user profiles for better group context
 			userProfiles, err := b.db.GetAllUserProfiles()
 			if err != nil {
+				logging.Error("failed to get user profiles",
+					"error", err,
+					"chat_id", msg.Chat.ID)
+
+				// Continue with empty profiles rather than failing completely
+				// This is a less critical error - we can still respond without profile context
 				userProfiles = make(map[int64]*db.UserProfile)
 			}
 
@@ -390,6 +416,7 @@ func (b *Bot) cleanupProcessedMessages(cutoffTime time.Time) error {
 		}
 
 		// Delete processed messages for this group, excluding the preserved IDs
+		// Only delete messages that are both processed AND older than the cutoff time
 		if err := b.db.DeleteProcessedGroupMessagesExcept(groupID, cutoffTime, preserveIDs); err != nil {
 			logging.Error("failed to clean up messages for group",
 				"error", err,
@@ -414,6 +441,20 @@ func (b *Bot) generateUserAnalyses() error {
 
 	if len(unprocessedMessages) == 0 {
 		logging.Info("no unprocessed messages to analyze")
+
+		// Verify we have existing profiles to return
+		existingProfiles, err := b.db.GetAllUserProfiles()
+		if err != nil {
+			logging.Warn("failed to get existing profiles after finding no unprocessed messages",
+				"error", err)
+			// Continue without profiles rather than fail completely
+			existingProfiles = make(map[int64]*db.UserProfile)
+		}
+
+		if len(existingProfiles) == 0 {
+			logging.Info("no existing profiles found when checking for analysis")
+			// We have nothing to analyze and no profiles to return
+		}
 
 		// Even if there are no new messages, we should still return any existing profiles
 		// This avoids an empty response when calling from handleAnalyzeCommand
@@ -550,8 +591,13 @@ func (b *Bot) sendUserProfiles(chatID int64) error {
 		logging.Error("failed to get user profiles", "error", err)
 
 		reply := tgbotapi.NewMessage(chatID, b.cfg.Messages.GeneralError)
+		if sendErr := b.sendMessage(reply); sendErr != nil {
+			logging.Error("failed to send error message", "error", sendErr)
 
-		return b.sendMessage(reply)
+			return errs.NewAPIError("failed to send error message", sendErr)
+		}
+
+		return errs.NewDatabaseError("failed to get user profiles", err)
 	}
 
 	if len(profiles) == 0 {
@@ -713,8 +759,18 @@ func (b *Bot) sendMessage(msg tgbotapi.MessageConfig) error {
 }
 
 // StartTyping sends periodic typing indicators until the returned channel is closed.
+// Always call close(stopTyping) in a defer statement after receiving the channel
+// to prevent goroutine leaks.
 func (b *Bot) StartTyping(chatID int64) chan struct{} {
 	stopTyping := make(chan struct{})
+
+	// Check API client
+	if b.api == nil {
+		logging.Error("nil telegram API client in StartTyping")
+
+		return stopTyping // Return channel that can be closed without issue
+	}
+
 	action := tgbotapi.NewChatAction(chatID, tgbotapi.ChatTyping)
 
 	// Send initial typing indicator
@@ -724,8 +780,13 @@ func (b *Bot) StartTyping(chatID int64) chan struct{} {
 			"chat_id", chatID)
 	}
 
+	// Create a context that's cancelled when stopTyping is closed or bot is shutting down
+	ctx, cancel := context.WithCancel(context.Background())
+
 	// Keep sending typing indicators until stopTyping
 	go func() {
+		defer cancel() // Ensure context is cancelled when goroutine exits
+
 		ticker := time.NewTicker(defaultTypingInterval)
 		defer ticker.Stop()
 
@@ -733,11 +794,26 @@ func (b *Bot) StartTyping(chatID int64) chan struct{} {
 			select {
 			case <-stopTyping:
 				return
+			case <-b.running:
+				// Bot is shutting down, exit goroutine
+				return
 			case <-ticker.C:
-				if _, err := b.api.Request(action); err != nil {
-					logging.Debug("failed to send typing action",
-						"error", err,
-						"chat_id", chatID)
+				// Continue with typing indicator
+				// Check if bot is still running to avoid sending after shutdown
+				select {
+				case <-ctx.Done():
+					return
+				default:
+					// Send typing indicator
+					_, err := b.api.Request(action)
+					if err != nil {
+						logging.Debug("failed to send typing action",
+							"error", err,
+							"chat_id", chatID)
+
+						// If we're getting errors, slow down the typing indicators slightly
+						time.Sleep(500 * time.Millisecond)
+					}
 				}
 			}
 		}

@@ -19,7 +19,7 @@ import (
 // New creates a new AI client with the provided configuration and database connection.
 //
 //nolint:ireturn // Interface return is intentional for better abstraction
-func New(cfg *config.Config, db database) (Service, error) {
+func New(cfg *config.Config, db db.Database) (Service, error) {
 	if cfg == nil {
 		return nil, errs.NewValidationError("nil config", nil)
 	}
@@ -115,13 +115,8 @@ func (c *client) Generate(userID int64, userMsg string, recentMessages []db.Grou
 		Content: systemPrompt,
 	})
 
-	// Add recent messages as context (in chronological order)
+	// Add recent messages as context (already in chronological order from DB)
 	if len(recentMessages) > 0 {
-		// Sort messages chronologically (oldest first)
-		sort.Slice(recentMessages, func(i, j int) bool {
-			return recentMessages[i].Timestamp.Before(recentMessages[j].Timestamp)
-		})
-
 		for _, msg := range recentMessages {
 			role := "user"
 			// If the message is from the bot, mark it as assistant
@@ -141,9 +136,11 @@ func (c *client) Generate(userID int64, userMsg string, recentMessages []db.Grou
 		}
 	}
 
-	// Add the current message
+	// Add the current message with the current timestamp
+	// Use the timestamp from when the message was received, not just when we're processing it
+	currentTimestamp := time.Now().UTC()
 	currentMsg := fmt.Sprintf("[%s] UID %d: %s",
-		time.Now().Format(time.RFC3339),
+		currentTimestamp.Format(time.RFC3339),
 		userID,
 		userMsg,
 	)
@@ -264,12 +261,64 @@ func (c *client) GenerateUserProfiles(messages []db.GroupMessage, existingProfil
 		} `json:"users"`
 	}
 
-	if err := json.Unmarshal([]byte(response), &profileResponse); err != nil {
-		return nil, errs.NewAPIError("failed to parse profile response", err)
+	// Trim response and validate it's not empty
+	response = strings.TrimSpace(response)
+	if response == "" {
+		return nil, errs.NewAPIError("empty profile response from AI", nil)
+	}
+
+	// Extract JSON portion if there's extra text before or after
+	jsonStart := strings.Index(response, "{")
+	jsonEnd := strings.LastIndex(response, "}")
+
+	if jsonStart == -1 || jsonEnd == -1 || jsonEnd <= jsonStart {
+		logging.Error("could not find valid JSON object in response", "response", response)
+
+		return nil, errs.NewAPIError("invalid JSON format in profile response", nil)
+	}
+
+	jsonContent := response[jsonStart : jsonEnd+1]
+	logging.Debug("extracted JSON content", "length", len(jsonContent))
+
+	if err := json.Unmarshal([]byte(jsonContent), &profileResponse); err != nil {
+		// Try to clean the JSON content - AI models sometimes output invalid JSON with comments
+		// or other characters that can cause parsing to fail
+		cleanedJSON := text.SanitizeJSON(jsonContent)
+
+		if err := json.Unmarshal([]byte(cleanedJSON), &profileResponse); err != nil {
+			logging.Error("json unmarshal error after cleaning",
+				"error", err,
+				"original", jsonContent,
+				"cleaned", cleanedJSON)
+
+			return nil, errs.NewAPIError("failed to parse profile response", err)
+		}
+
+		logging.Info("successfully parsed response after JSON cleaning")
+	}
+
+	// Initialize empty map for users if it's nil to avoid nil map errors
+	if profileResponse.Users == nil {
+		profileResponse.Users = make(map[string]struct {
+			DisplayNames    string `json:"display_names"`
+			OriginLocation  string `json:"origin_location"`
+			CurrentLocation string `json:"current_location"`
+			AgeRange        string `json:"age_range"`
+			Traits          string `json:"traits"`
+		})
+
+		logging.Warn("empty users object in profile response, using empty map")
 	}
 
 	// Convert to UserProfile objects
 	updatedProfiles := make(map[int64]*db.UserProfile)
+
+	// Return empty map if no users found instead of nil
+	if len(profileResponse.Users) == 0 {
+		logging.Warn("no users in profile response")
+
+		return updatedProfiles, nil
+	}
 
 	for userIDStr, profile := range profileResponse.Users {
 		// Convert user ID string to int64
@@ -346,7 +395,11 @@ func (c *client) GenerateUserProfiles(messages []db.GroupMessage, existingProfil
 func (c *client) createCompletion(req completionRequest) (string, error) {
 	var response string
 
-	resp, err := c.aiClient.CreateChatCompletion(context.Background(), openai.ChatCompletionRequest{
+	// Create context with timeout to prevent hanging API calls
+	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
+	defer cancel()
+
+	resp, err := c.aiClient.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
 		Model:       c.model,
 		Messages:    req.messages,
 		Temperature: c.temperature,

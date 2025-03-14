@@ -79,19 +79,12 @@ type client struct {
 	timeout            time.Duration // Maximum time for API operations
 
 	// Dependencies
-	db database // Database for conversation history
+	db db.Database // Database for conversation history
 
 	// Bot information
 	botUID         int64  // Bot's Telegram User ID
 	botUsername    string // Bot's Telegram username
 	botDisplayName string // Bot's Telegram display name
-}
-
-// database defines the required database operations for AI functionality.
-// It provides access to user profiles.
-type database interface {
-	// GetUserProfile retrieves a user's profile by user ID.
-	GetUserProfile(userID int64) (*db.UserProfile, error)
 }
 
 // completionRequest encapsulates parameters for an AI completion API call.

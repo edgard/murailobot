@@ -2,6 +2,7 @@
 package text
 
 import (
+	"regexp"
 	"strings"
 	"unicode"
 
@@ -81,4 +82,31 @@ func Sanitize(input string) (string, error) {
 	}
 
 	return result, nil
+}
+
+// SanitizeJSON tries to clean invalid JSON that might come from AI responses.
+// This handles common issues like trailing commas, unquoted keys, and comments.
+func SanitizeJSON(input string) string {
+	// Remove any Javascript-style comments
+	commentRegex := regexp.MustCompile(`(/\*([^*]|[\r\n]|(\*+([^*/]|[\r\n])))*\*+/)|(//.*)`)
+	noComments := commentRegex.ReplaceAllString(input, "")
+
+	// Remove trailing commas in objects and arrays
+	trailingCommaRegex := regexp.MustCompile(`,(\s*[\]}])`)
+	noTrailingCommas := trailingCommaRegex.ReplaceAllString(noComments, "$1")
+
+	// Ensure property names are double-quoted
+	// This is a simplified version - a real implementation might need a parser
+	unquotedKeyRegex := regexp.MustCompile(`([{,]\s*)([a-zA-Z_][a-zA-Z0-9_]*)(\s*:)`)
+	quotedKeys := unquotedKeyRegex.ReplaceAllString(noTrailingCommas, `$1"$2"$3`)
+
+	// Replace single quotes with double quotes for property values
+	singleQuoteRegex := regexp.MustCompile(`:\s*'([^']*)'`)
+	doubleQuotes := singleQuoteRegex.ReplaceAllString(quotedKeys, `: "$1"`)
+
+	// Handle escaped quotes
+	escapedQuoteRegex := regexp.MustCompile(`\\(['"])`)
+	cleanedJSON := escapedQuoteRegex.ReplaceAllString(doubleQuotes, "$1")
+
+	return cleanedJSON
 }

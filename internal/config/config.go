@@ -2,6 +2,7 @@ package config
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"strings"
 
@@ -51,15 +52,39 @@ func LoadConfig() (*Config, error) {
 
 		var botVars []string
 
+		var botVarsWithValues []string
+
 		for _, v := range vars {
 			if strings.HasPrefix(v, "BOT_") {
-				botVars = append(botVars, strings.Split(v, "=")[0])
+				parts := strings.SplitN(v, "=", 2)
+				if len(parts) > 0 {
+					botVars = append(botVars, parts[0])
+
+					// Securely capture variable name and partial value for debugging
+					if len(parts) > 1 && len(parts[1]) > 0 {
+						// Show first few chars of value for debugging without exposing sensitive data
+						valuePreview := parts[1]
+						if len(valuePreview) > 6 {
+							valuePreview = valuePreview[:3] + "..." + valuePreview[len(valuePreview)-3:]
+						} else if len(valuePreview) > 3 {
+							valuePreview = valuePreview[:2] + "..."
+						} else {
+							valuePreview = "[set]"
+						}
+
+						botVarsWithValues = append(botVarsWithValues,
+							fmt.Sprintf("%s=%s", parts[0], valuePreview))
+					} else {
+						botVarsWithValues = append(botVarsWithValues, parts[0]+"=[empty]")
+					}
+				}
 			}
 		}
 
 		msg := "failed to load environment variables"
 		if len(botVars) > 0 {
 			msg = msg + " (found BOT_ vars: " + strings.Join(botVars, ", ") + ")"
+			msg = msg + " with values: " + strings.Join(botVarsWithValues, ", ")
 		}
 
 		return nil, errs.NewConfigError(msg, err)

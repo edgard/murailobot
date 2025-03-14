@@ -1,6 +1,7 @@
 package db
 
 import (
+	"sort"
 	"time"
 
 	"github.com/edgard/murailobot/internal/errs"
@@ -27,6 +28,7 @@ func New() (Database, error) {
 		return nil, errs.NewDatabaseError("failed to get database instance", err)
 	}
 
+	// Use default max open connections value from constants
 	sqlDB.SetMaxOpenConns(defaultMaxOpenConn)
 
 	if err := db.AutoMigrate(&GroupMessage{}, &UserProfile{}); err != nil {
@@ -48,7 +50,15 @@ func (d *sqliteDB) SaveGroupMessage(groupID int64, groupName string, userID int6
 		Timestamp: time.Now().UTC(),
 	}
 
-	if err := d.db.Create(&groupMsg).Error; err != nil {
+	// Use a transaction for consistency
+	err := d.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(&groupMsg).Error; err != nil {
+			return err
+		}
+
+		return nil
+	})
+	if err != nil {
 		return errs.NewDatabaseError("failed to save group message", err)
 	}
 
@@ -68,6 +78,12 @@ func (d *sqliteDB) GetRecentGroupMessages(groupID int64, limit int) ([]GroupMess
 		Find(&groupMsgs).Error; err != nil {
 		return nil, errs.NewDatabaseError("failed to get recent group messages", err)
 	}
+
+	// Sort messages chronologically (oldest first) before returning
+	// This helps consumers avoid having to sort themselves
+	sort.Slice(groupMsgs, func(i, j int) bool {
+		return groupMsgs[i].Timestamp.Before(groupMsgs[j].Timestamp)
+	})
 
 	return groupMsgs, nil
 }
@@ -123,10 +139,27 @@ func (d *sqliteDB) MarkGroupMessagesAsProcessed(messageIDs []uint) error {
 
 	now := time.Now().UTC()
 
-	// Update all messages in the batch with the current timestamp
-	if err := d.db.Model(&GroupMessage{}).
-		Where("id IN ?", messageIDs).
-		Update("processed_at", now).Error; err != nil {
+	// Use a transaction to ensure consistency
+	err := d.db.Transaction(func(tx *gorm.DB) error {
+		// Process in smaller batches to avoid potential issues with large IN clauses
+		batchSize := 100
+		for i := 0; i < len(messageIDs); i += batchSize {
+			end := i + batchSize
+			if end > len(messageIDs) {
+				end = len(messageIDs)
+			}
+
+			batch := messageIDs[i:end]
+			if err := tx.Model(&GroupMessage{}).
+				Where("id IN ?", batch).
+				Update("processed_at", now).Error; err != nil {
+				return err
+			}
+		}
+
+		return nil
+	})
+	if err != nil {
 		return errs.NewDatabaseError("failed to mark messages as processed", err)
 	}
 
@@ -160,18 +193,82 @@ func (d *sqliteDB) DeleteProcessedGroupMessagesExcept(groupID int64, cutoffTime 
 		return errs.NewValidationError("invalid group ID", nil)
 	}
 
-	// Build the query: delete processed messages for this group before cutoff time,
-	// except those with IDs in preserveIDs
-	query := d.db.Where("group_id = ? AND processed_at IS NOT NULL AND processed_at < ?",
-		groupID, cutoffTime)
-
-	// If we have IDs to preserve, add them to the query
-	if len(preserveIDs) > 0 {
-		query = query.Where("id NOT IN ?", preserveIDs)
+	// Log warning if no IDs are being preserved - this might be intentional, but worth noting
+	if len(preserveIDs) == 0 {
+		logging.Warn("no message IDs preserved in DeleteProcessedGroupMessagesExcept",
+			"group_id", groupID,
+			"cutoff_time", cutoffTime.Format(time.RFC3339))
 	}
 
-	// Execute the delete
-	if err := query.Delete(&GroupMessage{}).Error; err != nil {
+	// Only proceed if there are messages to delete
+	// Use a transaction to ensure data consistency
+	err := d.db.Transaction(func(tx *gorm.DB) error {
+		// Build the query: delete processed messages for this group before cutoff time,
+		// except those with IDs in preserveIDs
+		query := tx.Where("group_id = ? AND processed_at IS NOT NULL AND processed_at < ?",
+			groupID, cutoffTime)
+
+		// If we have IDs to preserve, add them to the query
+		// Process in smaller batches to avoid potential issues with large NOT IN clauses
+		if len(preserveIDs) > 0 {
+			// For small lists, use a single query for efficiency
+			if len(preserveIDs) <= 100 {
+				query = query.Where("id NOT IN ?", preserveIDs)
+
+				// Execute the delete with a single query
+				if err := query.Delete(&GroupMessage{}).Error; err != nil {
+					return err
+				}
+			} else {
+				// For larger lists, find eligible IDs first, then filter out preserved IDs in Go
+				// to avoid SQLite limitations with large parameter lists
+				var messagesToCheck []GroupMessage
+				if err := tx.Where("group_id = ? AND processed_at IS NOT NULL AND processed_at < ?",
+					groupID, cutoffTime).Select("id").Find(&messagesToCheck).Error; err != nil {
+					return err
+				}
+
+				// Convert preserveIDs to map for O(1) lookups
+				preserveMap := make(map[uint]struct{}, len(preserveIDs))
+				for _, id := range preserveIDs {
+					preserveMap[id] = struct{}{}
+				}
+
+				// Filter out preserved IDs
+				var idsToDelete []uint
+
+				for _, msg := range messagesToCheck {
+					if _, exists := preserveMap[msg.ID]; !exists {
+						idsToDelete = append(idsToDelete, msg.ID)
+					}
+				}
+
+				// Delete in batches to avoid large IN clauses
+				batchSize := 100
+				for i := 0; i < len(idsToDelete); i += batchSize {
+					end := i + batchSize
+					if end > len(idsToDelete) {
+						end = len(idsToDelete)
+					}
+
+					batch := idsToDelete[i:end]
+					if len(batch) > 0 {
+						if err := tx.Where("id IN ?", batch).Delete(&GroupMessage{}).Error; err != nil {
+							return err
+						}
+					}
+				}
+			}
+		} else {
+			// No IDs to preserve, execute a simple delete
+			if err := query.Delete(&GroupMessage{}).Error; err != nil {
+				return err
+			}
+		}
+
+		return nil
+	})
+	if err != nil {
 		return errs.NewDatabaseError("failed to delete processed messages with exceptions", err)
 	}
 
@@ -257,29 +354,40 @@ func (d *sqliteDB) SaveUserProfile(profile *UserProfile) error {
 		return errs.NewValidationError("invalid user ID", nil)
 	}
 
-	// Check if profile exists
-	existingProfile, err := d.GetUserProfile(profile.UserID)
-	if err != nil {
-		return errs.NewDatabaseError("failed to check existing profile", err)
-	}
+	// Use a transaction to ensure data consistency
+	err := d.db.Transaction(func(tx *gorm.DB) error {
+		// Check if profile exists
+		var existingProfile UserProfile
+		result := tx.Where("user_id = ?", profile.UserID).First(&existingProfile)
 
-	// If profile exists, update it
-	if existingProfile != nil {
-		profile.ID = existingProfile.ID
-		profile.CreatedAt = existingProfile.CreatedAt
+		if result.Error != nil && result.Error != gorm.ErrRecordNotFound {
+			return result.Error
+		}
+
+		// Set the last updated time
 		profile.LastUpdated = time.Now().UTC()
 
-		if err := d.db.Save(profile).Error; err != nil {
-			return errs.NewDatabaseError("failed to update user profile", err)
+		// If profile exists, update it
+		if result.Error == nil {
+			profile.ID = existingProfile.ID
+			profile.CreatedAt = existingProfile.CreatedAt
+
+			if err := tx.Save(profile).Error; err != nil {
+				return err
+			}
+
+			return nil
+		}
+
+		// Otherwise create a new profile
+		if err := tx.Create(profile).Error; err != nil {
+			return err
 		}
 
 		return nil
-	}
-
-	// Otherwise create a new profile
-	profile.LastUpdated = time.Now().UTC()
-	if err := d.db.Create(profile).Error; err != nil {
-		return errs.NewDatabaseError("failed to create user profile", err)
+	})
+	if err != nil {
+		return errs.NewDatabaseError("failed to save user profile", err)
 	}
 
 	return nil
