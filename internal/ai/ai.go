@@ -57,8 +57,8 @@ func (c *client) SetBotInfo(uid int64, username string, displayName string) erro
 	return nil
 }
 
-// Generate creates an AI response for a user message.
-func (c *client) Generate(userID int64, userMsg string, userProfiles map[int64]*db.UserProfile) (string, error) {
+// Generate creates an AI response for a user message with context from recent messages.
+func (c *client) Generate(userID int64, userMsg string, recentMessages []db.GroupMessage, userProfiles map[int64]*db.UserProfile) (string, error) {
 	if userID <= 0 {
 		return "", errs.NewValidationError("invalid user ID", nil)
 	}
@@ -66,11 +66,6 @@ func (c *client) Generate(userID int64, userMsg string, userProfiles map[int64]*
 	userMsg = strings.TrimSpace(userMsg)
 	if userMsg == "" {
 		return "", errs.NewValidationError("empty user message", nil)
-	}
-
-	history, err := c.db.GetRecent(recentHistoryCount)
-	if err != nil {
-		return "", errs.NewAPIError("failed to retrieve chat history", err)
 	}
 
 	// Prepare system instruction with user profiles if available
@@ -120,13 +115,33 @@ func (c *client) Generate(userID int64, userMsg string, userProfiles map[int64]*
 		Content: systemPrompt,
 	})
 
-	if len(history) > 0 {
-		historyMsgs := c.formatHistory(history)
-		if len(historyMsgs) > 0 {
-			messages = append(messages, historyMsgs...)
+	// Add recent messages as context (in chronological order)
+	if len(recentMessages) > 0 {
+		// Sort messages chronologically (oldest first)
+		sort.Slice(recentMessages, func(i, j int) bool {
+			return recentMessages[i].Timestamp.Before(recentMessages[j].Timestamp)
+		})
+
+		for _, msg := range recentMessages {
+			role := "user"
+			// If the message is from the bot, mark it as assistant
+			if msg.UserID == c.botUID {
+				role = "assistant"
+			}
+
+			formattedMsg := fmt.Sprintf("[%s] UID %d: %s",
+				msg.Timestamp.Format(time.RFC3339),
+				msg.UserID,
+				msg.Message)
+
+			messages = append(messages, openai.ChatCompletionMessage{
+				Role:    role,
+				Content: formattedMsg,
+			})
 		}
 	}
 
+	// Add the current message
 	currentMsg := fmt.Sprintf("[%s] UID %d: %s",
 		time.Now().Format(time.RFC3339),
 		userID,
@@ -352,58 +367,4 @@ func (c *client) createCompletion(req completionRequest) (string, error) {
 	response = result
 
 	return response, nil
-}
-
-// formatHistory converts database chat history entries into message format for the AI API.
-func (c *client) formatHistory(history []db.ChatHistory) []openai.ChatCompletionMessage {
-	if len(history) == 0 {
-		return nil
-	}
-
-	validChatHistory := make([]db.ChatHistory, 0, len(history))
-
-	for i := len(history) - 1; i >= 0; i-- {
-		msg := history[i]
-		if msg.ID <= 0 || msg.UserID <= 0 || msg.Timestamp.IsZero() {
-			continue
-		}
-
-		trimmedUserMsg := strings.TrimSpace(msg.UserMsg)
-		trimmedBotMsg := strings.TrimSpace(msg.BotMsg)
-
-		if trimmedUserMsg != "" && trimmedBotMsg != "" {
-			validChatHistory = append(validChatHistory, msg)
-		}
-	}
-
-	if len(validChatHistory) == 0 {
-		return nil
-	}
-
-	messages := make([]openai.ChatCompletionMessage, 0, len(validChatHistory)*messagesPerHistory)
-
-	for i := len(validChatHistory) - 1; i >= 0; i-- {
-		msg := validChatHistory[i]
-		userMsg := strings.TrimSpace(msg.UserMsg)
-		botMsg := strings.TrimSpace(msg.BotMsg)
-
-		formattedMsg := fmt.Sprintf("[%s] UID %d: %s",
-			msg.Timestamp.Format(time.RFC3339),
-			msg.UserID,
-			userMsg,
-		)
-
-		messages = append(messages,
-			openai.ChatCompletionMessage{
-				Role:    "user",
-				Content: formattedMsg,
-			},
-			openai.ChatCompletionMessage{
-				Role:    "assistant",
-				Content: botMsg,
-			},
-		)
-	}
-
-	return messages
 }

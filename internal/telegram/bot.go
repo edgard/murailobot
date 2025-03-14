@@ -55,7 +55,6 @@ func New(cfg *config.Config, database db.Database, aiClient ai.Service, sched sc
 			AdminID: cfg.TelegramAdminID,
 			Commands: commands{
 				Start:    cfg.TelegramStartCommandDescription,
-				Mrl:      cfg.TelegramMrlCommandDescription,
 				Reset:    cfg.TelegramResetCommandDescription,
 				Analyze:  cfg.TelegramAnalyzeCommandDescription,
 				Profiles: cfg.TelegramProfilesCommandDescription,
@@ -125,7 +124,6 @@ func (b *Bot) setupCommands() error {
 
 	commands := []tgbotapi.BotCommand{
 		{Command: "start", Description: b.cfg.Commands.Start},
-		{Command: "mrl", Description: b.cfg.Commands.Mrl},
 		{Command: "mrl_reset", Description: b.cfg.Commands.Reset},
 		{Command: "mrl_analyze", Description: b.cfg.Commands.Analyze},
 		{Command: "mrl_profiles", Description: b.cfg.Commands.Profiles},
@@ -186,8 +184,6 @@ func (b *Bot) handleCommand(update tgbotapi.Update) {
 	switch cmd {
 	case "start":
 		err = b.handleStart(msg)
-	case "mrl":
-		err = b.handleMessage(msg)
 	case "mrl_reset":
 		err = b.handleReset(msg)
 	case "mrl_analyze":
@@ -227,84 +223,68 @@ func (b *Bot) handleStart(msg *tgbotapi.Message) error {
 	return b.sendMessage(reply)
 }
 
-// handleMessage processes the /mrl command.
-func (b *Bot) handleMessage(msg *tgbotapi.Message) error {
-	if msg == nil {
-		return errs.NewValidationError("nil message", nil)
-	}
-
-	text := strings.TrimSpace(strings.TrimPrefix(msg.Text, "/mrl"))
-	if text == "" {
-		reply := tgbotapi.NewMessage(msg.Chat.ID, b.cfg.Messages.Provide)
-
-		return b.sendMessage(reply)
-	}
-
-	logging.Info("processing chat request",
-		"user_id", msg.From.ID,
-		"message_length", len(text))
-
-	stopTyping := b.StartTyping(msg.Chat.ID)
-	defer close(stopTyping)
-
-	// Get all user profiles for better group context
-	userProfiles, err := b.db.GetAllUserProfiles()
-	if err != nil {
-		userProfiles = make(map[int64]*db.UserProfile)
-	}
-
-	response, err := b.ai.Generate(msg.From.ID, text, userProfiles)
-	if err != nil {
-		reply := tgbotapi.NewMessage(msg.Chat.ID, b.cfg.Messages.GeneralError)
-		if sendErr := b.sendMessage(reply); sendErr != nil {
-			logging.Error("failed to send error message", "error", sendErr)
-		}
-
-		return errs.NewAPIError("failed to generate AI response", err)
-	}
-
-	// Save the interaction
-	if err := b.saveInteraction(msg, text, response); err != nil {
-		logging.Error("failed to save interaction", "error", err)
-	}
-
-	reply := tgbotapi.NewMessage(msg.Chat.ID, response)
-	if err := b.sendMessage(reply); err != nil {
-		return errs.NewAPIError("failed to send AI response", err)
-	}
-
-	return nil
-}
-
-// saveInteraction saves both chat history and group messages if applicable.
-func (b *Bot) saveInteraction(msg *tgbotapi.Message, userText, botResponse string) error {
-	// Save to chat history
-	if err := b.db.Save(msg.From.ID, userText, botResponse); err != nil {
-		return errs.NewDatabaseError("failed to save chat history", err)
-	}
-
-	// If in a group, save both messages
-	if msg.Chat.IsGroup() || msg.Chat.IsSuperGroup() {
-		if err := b.db.SaveGroupMessage(msg.Chat.ID, msg.Chat.Title, msg.From.ID, msg.Text); err != nil {
-			return errs.NewDatabaseError("failed to save user group message", err)
-		}
-
-		if err := b.db.SaveGroupMessage(msg.Chat.ID, msg.Chat.Title, b.api.Self.ID, botResponse); err != nil {
-			return errs.NewDatabaseError("failed to save bot group message", err)
-		}
-	}
-
-	return nil
-}
-
-// handleGroupMessage processes messages from group chats.
+// handleGroupMessage processes messages from group chats, including @mentions.
 func (b *Bot) handleGroupMessage(msg *tgbotapi.Message) error {
 	if msg == nil || msg.Text == "" {
 		return nil
 	}
 
+	// Save the message to the database
 	if err := b.db.SaveGroupMessage(msg.Chat.ID, msg.Chat.Title, msg.From.ID, msg.Text); err != nil {
 		return errs.NewDatabaseError("failed to save group message", err)
+	}
+
+	// Check if the message mentions the bot
+	botMention := "@" + b.api.Self.UserName
+	if strings.Contains(msg.Text, botMention) {
+		// Remove the mention and process the message
+		text := strings.TrimSpace(strings.ReplaceAll(msg.Text, botMention, ""))
+		if text != "" {
+			logging.Info("processing @mention request",
+				"user_id", msg.From.ID,
+				"message_length", len(text))
+
+			stopTyping := b.StartTyping(msg.Chat.ID)
+			defer close(stopTyping)
+
+			// Get recent messages from this group chat (last 20 messages)
+			recentLimit := 20
+
+			recentMessages, err := b.db.GetRecentGroupMessages(msg.Chat.ID, recentLimit)
+			if err != nil {
+				logging.Error("failed to get recent messages",
+					"error", err,
+					"chat_id", msg.Chat.ID)
+
+				recentMessages = []db.GroupMessage{} // Empty slice on error
+			}
+
+			// Get all user profiles for better group context
+			userProfiles, err := b.db.GetAllUserProfiles()
+			if err != nil {
+				userProfiles = make(map[int64]*db.UserProfile)
+			}
+
+			response, err := b.ai.Generate(msg.From.ID, text, recentMessages, userProfiles)
+			if err != nil {
+				reply := tgbotapi.NewMessage(msg.Chat.ID, b.cfg.Messages.GeneralError)
+				if sendErr := b.sendMessage(reply); sendErr != nil {
+					logging.Error("failed to send error message", "error", sendErr)
+				}
+
+				return errs.NewAPIError("failed to generate AI response", err)
+			}
+
+			// Save the bot's response as a group message
+			if err := b.db.SaveGroupMessage(msg.Chat.ID, msg.Chat.Title, b.api.Self.ID, response); err != nil {
+				logging.Error("failed to save bot group message", "error", err)
+			}
+
+			reply := tgbotapi.NewMessage(msg.Chat.ID, response)
+			if err := b.sendMessage(reply); err != nil {
+				return errs.NewAPIError("failed to send AI response", err)
+			}
+		}
 	}
 
 	return nil
@@ -326,13 +306,16 @@ func (b *Bot) handleReset(msg *tgbotapi.Message) error {
 		return errs.NewUnauthorizedError("unauthorized access attempt")
 	}
 
-	if err := b.db.DeleteChatHistory(); err != nil {
+	// The reset command now operates on group messages
+	// Get timestamp from one week ago to preserve recent messages
+	oneWeekAgo := time.Now().AddDate(0, 0, -7)
+	if err := b.db.DeleteProcessedGroupMessages(oneWeekAgo); err != nil {
 		reply := tgbotapi.NewMessage(msg.Chat.ID, b.cfg.Messages.GeneralError)
 		if sendErr := b.sendMessage(reply); sendErr != nil {
 			logging.Error("failed to send error message", "error", sendErr)
 		}
 
-		return errs.NewDatabaseError("failed to reset chat history", err)
+		return errs.NewDatabaseError("failed to reset processed group messages", err)
 	}
 
 	reply := tgbotapi.NewMessage(msg.Chat.ID, b.cfg.Messages.HistoryReset)
@@ -377,14 +360,46 @@ func (b *Bot) scheduleDailyAnalysis() error {
 	return nil
 }
 
-// cleanupProcessedMessages deletes messages that were processed before the cutoff time.
+// cleanupProcessedMessages deletes messages that were processed before the cutoff time
+// while preserving recent messages for context.
 func (b *Bot) cleanupProcessedMessages(cutoffTime time.Time) error {
-	if err := b.db.DeleteProcessedGroupMessages(cutoffTime); err != nil {
-		return errs.NewDatabaseError("failed to delete processed messages", err)
+	// First, get all unique group chats
+	groups, err := b.db.GetUniqueGroupChats()
+	if err != nil {
+		return errs.NewDatabaseError("failed to get unique group chats", err)
 	}
 
-	logging.Info("successfully cleaned up processed messages",
-		"cutoff_time", cutoffTime.Format(time.RFC3339))
+	// For each group, preserve the most recent messages
+	messagesPerGroup := 20 // Keep at least this many recent messages per group
+
+	for _, groupID := range groups {
+		// Get most recent messages for this group
+		recentMessages, err := b.db.GetRecentGroupMessages(groupID, messagesPerGroup)
+		if err != nil {
+			logging.Error("failed to get recent messages for group",
+				"error", err,
+				"group_id", groupID)
+
+			continue
+		}
+
+		// Extract IDs to preserve
+		preserveIDs := make([]uint, 0, len(recentMessages))
+		for _, msg := range recentMessages {
+			preserveIDs = append(preserveIDs, msg.ID)
+		}
+
+		// Delete processed messages for this group, excluding the preserved IDs
+		if err := b.db.DeleteProcessedGroupMessagesExcept(groupID, cutoffTime, preserveIDs); err != nil {
+			logging.Error("failed to clean up messages for group",
+				"error", err,
+				"group_id", groupID)
+		}
+	}
+
+	logging.Info("successfully cleaned up processed messages while preserving context",
+		"cutoff_time", cutoffTime.Format(time.RFC3339),
+		"preserved_per_group", messagesPerGroup)
 
 	return nil
 }

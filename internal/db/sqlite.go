@@ -29,45 +29,13 @@ func New() (Database, error) {
 
 	sqlDB.SetMaxOpenConns(defaultMaxOpenConn)
 
-	if err := db.AutoMigrate(&ChatHistory{}, &GroupMessage{}, &UserProfile{}); err != nil {
+	if err := db.AutoMigrate(&GroupMessage{}, &UserProfile{}); err != nil {
 		return nil, errs.NewDatabaseError("failed to run migrations", err)
 	}
 
 	return &sqliteDB{
 		db: db,
 	}, nil
-}
-
-// GetRecent retrieves the most recent chat history entries.
-func (d *sqliteDB) GetRecent(limit int) ([]ChatHistory, error) {
-	if limit <= 0 {
-		return nil, errs.NewValidationError("invalid limit", nil)
-	}
-
-	var chatHistory []ChatHistory
-	if err := d.db.Order("timestamp desc").
-		Limit(limit).
-		Find(&chatHistory).Error; err != nil {
-		return nil, errs.NewDatabaseError("failed to get recent history", err)
-	}
-
-	return chatHistory, nil
-}
-
-// Save stores a new chat interaction with the current UTC timestamp.
-func (d *sqliteDB) Save(userID int64, userMsg, botMsg string) error {
-	chatEntry := ChatHistory{
-		UserID:    userID,
-		UserMsg:   userMsg,
-		BotMsg:    botMsg,
-		Timestamp: time.Now().UTC(),
-	}
-
-	if err := d.db.Create(&chatEntry).Error; err != nil {
-		return errs.NewDatabaseError("failed to save chat history", err)
-	}
-
-	return nil
 }
 
 // SaveGroupMessage stores a message from a group chat.
@@ -85,6 +53,23 @@ func (d *sqliteDB) SaveGroupMessage(groupID int64, groupName string, userID int6
 	}
 
 	return nil
+}
+
+// GetRecentGroupMessages retrieves the most recent group messages from a specific group chat.
+func (d *sqliteDB) GetRecentGroupMessages(groupID int64, limit int) ([]GroupMessage, error) {
+	if limit <= 0 {
+		return nil, errs.NewValidationError("invalid limit", nil)
+	}
+
+	var groupMsgs []GroupMessage
+	if err := d.db.Where("group_id = ?", groupID).
+		Order("timestamp desc").
+		Limit(limit).
+		Find(&groupMsgs).Error; err != nil {
+		return nil, errs.NewDatabaseError("failed to get recent group messages", err)
+	}
+
+	return groupMsgs, nil
 }
 
 // GetGroupMessagesInTimeRange retrieves all group messages within a time range.
@@ -164,6 +149,49 @@ func (d *sqliteDB) DeleteProcessedGroupMessages(cutoffTime time.Time) error {
 	return nil
 }
 
+// DeleteProcessedGroupMessagesExcept deletes processed messages for a specific group chat
+// while preserving the messages with IDs in the preserveIDs list.
+func (d *sqliteDB) DeleteProcessedGroupMessagesExcept(groupID int64, cutoffTime time.Time, preserveIDs []uint) error {
+	if cutoffTime.IsZero() {
+		return errs.NewValidationError("zero cutoff time", nil)
+	}
+
+	if groupID <= 0 {
+		return errs.NewValidationError("invalid group ID", nil)
+	}
+
+	// Build the query: delete processed messages for this group before cutoff time,
+	// except those with IDs in preserveIDs
+	query := d.db.Where("group_id = ? AND processed_at IS NOT NULL AND processed_at < ?",
+		groupID, cutoffTime)
+
+	// If we have IDs to preserve, add them to the query
+	if len(preserveIDs) > 0 {
+		query = query.Where("id NOT IN ?", preserveIDs)
+	}
+
+	// Execute the delete
+	if err := query.Delete(&GroupMessage{}).Error; err != nil {
+		return errs.NewDatabaseError("failed to delete processed messages with exceptions", err)
+	}
+
+	return nil
+}
+
+// GetUniqueGroupChats returns the IDs of all distinct group chats in the database.
+func (d *sqliteDB) GetUniqueGroupChats() ([]int64, error) {
+	var groupIDs []int64
+
+	// Query for distinct group_id values
+	if err := d.db.Model(&GroupMessage{}).
+		Distinct("group_id").
+		Pluck("group_id", &groupIDs).Error; err != nil {
+		return nil, errs.NewDatabaseError("failed to get unique group chats", err)
+	}
+
+	return groupIDs, nil
+}
+
 const maxTimeRange = 31 * 24 * time.Hour // Maximum 31 days range
 
 // validateTimeRange ensures the time range is valid.
@@ -183,22 +211,9 @@ func validateTimeRange(start, end time.Time) error {
 	return nil
 }
 
-// DeleteChatHistory removes only the chat history, preserving user profiles and group messages.
-func (d *sqliteDB) DeleteChatHistory() error {
-	if err := d.db.Session(&gorm.Session{AllowGlobalUpdate: true}).Delete(&ChatHistory{}).Error; err != nil {
-		return errs.NewDatabaseError("failed to delete chat history", err)
-	}
-
-	return nil
-}
-
 // DeleteAll removes all stored data in a single transaction.
 func (d *sqliteDB) DeleteAll() error {
 	if err := d.db.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Session(&gorm.Session{AllowGlobalUpdate: true}).Delete(&ChatHistory{}).Error; err != nil {
-			return errs.NewDatabaseError("failed to delete chat history", err)
-		}
-
 		if err := tx.Session(&gorm.Session{AllowGlobalUpdate: true}).Delete(&GroupMessage{}).Error; err != nil {
 			return errs.NewDatabaseError("failed to delete group messages", err)
 		}

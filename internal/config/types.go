@@ -22,16 +22,15 @@ const (
 const (
 	// Default command descriptions for Telegram commands.
 	DefaultStartCommandDescription    = "Start conversation with the bot"
-	DefaultMrlCommandDescription      = "Generate AI response"
 	DefaultResetCommandDescription    = "Reset chat history (admin only)"
 	DefaultAnalyzeCommandDescription  = "Analyze messages and update profiles (admin only)"
 	DefaultProfilesCommandDescription = "Show user profiles (admin only)"
 	DefaultEditUserCommandDescription = "Edit user profile data (admin only)"
 
 	// Default messages for various bot responses.
-	DefaultWelcomeMessage        = "👋 Welcome! I'm ready to assist you. Use /mrl followed by your message to start a conversation."
+	DefaultWelcomeMessage        = "👋 Welcome! I'm ready to assist you. Mention me in your group message to start a conversation."
 	DefaultNotAuthorizedMessage  = "🚫 Access denied. Please contact the administrator."
-	DefaultProvideMessagePrompt  = "ℹ️ Please provide a message with your /mrl command."
+	DefaultProvideMessagePrompt  = "ℹ️ Please provide a message when mentioning me."
 	DefaultGeneralErrorMessage   = "❌ Error occurred. Please try again later."
 	DefaultHistoryResetMessage   = "✅ Chat history has been cleared successfully."
 	DefaultAnalyzingMessage      = "⏳ Analyzing messages and updating user profiles..."
@@ -53,8 +52,8 @@ const (
 // defaultConfig holds the default configuration values.
 var defaultConfig = map[string]any{
 	"ai.base_url":    "https://api.openai.com/v1",
-	"ai.model":       "gpt-4",
-	"ai.temperature": 1.0,
+	"ai.model":       "gpt-4o",
+	"ai.temperature": 1.7,
 	"ai.instruction": "You are a helpful assistant focused on providing clear and accurate responses.",
 	"ai.profile_instruction": `You are a behavioral analyst with expertise in psychology, linguistics, and social dynamics.
 Your task is to analyze chat messages and build detailed psychological profiles of users.
@@ -93,30 +92,10 @@ keep this value. Only update if there is clear evidence of a different origin lo
 - Use precise, concise language without repetition
 - Focus on breadth of characteristics rather than variations of the same trait
 - The final traits list should have NO redundant or overlapping traits
-
-### Bot Influence Awareness
-- DO NOT attribute traits based on topics introduced by the bot
-- If the bot mentions a topic and the user merely responds, this is not evidence of a personal trait
-- Only identify traits from topics and interests the user has independently demonstrated
-- Ignore creative embellishments that might have been added by the bot in previous responses
-
-## OUTPUT FORMAT [VERY CRITICAL]
-Return ONLY a JSON object, no additional text, with this structure:
-{
-  "users": {
-    "[user_id]": {
-      "display_names": "Comma-separated list of names/nicknames",
-      "origin_location": "Where the user is from",
-      "current_location": "Where the user currently lives",
-      "age_range": "Approximate age range (20s, 30s, etc.)",
-      "traits": "Comma-separated list of personality traits and characteristics"
-    }
-  }
-}`,
+`,
 	"ai.timeout": DefaultAITimeout,
 
 	"telegram.commands.start":     DefaultStartCommandDescription,
-	"telegram.commands.mrl":       DefaultMrlCommandDescription,
 	"telegram.commands.reset":     DefaultResetCommandDescription,
 	"telegram.commands.analyze":   DefaultAnalyzeCommandDescription,
 	"telegram.commands.profiles":  DefaultProfilesCommandDescription,
@@ -178,7 +157,6 @@ type Config struct {
 	//
 	// These define the descriptions shown for bot commands in Telegram
 	TelegramStartCommandDescription    string `koanf:"telegram.commands.start"     validate:"required"`
-	TelegramMrlCommandDescription      string `koanf:"telegram.commands.mrl"       validate:"required"`
 	TelegramResetCommandDescription    string `koanf:"telegram.commands.reset"     validate:"required"`
 	TelegramAnalyzeCommandDescription  string `koanf:"telegram.commands.analyze"   validate:"required"`
 	TelegramProfilesCommandDescription string `koanf:"telegram.commands.profiles"  validate:"required"`

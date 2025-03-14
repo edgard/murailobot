@@ -8,11 +8,51 @@
 ai:
   token: "sk-your-token-here" # REQUIRED: API token
   base_url: "https://api.openai.com/v1" # Optional: API endpoint URL (must be valid URL)
-  model: "gpt-4" # Optional: Model identifier
-  temperature: 1.0 # Optional: Controls response randomness (between 0.0 and 2.0)
+  model: "gpt-4o" # Optional: Model identifier
+  temperature: 1.7 # Optional: Controls response randomness (between 0.0 and 2.0)
   timeout: "2m" # Optional: API call timeout (between 1s and 10m)
   instruction: "You are a helpful assistant focused on providing clear and accurate responses." # Optional: System prompt for chat responses
-  profile_instruction: "You are a behavioral analyst with expertise in psychology, linguistics, and social dynamics. Your task is to analyze chat messages and build detailed psychological profiles of users." # Optional: System prompt for user profile generation (configurable part)
+
+  # System prompt for user profile generation
+  # This detailed instruction guides how the AI analyzes messages and builds user profiles
+  profile_instruction: |
+    You are a behavioral analyst with expertise in psychology, linguistics, and social dynamics.
+    Your task is to analyze chat messages and build detailed psychological profiles of users.
+
+    ## ANALYSIS APPROACH
+    When analyzing messages, pay attention to:
+    1. Language patterns, word choice, and communication style
+    2. Emotional expressions and reactions to different topics
+    3. Recurring themes or topics in their communications
+    4. How communication evolves over time (changing interests, language formality)
+    5. Interaction patterns with other users and group dynamics
+    6. Cultural references, language usage, and personal details they reveal
+    7. Privacy considerations - avoid including sensitive personal information
+
+    ## PROFILE DATA GUIDELINES [CRITICAL]
+
+    ### Preserving Important Information
+    - When existing profile information is provided, you MUST preserve all meaningful information
+    - Only replace existing profile fields when you have clear and specific new evidence
+    - For fields where you have no new information, keep the existing value
+    - If uncertain about any field, retain the existing information or use qualifiers like "possibly" or "appears to be"
+    - NEVER include sensitive personal information (addresses, phone numbers, financial details)
+
+    Example: If an existing profile has "origin_location": "Germany" but the messages don't mention location,
+    keep this value. Only update if there is clear evidence of a different origin location.
+
+    ### Trait Quality and Consolidation
+    - You MUST consolidate similar traits while preserving their full meaning and nuance
+    - Even for existing profiles, consolidate redundant traits (this is the ONLY modification allowed without new evidence)
+    - Preserve distinctions between interests, expertise, personality traits, and preferences when consolidating
+    - Examples of proper consolidation:
+      - "interested in gaming news" + "follows gaming trends" → "follows gaming trends and news"
+      - "enjoys hiking" + "loves outdoor activities" → "enjoys outdoor activities, especially hiking"
+      - "works in software development" + "programmer" → "software developer/programmer"
+    - Keep traits distinct and non-redundant within each user profile
+    - Use precise, concise language without repetition
+    - Focus on breadth of characteristics rather than variations of the same trait
+    - The final traits list should have NO redundant or overlapping traits
 
 #------------------------------------------------------------------------------
 # Telegram Configuration
@@ -23,16 +63,15 @@ telegram:
 
   commands: # Optional: Command descriptions for Telegram
     start: "Start conversation with the bot"
-    mrl: "Generate AI response"
     reset: "Reset chat history (admin only)"
     analyze: "Analyze messages and update profiles (admin only)"
     profiles: "Show user profiles (admin only)"
     edit_user: "Edit user profile data (admin only)"
 
   messages: # Optional: Custom message templates
-    welcome: "👋 Welcome! I'm ready to assist you. Use /mrl followed by your message to start a conversation."
+    welcome: "👋 Welcome! I'm ready to assist you. Mention me in your group message to start a conversation."
     not_authorized: "🚫 Access denied. Please contact the administrator."
-    provide_message: "ℹ️ Please provide a message with your /mrl command."
+    provide_message: "ℹ️ Please provide a message when mentioning me."
     general_error: "❌ Error occurred. Please try again later."
     history_reset: "✅ Chat history has been cleared successfully."
     analyzing: "⏳ Analyzing messages and updating user profiles..."

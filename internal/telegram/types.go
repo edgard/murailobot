@@ -24,7 +24,6 @@ const (
 // commands defines bot command descriptions for Telegram.
 type commands struct {
 	Start    string
-	Mrl      string
 	Reset    string
 	Analyze  string
 	Profiles string

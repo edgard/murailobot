@@ -9,9 +9,10 @@ A Telegram bot powered by AI models that provides intelligent responses through 
 
 ## Features
 
-- Chat with AI through Telegram
-- Persistent conversation history
-- User profiling system with behavioral analysis
+- Chat with AI through Telegram group mentions
+- Persistent conversation history with context preservation
+- Advanced user profiling system with behavioral analysis
+- Automated daily user profile updates
 - Role-based access control
 - Docker support
 - Simple YAML configuration
@@ -20,7 +21,8 @@ A Telegram bot powered by AI models that provides intelligent responses through 
 
 MurailoBot includes a sophisticated user profiling system that:
 
-- Analyzes message patterns and content to build psychological profiles
+- Automatically analyzes message patterns and content to build psychological profiles
+- Runs daily profile updates with data preservation mechanisms
 - Tracks user metadata including display names, locations, and age ranges
 - Maintains persistent profiles across conversations
 - Enhances AI responses with contextual user information
@@ -31,6 +33,7 @@ The profiling system helps the bot provide more personalized and context-aware r
 - Emotional expressions and communication style
 - Recurring themes in communications
 - Cultural references and personal details
+- Group interaction dynamics
 
 ## Prerequisites
 
@@ -87,12 +90,14 @@ For a complete configuration with all options, see [config.yaml.example](config.
 The bot supports additional configuration options:
 
 #### AI Options
-- `model`: Specify which AI model to use (default: "gpt-4")
+- `model`: Specify which AI model to use (default: "gpt-4o")
 - `temperature`: Control response randomness (0.0-2.0)
 - `timeout`: Set API call timeout duration
 - `instruction`: Customize the system prompt for the AI
+- `profile_instruction`: Customize the system prompt for profile generation
 
 #### Telegram Options
+- `commands`: Customize command descriptions shown in Telegram
 - `messages`: Customize bot message templates for various interactions
 
 #### Logging Options
@@ -115,10 +120,19 @@ Environment variables follow the pattern `BOT_SECTION_KEY` where section and key
 ## Commands
 
 - `/start` - Initialize bot conversation
-- `/mrl <message>` - Generate AI response
 - `/mrl_reset` - Clear chat history (admin only)
 - `/mrl_analyze` - Analyze user messages and update profiles (admin only)
 - `/mrl_profiles` - Show user profiles (admin only)
+- `/mrl_edit_user` - Edit user profile data (admin only)
+
+## Group Chat Usage
+
+MurailoBot is designed to operate in Telegram group chats:
+
+1. Add the bot to your group
+2. Mention the bot (@your_bot_name) in your message to get a response
+3. The bot will analyze the conversation context and respond appropriately
+4. Group messages are saved for context and profile generation
 
 ## Release Process
 

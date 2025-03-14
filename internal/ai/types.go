@@ -7,11 +7,9 @@ import (
 	"github.com/sashabaranov/go-openai"
 )
 
-// History and message capacity constants.
+// Message capacity constants.
 const (
-	recentHistoryCount    = 10 // Number of recent messages to include in context
 	messagesSliceCapacity = 20 // Initial capacity for messages slice
-	messagesPerHistory    = 2  // Number of messages per history entry (user + bot)
 )
 
 // Message context constants.
@@ -48,10 +46,11 @@ type Service interface {
 	// Message generation methods
 
 	// Generate creates an AI response for a user message.
+	// If recentMessages is provided, it will be used as context for the response.
 	// If userProfiles is provided, it will be used to personalize the response
 	// with awareness of all users in the group.
 	// The response is sanitized and validated before being returned.
-	Generate(userID int64, userMsg string, userProfiles map[int64]*db.UserProfile) (string, error)
+	Generate(userID int64, userMsg string, recentMessages []db.GroupMessage, userProfiles map[int64]*db.UserProfile) (string, error)
 
 	// Analysis methods
 
@@ -89,12 +88,8 @@ type client struct {
 }
 
 // database defines the required database operations for AI functionality.
-// It provides access to conversation history and user profiles.
+// It provides access to user profiles.
 type database interface {
-	// GetRecent retrieves recent chat history.
-	// It returns up to 'limit' entries ordered by timestamp descending.
-	GetRecent(limit int) ([]db.ChatHistory, error)
-
 	// GetUserProfile retrieves a user's profile by user ID.
 	GetUserProfile(userID int64) (*db.UserProfile, error)
 }

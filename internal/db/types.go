@@ -18,20 +18,16 @@ const (
 	defaultMaxOpenConn = 1 // Maximum number of open connections
 )
 
-// Database defines the interface for chat history and analytics operations.
+// Database defines the interface for group messages and user profiles operations.
 type Database interface {
-	// GetRecent retrieves the most recent chat history entries.
-	// It returns up to 'limit' entries ordered by timestamp descending.
-	GetRecent(limit int) ([]ChatHistory, error)
-
-	// Save stores a new chat interaction between a user and the bot.
-	// It returns an error if the storage operation fails.
-	Save(userID int64, userMsg, botMsg string) error
-
 	// SaveGroupMessage stores a message from a group chat.
 	// The groupName is stored to track group name changes over time.
 	// It returns an error if the storage operation fails.
 	SaveGroupMessage(groupID int64, groupName string, userID int64, message string) error
+
+	// GetRecentGroupMessages retrieves the most recent group messages from a specific group chat.
+	// Messages are returned in reverse chronological order (newest first).
+	GetRecentGroupMessages(groupID int64, limit int) ([]GroupMessage, error)
 
 	// GetGroupMessagesInTimeRange retrieves group messages between start and end times.
 	// Times should be in UTC to ensure consistent queries across timezones.
@@ -55,6 +51,14 @@ type Database interface {
 	// This provides a safety window where messages remain available for re-processing if needed.
 	DeleteProcessedGroupMessages(cutoffTime time.Time) error
 
+	// DeleteProcessedGroupMessagesExcept deletes processed messages for a specific group chat
+	// that were processed before the cutoff time, except those with IDs in the preserveIDs list.
+	// This allows preserving recent messages for context.
+	DeleteProcessedGroupMessagesExcept(groupID int64, cutoffTime time.Time, preserveIDs []uint) error
+
+	// GetUniqueGroupChats returns the IDs of all distinct group chats in the database.
+	GetUniqueGroupChats() ([]int64, error)
+
 	// GetUserProfile retrieves a user's profile by user ID.
 	// Returns nil and no error if the profile does not exist.
 	GetUserProfile(userID int64) (*UserProfile, error)
@@ -65,12 +69,7 @@ type Database interface {
 	// GetAllUserProfiles retrieves all user profiles.
 	GetAllUserProfiles() (map[int64]*UserProfile, error)
 
-	// DeleteChatHistory removes only the chat history, preserving user profiles and group messages.
-	// This operation cannot be undone.
-	// It returns an error if the deletion fails.
-	DeleteChatHistory() error
-
-	// DeleteAll removes all stored data, including chat history, group messages, and analyses.
+	// DeleteAll removes all stored data, including group messages and user profiles.
 	// This operation cannot be undone.
 	// It returns an error if the deletion fails.
 	DeleteAll() error
@@ -83,19 +82,6 @@ type Database interface {
 // sqliteDB implements the Database interface using SQLite.
 type sqliteDB struct {
 	db *gorm.DB
-}
-
-// ChatHistory represents a single interaction between a user and the bot.
-// It stores both the user's message and the bot's response along with metadata.
-type ChatHistory struct {
-	gorm.Model
-	// Core fields
-	UserID    int64     `gorm:"not null;index" json:"user_id"`   // User identifier from Telegram
-	Timestamp time.Time `gorm:"not null;index" json:"timestamp"` // When the interaction occurred
-
-	// Message content
-	UserMsg string `gorm:"not null;type:text" json:"user_message"` // Original message from user
-	BotMsg  string `gorm:"not null;type:text" json:"bot_message"`  // Bot's response to user
 }
 
 // GroupMessage represents a message sent in a group chat.
