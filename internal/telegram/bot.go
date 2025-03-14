@@ -243,15 +243,13 @@ func (b *Bot) handleGroupMessage(msg *tgbotapi.Message) error {
 		return errs.NewValidationError("invalid chat or user ID", nil)
 	}
 
-	// Check if the message mentions the bot
+	// Check if the message mentions the bot using simple string matching
 	botMention := "@" + b.api.Self.UserName
 	if strings.Contains(msg.Text, botMention) {
-		// Remove the mention and process the message
-		text := strings.TrimSpace(strings.ReplaceAll(msg.Text, botMention, ""))
-		if text != "" {
+		if msg.Text != "" {
 			logging.Info("processing @mention request",
 				"user_id", msg.From.ID,
-				"message_length", len(text))
+				"message_length", len(msg.Text))
 
 			stopTyping := b.StartTyping(msg.Chat.ID)
 			defer close(stopTyping)
@@ -287,7 +285,7 @@ func (b *Bot) handleGroupMessage(msg *tgbotapi.Message) error {
 				userProfiles = make(map[int64]*db.UserProfile)
 			}
 
-			response, err := b.ai.Generate(msg.From.ID, text, recentMessages, userProfiles)
+			response, err := b.ai.Generate(msg.From.ID, msg.Text, recentMessages, userProfiles)
 			if err != nil {
 				reply := tgbotapi.NewMessage(msg.Chat.ID, b.cfg.Messages.GeneralError)
 				if sendErr := b.sendMessage(reply); sendErr != nil {

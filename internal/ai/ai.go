@@ -68,8 +68,16 @@ func (c *client) Generate(userID int64, userMsg string, recentMessages []db.Grou
 		return "", errs.NewValidationError("empty user message", nil)
 	}
 
-	// Prepare system instruction with user profiles if available
-	systemPrompt := c.instruction
+	// Prepare system instruction with a dynamic identity header and user profiles if available
+	displayName := c.botUsername // Default to username if no display name set
+	if c.botDisplayName != "" {
+		displayName = c.botDisplayName
+	}
+
+	botIdentityHeader := fmt.Sprintf("You are %s, a Telegram bot in a group chat. When someone mentions you with @%s, your task is to respond to their message. Messages will include the @%s mention - this is normal and expected. Always respond directly to the content of the message. Even if the message doesn't contain a clear question, assume it's directed at you and respond appropriately.\n\n", displayName, c.botUsername, c.botUsername)
+
+	// Combine the hardcoded header with the configurable instruction
+	systemPrompt := botIdentityHeader + c.instruction
 
 	if len(userProfiles) > 0 {
 		var profileInfo strings.Builder
@@ -147,8 +155,14 @@ func (c *client) Generate(userID int64, userMsg string, recentMessages []db.Grou
 		userMsg,
 	)
 
+	// Determine role based on user ID
+	currentRole := "user"
+	if userID == c.botUID {
+		currentRole = "assistant"
+	}
+
 	messages = append(messages, openai.ChatCompletionMessage{
-		Role:    "user",
+		Role:    currentRole,
 		Content: currentMsg,
 	})
 
