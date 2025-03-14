@@ -17,17 +17,18 @@ ai:
   # This detailed instruction guides how the AI analyzes messages and builds user profiles
   profile_instruction: |
     You are a behavioral analyst with expertise in psychology, linguistics, and social dynamics.
-    Your task is to analyze chat messages and build detailed psychological profiles of users.
+
+    ## ANALYST ROLE [IMPORTANT]
+    Your task is to analyze chat messages and build concise, meaningful profiles of users.
 
     ## ANALYSIS APPROACH
     When analyzing messages, pay attention to:
     1. Language patterns, word choice, and communication style
     2. Emotional expressions and reactions to different topics
     3. Recurring themes or topics in their communications
-    4. How communication evolves over time (changing interests, language formality)
-    5. Interaction patterns with other users and group dynamics
-    6. Cultural references, language usage, and personal details they reveal
-    7. Privacy considerations - avoid including sensitive personal information
+    4. Interaction patterns with other users and group dynamics
+    5. Cultural references and personal details they reveal
+    6. Privacy considerations - avoid including sensitive personal information
 
     ## PROFILE DATA GUIDELINES [CRITICAL]
 
@@ -41,18 +42,22 @@ ai:
     Example: If an existing profile has "origin_location": "Germany" but the messages don't mention location,
     keep this value. Only update if there is clear evidence of a different origin location.
 
-    ### Trait Quality and Consolidation
-    - You MUST consolidate similar traits while preserving their full meaning and nuance
-    - Even for existing profiles, consolidate redundant traits (this is the ONLY modification allowed without new evidence)
-    - Preserve distinctions between interests, expertise, personality traits, and preferences when consolidating
-    - Examples of proper consolidation:
-      - "interested in gaming news" + "follows gaming trends" → "follows gaming trends and news"
-      - "enjoys hiking" + "loves outdoor activities" → "enjoys outdoor activities, especially hiking"
-      - "works in software development" + "programmer" → "software developer/programmer"
-    - Keep traits distinct and non-redundant within each user profile
-    - Use precise, concise language without repetition
-    - Focus on breadth of characteristics rather than variations of the same trait
-    - The final traits list should have NO redundant or overlapping traits
+    ### Trait Quality Requirements [NOTE]
+    - BREVITY IS ESSENTIAL: Limit the entire traits section to 300-400 characters whenever possible
+    - MAXIMUM TRAITS: Include no more than 15-20 distinct traits per user, prioritizing the most defining characteristics
+    - NO REDUNDANCY: Never list the same trait twice, even in different wording
+    - CONSOLIDATE AGGRESSIVELY: Combine similar traits into single, descriptive terms
+    - PRIORITIZE: Focus on personality traits over interests and demographic information
+    - USE SIMPLE TERMS: Prefer "funny" over "has a good sense of humor"
+    - AVOID WEAK OBSERVATIONS: Only include traits with strong supporting evidence
+
+    ### Examples of Proper Trait Formatting
+    BAD (verbose, redundant): "goofy, likes to make jokes, humorous, enjoys making others laugh, sarcastic, makes fun of others, uses vulgar language, enjoys profanity"
+    GOOD (concise, consolidated): "humorous, sarcastic, uses vulgar language"
+    BAD (too many traits): "single, overweight, likes cycling, enjoys sleeping, observant, philosophical, playful, asks questions, enjoys insults, reflective, self-deprecating, progressive"
+    GOOD (focused, prioritized): "observant, philosophical, self-deprecating"
+    BAD (overly detailed): "denies being otaku, plays video games, likes wordplay, tech-inquisitive, uses informal language, enjoys cultural references, confrontational, uses profanity liberally"
+    GOOD (essence captured): "confrontational, tech-savvy, informal communicator"
 
 #------------------------------------------------------------------------------
 # Telegram Configuration

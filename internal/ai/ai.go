@@ -57,6 +57,43 @@ func (c *client) SetBotInfo(uid int64, username string, displayName string) erro
 	return nil
 }
 
+// getProfileInstruction creates the complete profile instruction including:
+// 1. The configurable profile instruction from config
+// 2. Bot identification information (UID, username, displayname)
+// 3. The fixed parts about bot influence awareness and output format
+// This returns the full instruction ready to be used in the system message.
+func getProfileInstruction(configInstruction string, botUID int64, botUsername, botDisplayName string) string {
+	// Build the fixed part with bot identification
+	botIdentificationAndFixedPart := fmt.Sprintf(`
+## BOT IDENTIFICATION [IMPORTANT]
+Bot UID: %d
+Bot Username: %s
+Bot Display Name: %s
+
+### Bot Influence Awareness [IMPORTANT]
+- DO NOT attribute traits based on topics introduced by the bot
+- If the bot mentions a topic and the user merely responds, this is not evidence of a personal trait
+- Only identify traits from topics and interests the user has independently demonstrated
+- Ignore creative embellishments that might have been added by the bot in previous responses
+
+## OUTPUT FORMAT [CRITICAL]
+Return ONLY a JSON object, no additional text, with this structure:
+{
+  "users": {
+    "[user_id]": {
+      "display_names": "Comma-separated list of names/nicknames",
+      "origin_location": "Where the user is from",
+      "current_location": "Where the user currently lives",
+      "age_range": "Approximate age range (20s, 30s, etc.)",
+      "traits": "Comma-separated list of personality traits and characteristics"
+    }
+  }
+}`, botUID, botUsername, botDisplayName)
+
+	// Combine configurable instruction with bot identification and fixed parts
+	return fmt.Sprintf("%s\n\n%s", configInstruction, botIdentificationAndFixedPart)
+}
+
 // Generate creates an AI response for a user message with context from recent messages.
 func (c *client) Generate(userID int64, userMsg string, recentMessages []db.GroupMessage, userProfiles map[int64]*db.UserProfile) (string, error) {
 	if userID <= 0 {
@@ -191,8 +228,8 @@ func (c *client) GenerateUserProfiles(messages []db.GroupMessage, existingProfil
 
 	// Format messages for profile analysis
 	chatMessages := make([]openai.ChatCompletionMessage, 0, len(messages)+extraMessageSlots)
-	// Combine configurable instruction with fixed required parts
-	fullInstruction := fmt.Sprintf("%s\n\n%s", c.profileInstruction, profileInstructionFixed)
+	// Get the full instruction with configurable part, bot identification, and fixed required parts
+	fullInstruction := getProfileInstruction(c.profileInstruction, c.botUID, c.botUsername, c.botDisplayName)
 	chatMessages = append(chatMessages, openai.ChatCompletionMessage{
 		Role:    "system",
 		Content: fullInstruction,
@@ -203,7 +240,7 @@ func (c *client) GenerateUserProfiles(messages []db.GroupMessage, existingProfil
 
 	// Add existing profile information if available
 	if len(existingProfiles) > 0 {
-		msgBuilder.WriteString("Existing User Profiles:\n\n")
+		msgBuilder.WriteString("## EXISTING USER PROFILES\n\n")
 
 		// Format existing profiles as JSON for consistency
 		msgBuilder.WriteString("{\n  \"users\": {\n")
@@ -229,7 +266,7 @@ func (c *client) GenerateUserProfiles(messages []db.GroupMessage, existingProfil
 	}
 
 	// Add new messages
-	msgBuilder.WriteString("New Group Chat Messages:\n\n")
+	msgBuilder.WriteString("## NEW GROUP CHAT MESSAGES\n\n")
 
 	// Track total messages for logging
 	totalMessages := 0
