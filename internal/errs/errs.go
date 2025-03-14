@@ -1,6 +1,6 @@
 // Package errors provides structured error types for the application with error codes
 // that can be used for error handling and reporting.
-package errors
+package errs
 
 import (
 	"errors"

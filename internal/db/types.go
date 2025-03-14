@@ -130,11 +130,41 @@ type UserProfile struct {
 
 // Format: "UID [user_id] ([display_names]) | [origin_location] | [current_location] | [age_range] | [traits]".
 func (p *UserProfile) FormatPipeDelimited() string {
+	if p == nil {
+		return "Error: nil profile"
+	}
+
+	// Use empty string placeholder for any nil fields
+	displayNames := p.DisplayNames
+	if displayNames == "" {
+		displayNames = "Unknown"
+	}
+
+	originLocation := p.OriginLocation
+	if originLocation == "" {
+		originLocation = "Unknown"
+	}
+
+	currentLocation := p.CurrentLocation
+	if currentLocation == "" {
+		currentLocation = "Unknown"
+	}
+
+	ageRange := p.AgeRange
+	if ageRange == "" {
+		ageRange = "Unknown"
+	}
+
+	traits := p.Traits
+	if traits == "" {
+		traits = "Unknown"
+	}
+
 	return fmt.Sprintf("UID %d (%s) | %s | %s | %s | %s",
 		p.UserID,
-		p.DisplayNames,
-		p.OriginLocation,
-		p.CurrentLocation,
-		p.AgeRange,
-		p.Traits)
+		displayNames,
+		originLocation,
+		currentLocation,
+		ageRange,
+		traits)
 }

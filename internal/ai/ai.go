@@ -10,7 +10,7 @@ import (
 
 	"github.com/edgard/murailobot/internal/config"
 	"github.com/edgard/murailobot/internal/db"
-	errs "github.com/edgard/murailobot/internal/errors"
+	"github.com/edgard/murailobot/internal/errs"
 	"github.com/edgard/murailobot/internal/logging"
 	"github.com/edgard/murailobot/internal/text"
 	"github.com/sashabaranov/go-openai"

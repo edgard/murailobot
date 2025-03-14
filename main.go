@@ -10,10 +10,18 @@ import (
 	"github.com/edgard/murailobot/internal/ai"
 	"github.com/edgard/murailobot/internal/config"
 	"github.com/edgard/murailobot/internal/db"
-	errs "github.com/edgard/murailobot/internal/errors"
+	"github.com/edgard/murailobot/internal/errs"
 	"github.com/edgard/murailobot/internal/logging"
 	"github.com/edgard/murailobot/internal/scheduler"
 	"github.com/edgard/murailobot/internal/telegram"
+)
+
+// Build information variables are set during compilation via ldflags.
+var (
+	version = "dev"
+	commit  = "none"
+	date    = "unknown"
+	builtBy = "unknown"
 )
 
 func main() {

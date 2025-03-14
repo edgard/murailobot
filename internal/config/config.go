@@ -5,7 +5,7 @@ import (
 	"os"
 	"strings"
 
-	errs "github.com/edgard/murailobot/internal/errors"
+	"github.com/edgard/murailobot/internal/errs"
 	"github.com/go-playground/validator/v10"
 	"github.com/knadh/koanf/parsers/yaml"
 	"github.com/knadh/koanf/providers/confmap"

@@ -5,7 +5,7 @@ import (
 	"strings"
 	"unicode"
 
-	errs "github.com/edgard/murailobot/internal/errors"
+	"github.com/edgard/murailobot/internal/errs"
 )
 
 // normalizeLineWhitespace collapses all consecutive whitespace characters (spaces, tabs, etc.)

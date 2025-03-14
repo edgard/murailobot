@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	errs "github.com/edgard/murailobot/internal/errors"
+	"github.com/edgard/murailobot/internal/errs"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 )

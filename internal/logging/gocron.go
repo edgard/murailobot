@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	errs "github.com/edgard/murailobot/internal/errors"
+	"github.com/edgard/murailobot/internal/errs"
 	"github.com/go-co-op/gocron/v2"
 )
 

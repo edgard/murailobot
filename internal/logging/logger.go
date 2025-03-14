@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"github.com/edgard/murailobot/internal/config"
-	errs "github.com/edgard/murailobot/internal/errors"
+	"github.com/edgard/murailobot/internal/errs"
 )
 
 // Setup configures the global logger with the specified configuration.

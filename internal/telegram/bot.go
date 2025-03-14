@@ -13,7 +13,7 @@ import (
 	"github.com/edgard/murailobot/internal/ai"
 	"github.com/edgard/murailobot/internal/config"
 	"github.com/edgard/murailobot/internal/db"
-	errs "github.com/edgard/murailobot/internal/errors"
+	"github.com/edgard/murailobot/internal/errs"
 	"github.com/edgard/murailobot/internal/logging"
 	"github.com/edgard/murailobot/internal/scheduler"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
@@ -150,7 +150,15 @@ func (b *Bot) processUpdates(updates tgbotapi.UpdatesChannel) error {
 			logging.Info("bot stopping due to Stop call")
 
 			return nil
-		case update := <-updates:
+		case update, ok := <-updates:
+			// Check if the channel was closed
+			if !ok {
+				logging.Info("updates channel closed")
+
+				return nil
+			}
+
+			// Skip nil messages
 			if update.Message == nil {
 				continue
 			}
@@ -392,6 +400,8 @@ func (b *Bot) generateUserAnalyses() error {
 	if len(unprocessedMessages) == 0 {
 		logging.Info("no unprocessed messages to analyze")
 
+		// Even if there are no new messages, we should still return any existing profiles
+		// This avoids an empty response when calling from handleAnalyzeCommand
 		return nil
 	}
 

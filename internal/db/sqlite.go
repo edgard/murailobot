@@ -3,7 +3,7 @@ package db
 import (
 	"time"
 
-	errs "github.com/edgard/murailobot/internal/errors"
+	"github.com/edgard/murailobot/internal/errs"
 	"github.com/edgard/murailobot/internal/logging"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
@@ -235,6 +235,11 @@ func (d *sqliteDB) GetUserProfile(userID int64) (*UserProfile, error) {
 func (d *sqliteDB) SaveUserProfile(profile *UserProfile) error {
 	if profile == nil {
 		return errs.NewValidationError("nil profile", nil)
+	}
+
+	// Validate UserID
+	if profile.UserID <= 0 {
+		return errs.NewValidationError("invalid user ID", nil)
 	}
 
 	// Check if profile exists
