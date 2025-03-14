@@ -116,6 +116,8 @@ func (c *client) Generate(userID int64, userMsg string, recentMessages []db.Grou
 	})
 
 	// Add recent messages as context (already in chronological order from DB)
+	// Note: These are previous messages only, not including the current one
+	// since we modified handleGroupMessage to get messages before saving the current one
 	if len(recentMessages) > 0 {
 		for _, msg := range recentMessages {
 			role := "user"
@@ -137,7 +139,7 @@ func (c *client) Generate(userID int64, userMsg string, recentMessages []db.Grou
 	}
 
 	// Add the current message with the current timestamp
-	// Use the timestamp from when the message was received, not just when we're processing it
+	// This is the NEW message the user just sent that hasn't been saved to the DB yet
 	currentTimestamp := time.Now().UTC()
 	currentMsg := fmt.Sprintf("[%s] UID %d: %s",
 		currentTimestamp.Format(time.RFC3339),

@@ -243,11 +243,6 @@ func (b *Bot) handleGroupMessage(msg *tgbotapi.Message) error {
 		return errs.NewValidationError("invalid chat or user ID", nil)
 	}
 
-	// Save the message to the database
-	if err := b.db.SaveGroupMessage(msg.Chat.ID, msg.Chat.Title, msg.From.ID, msg.Text); err != nil {
-		return errs.NewDatabaseError("failed to save group message", err)
-	}
-
 	// Check if the message mentions the bot
 	botMention := "@" + b.api.Self.UserName
 	if strings.Contains(msg.Text, botMention) {
@@ -262,6 +257,7 @@ func (b *Bot) handleGroupMessage(msg *tgbotapi.Message) error {
 			defer close(stopTyping)
 
 			// Get recent messages from this group chat (last 20 messages)
+			// We get these BEFORE saving the current message to avoid duplication
 			recentLimit := 20
 
 			recentMessages, err := b.db.GetRecentGroupMessages(msg.Chat.ID, recentLimit)
@@ -301,7 +297,13 @@ func (b *Bot) handleGroupMessage(msg *tgbotapi.Message) error {
 				return errs.NewAPIError("failed to generate AI response", err)
 			}
 
-			// Save the bot's response as a group message
+			// Save both the user message and bot response after processing
+			// First save the original user message
+			if err := b.db.SaveGroupMessage(msg.Chat.ID, msg.Chat.Title, msg.From.ID, msg.Text); err != nil {
+				logging.Error("failed to save user group message", "error", err)
+			}
+
+			// Then save the bot's response
 			if err := b.db.SaveGroupMessage(msg.Chat.ID, msg.Chat.Title, b.api.Self.ID, response); err != nil {
 				logging.Error("failed to save bot group message", "error", err)
 			}
@@ -310,6 +312,11 @@ func (b *Bot) handleGroupMessage(msg *tgbotapi.Message) error {
 			if err := b.sendMessage(reply); err != nil {
 				return errs.NewAPIError("failed to send AI response", err)
 			}
+		}
+	} else {
+		// For messages that don't mention the bot, simply save them to the database
+		if err := b.db.SaveGroupMessage(msg.Chat.ID, msg.Chat.Title, msg.From.ID, msg.Text); err != nil {
+			return errs.NewDatabaseError("failed to save group message", err)
 		}
 	}
 
