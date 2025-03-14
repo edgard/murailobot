@@ -21,19 +21,37 @@ const (
 	defaultTypingInterval = 5 * time.Second
 )
 
+// commands defines bot command descriptions for Telegram.
+type commands struct {
+	Start    string
+	Mrl      string
+	Reset    string
+	Analyze  string
+	Profiles string
+	EditUser string
+}
+
 // messages defines bot response templates.
 type messages struct {
-	Welcome      string
-	Unauthorized string
-	Provide      string
-	GeneralError string
-	HistoryReset string
+	Welcome        string
+	Unauthorized   string
+	Provide        string
+	GeneralError   string
+	HistoryReset   string
+	Analyzing      string
+	NoProfiles     string
+	InvalidUserID  string
+	InvalidField   string
+	UpdateSuccess  string
+	UserEditUsage  string
+	ProfilesHeader string
 }
 
 // botConfig holds bot authentication and response configuration.
 type botConfig struct {
 	Token    string
 	AdminID  int64
+	Commands commands
 	Messages messages
 }
 

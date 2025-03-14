@@ -20,11 +20,34 @@ const (
 
 // Default messages for Telegram bot responses.
 const (
-	DefaultWelcomeMessage       = "👋 Welcome! I'm ready to assist you. Use /mrl followed by your message to start a conversation."
-	DefaultNotAuthorizedMessage = "🚫 Access denied. Please contact the administrator."
-	DefaultProvideMessagePrompt = "ℹ️ Please provide a message with your command."
-	DefaultGeneralErrorMessage  = "❌ An error occurred. Please try again later."
-	DefaultHistoryResetMessage  = "🔄 Chat history has been cleared."
+	// Default command descriptions for Telegram commands.
+	DefaultStartCommandDescription    = "Start conversation with the bot"
+	DefaultMrlCommandDescription      = "Generate AI response"
+	DefaultResetCommandDescription    = "Reset chat history (admin only)"
+	DefaultAnalyzeCommandDescription  = "Analyze messages and update profiles (admin only)"
+	DefaultProfilesCommandDescription = "Show user profiles (admin only)"
+	DefaultEditUserCommandDescription = "Edit user profile data (admin only)"
+
+	// Default messages for various bot responses.
+	DefaultWelcomeMessage        = "👋 Welcome! I'm ready to assist you. Use /mrl followed by your message to start a conversation."
+	DefaultNotAuthorizedMessage  = "🚫 Access denied. Please contact the administrator."
+	DefaultProvideMessagePrompt  = "ℹ️ Please provide a message with your /mrl command."
+	DefaultGeneralErrorMessage   = "❌ Error occurred. Please try again later."
+	DefaultHistoryResetMessage   = "✅ Chat history has been cleared successfully."
+	DefaultAnalyzingMessage      = "⏳ Analyzing messages and updating user profiles..."
+	DefaultProfilesHeaderMessage = "👥 User Profiles\n\n"
+	DefaultNoProfilesMessage     = "ℹ️ No user profiles available. Run /mrl_analyze to generate profiles."
+	DefaultInvalidUserIDMessage  = "❌ Invalid user ID. Please provide a valid numeric ID."
+	DefaultInvalidFieldMessage   = "❌ Invalid field. Please use: displaynames, origin, location, age, or traits."
+	DefaultUpdateSuccessMessage  = "✅ Successfully updated %s for user %d to: %s"
+	DefaultUserEditUsageMessage  = "ℹ️ Usage: /mrl_edit_user [user_id] [field] [new_value]\n\n" +
+		"Fields:\n" +
+		"- displaynames: User's display names\n" +
+		"- origin: Origin location\n" +
+		"- location: Current location\n" +
+		"- age: Age range\n" +
+		"- traits: Personality traits\n\n" +
+		"Example: /mrl_edit_user 123456789 traits friendly, helpful, technical"
 )
 
 // defaultConfig holds the default configuration values.
@@ -92,11 +115,25 @@ Return ONLY a JSON object, no additional text, with this structure:
 }`,
 	"ai.timeout": DefaultAITimeout,
 
+	"telegram.commands.start":     DefaultStartCommandDescription,
+	"telegram.commands.mrl":       DefaultMrlCommandDescription,
+	"telegram.commands.reset":     DefaultResetCommandDescription,
+	"telegram.commands.analyze":   DefaultAnalyzeCommandDescription,
+	"telegram.commands.profiles":  DefaultProfilesCommandDescription,
+	"telegram.commands.edit_user": DefaultEditUserCommandDescription,
+
 	"telegram.messages.welcome":         DefaultWelcomeMessage,
 	"telegram.messages.not_authorized":  DefaultNotAuthorizedMessage,
 	"telegram.messages.provide_message": DefaultProvideMessagePrompt,
 	"telegram.messages.general_error":   DefaultGeneralErrorMessage,
 	"telegram.messages.history_reset":   DefaultHistoryResetMessage,
+	"telegram.messages.analyzing":       DefaultAnalyzingMessage,
+	"telegram.messages.no_profiles":     DefaultNoProfilesMessage,
+	"telegram.messages.invalid_user_id": DefaultInvalidUserIDMessage,
+	"telegram.messages.invalid_field":   DefaultInvalidFieldMessage,
+	"telegram.messages.update_success":  DefaultUpdateSuccessMessage,
+	"telegram.messages.user_edit_usage": DefaultUserEditUsageMessage,
+	"telegram.messages.profiles_header": DefaultProfilesHeaderMessage,
 
 	"log.level":  DefaultLogLevel,
 	"log.format": DefaultLogFormat,
@@ -137,14 +174,31 @@ type Config struct {
 	// TelegramAdminID is the Telegram user ID of the bot administrator
 	TelegramAdminID int64 `koanf:"telegram.admin_id" validate:"required,gt=0"`
 
+	// Command Descriptions
+	//
+	// These define the descriptions shown for bot commands in Telegram
+	TelegramStartCommandDescription    string `koanf:"telegram.commands.start"     validate:"required"`
+	TelegramMrlCommandDescription      string `koanf:"telegram.commands.mrl"       validate:"required"`
+	TelegramResetCommandDescription    string `koanf:"telegram.commands.reset"     validate:"required"`
+	TelegramAnalyzeCommandDescription  string `koanf:"telegram.commands.analyze"   validate:"required"`
+	TelegramProfilesCommandDescription string `koanf:"telegram.commands.profiles"  validate:"required"`
+	TelegramEditUserCommandDescription string `koanf:"telegram.commands.edit_user" validate:"required"`
+
 	// Message Templates
 	//
 	// These define the bot's response messages for different situations
-	TelegramWelcomeMessage       string `koanf:"telegram.messages.welcome"         validate:"required"`
-	TelegramNotAuthorizedMessage string `koanf:"telegram.messages.not_authorized"  validate:"required"`
-	TelegramProvideMessage       string `koanf:"telegram.messages.provide_message" validate:"required"`
-	TelegramGeneralErrorMessage  string `koanf:"telegram.messages.general_error"   validate:"required"`
-	TelegramHistoryResetMessage  string `koanf:"telegram.messages.history_reset"   validate:"required"`
+	TelegramWelcomeMessage        string `koanf:"telegram.messages.welcome"         validate:"required"`
+	TelegramNotAuthorizedMessage  string `koanf:"telegram.messages.not_authorized"  validate:"required"`
+	TelegramProvideMessage        string `koanf:"telegram.messages.provide_message" validate:"required"`
+	TelegramGeneralErrorMessage   string `koanf:"telegram.messages.general_error"   validate:"required"`
+	TelegramHistoryResetMessage   string `koanf:"telegram.messages.history_reset"   validate:"required"`
+	TelegramAnalyzingMessage      string `koanf:"telegram.messages.analyzing"       validate:"required"`
+	TelegramNoProfilesMessage     string `koanf:"telegram.messages.no_profiles"     validate:"required"`
+	TelegramInvalidUserIDMessage  string `koanf:"telegram.messages.invalid_user_id" validate:"required"`
+	TelegramInvalidFieldMessage   string `koanf:"telegram.messages.invalid_field"   validate:"required"`
+	TelegramUpdateSuccessMessage  string `koanf:"telegram.messages.update_success"  validate:"required"`
+	TelegramUserEditUsageMessage  string `koanf:"telegram.messages.user_edit_usage" validate:"required"`
+	TelegramProfilesHeaderMessage string `koanf:"telegram.messages.profiles_header" validate:"required"`
 
 	// Logging Configuration
 	//

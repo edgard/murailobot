@@ -53,12 +53,27 @@ func New(cfg *config.Config, database db.Database, aiClient ai.Service, sched sc
 		cfg: &botConfig{
 			Token:   cfg.TelegramToken,
 			AdminID: cfg.TelegramAdminID,
+			Commands: commands{
+				Start:    cfg.TelegramStartCommandDescription,
+				Mrl:      cfg.TelegramMrlCommandDescription,
+				Reset:    cfg.TelegramResetCommandDescription,
+				Analyze:  cfg.TelegramAnalyzeCommandDescription,
+				Profiles: cfg.TelegramProfilesCommandDescription,
+				EditUser: cfg.TelegramEditUserCommandDescription,
+			},
 			Messages: messages{
-				Welcome:      cfg.TelegramWelcomeMessage,
-				Unauthorized: cfg.TelegramNotAuthorizedMessage,
-				Provide:      cfg.TelegramProvideMessage,
-				GeneralError: cfg.TelegramGeneralErrorMessage,
-				HistoryReset: cfg.TelegramHistoryResetMessage,
+				Welcome:        cfg.TelegramWelcomeMessage,
+				Unauthorized:   cfg.TelegramNotAuthorizedMessage,
+				Provide:        cfg.TelegramProvideMessage,
+				GeneralError:   cfg.TelegramGeneralErrorMessage,
+				HistoryReset:   cfg.TelegramHistoryResetMessage,
+				Analyzing:      cfg.TelegramAnalyzingMessage,
+				NoProfiles:     cfg.TelegramNoProfilesMessage,
+				InvalidUserID:  cfg.TelegramInvalidUserIDMessage,
+				InvalidField:   cfg.TelegramInvalidFieldMessage,
+				UpdateSuccess:  cfg.TelegramUpdateSuccessMessage,
+				UserEditUsage:  cfg.TelegramUserEditUsageMessage,
+				ProfilesHeader: cfg.TelegramProfilesHeaderMessage,
 			},
 		},
 		running: make(chan struct{}),
@@ -109,12 +124,12 @@ func (b *Bot) setupCommands() error {
 	}
 
 	commands := []tgbotapi.BotCommand{
-		{Command: "start", Description: "Start conversation with the bot"},
-		{Command: "mrl", Description: "Generate AI response"},
-		{Command: "mrl_reset", Description: "Reset chat history (admin only)"},
-		{Command: "mrl_analyze", Description: "Analyze user messages and update profiles (admin only)"},
-		{Command: "mrl_profiles", Description: "Show user profiles (admin only)"},
-		{Command: "mrl_edit_user", Description: "Edit user profile traits (admin only)"},
+		{Command: "start", Description: b.cfg.Commands.Start},
+		{Command: "mrl", Description: b.cfg.Commands.Mrl},
+		{Command: "mrl_reset", Description: b.cfg.Commands.Reset},
+		{Command: "mrl_analyze", Description: b.cfg.Commands.Analyze},
+		{Command: "mrl_profiles", Description: b.cfg.Commands.Profiles},
+		{Command: "mrl_edit_user", Description: b.cfg.Commands.EditUser},
 	}
 
 	cmdConfig := tgbotapi.NewSetMyCommands(commands...)
@@ -466,7 +481,7 @@ func (b *Bot) handleAnalyzeCommand(msg *tgbotapi.Message) error {
 	}
 
 	// Send processing message
-	reply := tgbotapi.NewMessage(msg.Chat.ID, "Analyzing messages and updating user profiles...")
+	reply := tgbotapi.NewMessage(msg.Chat.ID, b.cfg.Messages.Analyzing)
 	if err := b.sendMessage(reply); err != nil {
 		return errs.NewAPIError("failed to send processing message", err)
 	}
@@ -515,7 +530,7 @@ func (b *Bot) sendUserProfiles(chatID int64) error {
 	}
 
 	if len(profiles) == 0 {
-		reply := tgbotapi.NewMessage(chatID, "No user profiles available. Run /mrl_analyze to generate profiles.")
+		reply := tgbotapi.NewMessage(chatID, b.cfg.Messages.NoProfiles)
 
 		return b.sendMessage(reply)
 	}
@@ -523,7 +538,7 @@ func (b *Bot) sendUserProfiles(chatID int64) error {
 	// Format profiles
 	var profilesReport strings.Builder
 
-	profilesReport.WriteString("👤 *User Profiles*\n\n")
+	profilesReport.WriteString(b.cfg.Messages.ProfilesHeader)
 
 	// Sort users by ID for consistent display
 	userIDs := make([]int64, 0, len(profiles))
@@ -568,16 +583,7 @@ func (b *Bot) handleEditUserCommand(msg *tgbotapi.Message) error {
 	args := strings.Fields(strings.TrimSpace(strings.TrimPrefix(msg.Text, "/mrl_edit_user")))
 
 	if len(args) < 3 {
-		usage := "Usage: /mrl_edit_user [user_id] [field] [new_value]\n\n" +
-			"Fields:\n" +
-			"- displaynames: User's display names\n" +
-			"- origin: Origin location\n" +
-			"- location: Current location\n" +
-			"- age: Age range\n" +
-			"- traits: Personality traits\n\n" +
-			"Example: /mrl_edit_user 123456789 traits friendly, helpful, technical"
-
-		reply := tgbotapi.NewMessage(msg.Chat.ID, usage)
+		reply := tgbotapi.NewMessage(msg.Chat.ID, b.cfg.Messages.UserEditUsage)
 
 		return b.sendMessage(reply)
 	}
@@ -585,7 +591,7 @@ func (b *Bot) handleEditUserCommand(msg *tgbotapi.Message) error {
 	// Parse target user ID
 	targetUserID, err := strconv.ParseInt(args[0], 10, 64)
 	if err != nil {
-		reply := tgbotapi.NewMessage(msg.Chat.ID, "Invalid user ID. Please provide a valid numeric ID.")
+		reply := tgbotapi.NewMessage(msg.Chat.ID, b.cfg.Messages.InvalidUserID)
 
 		return b.sendMessage(reply)
 	}
@@ -636,8 +642,7 @@ func (b *Bot) handleEditUserCommand(msg *tgbotapi.Message) error {
 		profile.Traits = newValue
 		fieldName = "Traits"
 	default:
-		reply := tgbotapi.NewMessage(msg.Chat.ID,
-			"Invalid field. Please use: displaynames, origin, location, age, or traits.")
+		reply := tgbotapi.NewMessage(msg.Chat.ID, b.cfg.Messages.InvalidField)
 
 		return b.sendMessage(reply)
 	}
@@ -657,7 +662,7 @@ func (b *Bot) handleEditUserCommand(msg *tgbotapi.Message) error {
 	}
 
 	// Send confirmation
-	confirmation := fmt.Sprintf("✅ Successfully updated %s for user %d to: %s", fieldName, targetUserID, newValue)
+	confirmation := fmt.Sprintf(b.cfg.Messages.UpdateSuccess, fieldName, targetUserID, newValue)
 	reply := tgbotapi.NewMessage(msg.Chat.ID, confirmation)
 
 	return b.sendMessage(reply)
