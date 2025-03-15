@@ -1,10 +1,6 @@
 version: 2
 project_name: murailobot
 
-# Skip building binaries, we only want Docker images
-builds:
-  - skip: true
-
 env:
   - GO111MODULE=on
   - CGO_ENABLED=1
