@@ -172,12 +172,6 @@ func (c *client) Generate(userID int64, userMsg string, recentMessages []db.Grou
 		currentMsgTokens,
 	)
 
-	logging.Info("using dynamic context selection",
-		"total_messages", len(recentMessages),
-		"selected_messages", len(selectedMessages),
-		"system_tokens", systemPromptTokens,
-		"current_msg_tokens", currentMsgTokens)
-
 	// Add selected messages as context (already in chronological order)
 	for _, msg := range selectedMessages {
 		role := "user"

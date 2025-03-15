@@ -402,7 +402,7 @@ func (b *Bot) cleanupProcessedMessages(cutoffTime time.Time) error {
 	}
 
 	// For each group, preserve the most recent messages
-	messagesPerGroup := 20 // Keep at least this many recent messages per group
+	messagesPerGroup := 1000 // Keep at least this many recent messages per group
 
 	for _, groupID := range groups {
 		// Get most recent messages for this group
