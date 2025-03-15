@@ -35,6 +35,7 @@ func New(cfg *config.Config, db db.Database) (Service, error) {
 		profileInstruction: cfg.AIProfileInstruction,
 		timeout:            cfg.AITimeout,
 		db:                 db,
+		dynamicWindow:      text.NewDynamicWindow(cfg.AIMaxContextTokens),
 	}
 
 	return c, nil
@@ -160,27 +161,40 @@ func (c *client) Generate(userID int64, userMsg string, recentMessages []db.Grou
 		Content: systemPrompt,
 	})
 
-	// Add recent messages as context (already in chronological order from DB)
-	// Note: These are previous messages only, not including the current one
-	// since we modified handleGroupMessage to get messages before saving the current one
-	if len(recentMessages) > 0 {
-		for _, msg := range recentMessages {
-			role := "user"
-			// If the message is from the bot, mark it as assistant
-			if msg.UserID == c.botUID {
-				role = "assistant"
-			}
+	// Estimate token counts for system prompt and the current message
+	systemPromptTokens := text.EstimateTokens(systemPrompt)
+	currentMsgTokens := text.EstimateTokens(userMsg)
 
-			formattedMsg := fmt.Sprintf("[%s] UID %d: %s",
-				msg.Timestamp.Format(time.RFC3339),
-				msg.UserID,
-				msg.Message)
+	// Use dynamic window to select messages based on token budget
+	selectedMessages := c.dynamicWindow.SelectMessages(
+		recentMessages,
+		systemPromptTokens,
+		currentMsgTokens,
+	)
 
-			messages = append(messages, openai.ChatCompletionMessage{
-				Role:    role,
-				Content: formattedMsg,
-			})
+	logging.Info("using dynamic context selection",
+		"total_messages", len(recentMessages),
+		"selected_messages", len(selectedMessages),
+		"system_tokens", systemPromptTokens,
+		"current_msg_tokens", currentMsgTokens)
+
+	// Add selected messages as context (already in chronological order)
+	for _, msg := range selectedMessages {
+		role := "user"
+		// If the message is from the bot, mark it as assistant
+		if msg.UserID == c.botUID {
+			role = "assistant"
 		}
+
+		formattedMsg := fmt.Sprintf("[%s] UID %d: %s",
+			msg.Timestamp.Format(time.RFC3339),
+			msg.UserID,
+			msg.Message)
+
+		messages = append(messages, openai.ChatCompletionMessage{
+			Role:    role,
+			Content: formattedMsg,
+		})
 	}
 
 	// Add the current message with the current timestamp

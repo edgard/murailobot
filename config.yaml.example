@@ -11,6 +11,7 @@ ai:
   model: "gpt-4o" # Optional: Model identifier
   temperature: 1.7 # Optional: Controls response randomness (between 0.0 and 2.0)
   timeout: "2m" # Optional: API call timeout (between 1s and 10m)
+  max_context_tokens: 16000 # Optional: Maximum tokens to use for conversation context window
   instruction: "You are a helpful assistant focused on providing clear and accurate responses." # Optional: System prompt for chat responses
 
   # System prompt for user profile generation

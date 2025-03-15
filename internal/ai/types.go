@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/edgard/murailobot/internal/db"
+	"github.com/edgard/murailobot/internal/text"
 	"github.com/sashabaranov/go-openai"
 )
 
@@ -56,7 +57,8 @@ type client struct {
 	timeout            time.Duration // Maximum time for API operations
 
 	// Dependencies
-	db db.Database // Database for conversation history
+	db            db.Database         // Database for conversation history
+	dynamicWindow *text.DynamicWindow // Dynamic context window manager
 
 	// Bot information
 	botUID         int64  // Bot's Telegram User ID

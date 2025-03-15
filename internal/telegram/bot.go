@@ -254,9 +254,10 @@ func (b *Bot) handleGroupMessage(msg *tgbotapi.Message) error {
 			stopTyping := b.StartTyping(msg.Chat.ID)
 			defer close(stopTyping)
 
-			// Get recent messages from this group chat (last 20 messages)
+			// Get recent messages from this group chat (increased from 20 to 50)
+			// This gives the dynamic context window more candidates to select from
 			// We get these BEFORE saving the current message to avoid duplication
-			recentLimit := 20
+			recentLimit := 50
 
 			recentMessages, err := b.db.GetRecentGroupMessages(msg.Chat.ID, recentLimit)
 			if err != nil {

@@ -51,10 +51,11 @@ const (
 
 // defaultConfig holds the default configuration values.
 var defaultConfig = map[string]any{
-	"ai.base_url":    "https://api.openai.com/v1",
-	"ai.model":       "gpt-4o",
-	"ai.temperature": 1.7,
-	"ai.instruction": "You are a helpful assistant focused on providing clear and accurate responses.",
+	"ai.base_url":           "https://api.openai.com/v1",
+	"ai.model":              "gpt-4o",
+	"ai.temperature":        1.7,
+	"ai.max_context_tokens": 16000, // Default token budget for context
+	"ai.instruction":        "You are a helpful assistant focused on providing clear and accurate responses.",
 	"ai.profile_instruction": `You are a behavioral analyst with expertise in psychology, linguistics, and social dynamics.
 
 ## ANALYST ROLE [IMPORTANT]
@@ -149,6 +150,9 @@ type Config struct {
 
 	// AITimeout sets maximum duration for API requests
 	AITimeout time.Duration `koanf:"ai.timeout" validate:"required,min=1s,max=10m"`
+
+	// AIMaxContextTokens specifies the maximum number of tokens to use for conversation context
+	AIMaxContextTokens int `koanf:"ai.max_context_tokens" validate:"required,min=1000,max=200000"`
 
 	// Telegram Bot Configuration
 	//
