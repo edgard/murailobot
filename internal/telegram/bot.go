@@ -102,7 +102,7 @@ func (b *Bot) Start() error {
 		"bot_id", b.api.Self.ID,
 		"admin_id", b.cfg.AdminID)
 
-	if err := b.scheduleDailyAnalysis(); err != nil {
+	if err := b.scheduleMaintenanceTasks(); err != nil {
 		return err
 	}
 
@@ -339,7 +339,7 @@ func (b *Bot) handleReset(msg *tgbotapi.Message) error {
 
 	// The reset command now operates on group messages
 	// Get timestamp from one week ago to preserve recent messages
-	oneWeekAgo := time.Now().AddDate(0, 0, -7)
+	oneWeekAgo := time.Now().UTC().AddDate(0, 0, -7)
 	if err := b.db.DeleteProcessedGroupMessages(oneWeekAgo); err != nil {
 		reply := tgbotapi.NewMessage(msg.Chat.ID, b.cfg.Messages.GeneralError)
 		if sendErr := b.sendMessage(reply); sendErr != nil {
@@ -357,15 +357,15 @@ func (b *Bot) handleReset(msg *tgbotapi.Message) error {
 	return nil
 }
 
-// scheduleDailyAnalysis sets up the daily user analysis job to run at midnight UTC.
-func (b *Bot) scheduleDailyAnalysis() error {
+// scheduleMaintenanceTasks sets up recurring jobs for profile updates and message cleanup.
+func (b *Bot) scheduleMaintenanceTasks() error {
 	// Schedule the main analysis job
 	err := b.scheduler.AddJob(
 		"daily-profile-update",
 		"0 0 * * *", // Run at midnight UTC
 		func() {
-			if err := b.generateUserAnalyses(); err != nil {
-				logging.Error("daily analysis failed", "error", err)
+			if err := b.processAndUpdateUserProfiles(); err != nil {
+				logging.Error("daily profile update failed", "error", err)
 			}
 		},
 	)
@@ -376,11 +376,11 @@ func (b *Bot) scheduleDailyAnalysis() error {
 	// Schedule a cleanup job to delete processed messages after a safety period
 	// Running 12 hours after the main job to ensure analysis is complete
 	err = b.scheduler.AddJob(
-		"cleanup-processed-messages",
+		"daily-messages-cleanup",
 		"0 12 * * *", // Run at noon UTC (12 hours after main job)
 		func() {
-			if err := b.cleanupProcessedMessages(time.Now().AddDate(0, 0, -7)); err != nil {
-				logging.Error("message cleanup failed", "error", err)
+			if err := b.cleanupProcessedMessages(time.Now().UTC().AddDate(0, 0, -7)); err != nil {
+				logging.Error("daily messages cleanup failed", "error", err)
 			}
 		},
 	)
@@ -436,8 +436,10 @@ func (b *Bot) cleanupProcessedMessages(cutoffTime time.Time) error {
 	return nil
 }
 
-// generateUserAnalyses analyzes all unprocessed messages and updates user profiles.
-func (b *Bot) generateUserAnalyses() error {
+// processAndUpdateUserProfiles processes messages and updates user profiles. This includes
+// retrieving unprocessed messages, getting and merging existing profiles, generating new
+// analyses via AI, saving updated profiles, and marking messages as processed.
+func (b *Bot) processAndUpdateUserProfiles() error {
 	// Get only unprocessed messages from the database
 	unprocessedMessages, err := b.db.GetUnprocessedGroupMessages()
 	if err != nil {
@@ -561,7 +563,7 @@ func (b *Bot) handleAnalyzeCommand(msg *tgbotapi.Message) error {
 	defer close(stopTyping)
 
 	// Run the analysis on all messages
-	if err := b.generateUserAnalyses(); err != nil {
+	if err := b.processAndUpdateUserProfiles(); err != nil {
 		return errs.NewAPIError("failed to analyze user messages", err)
 	}
 
@@ -637,7 +639,7 @@ func (b *Bot) sendUserProfiles(chatID int64) error {
 	return b.sendMessage(reply)
 }
 
-// Fields: displaynames, origin, location, age, traits.
+// handleEditUserCommand updates user profile fields (displaynames, origin, location, age, traits).
 func (b *Bot) handleEditUserCommand(msg *tgbotapi.Message) error {
 	if msg == nil {
 		return errs.NewValidationError("nil message", nil)
