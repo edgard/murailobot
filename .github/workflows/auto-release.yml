@@ -8,9 +8,8 @@ on:
       - '**.go'
       - 'go.mod'
       - 'go.sum'
-      - 'Dockerfile'
-      - '.goreleaser.yaml'
-      - '.github/**'
+      - 'docker/*/Dockerfile'
+      - 'config.yaml.example'
 
 permissions:
   contents: write
@@ -30,7 +29,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.24.1'
+          go-version: stable
           cache: true
 
       - name: Validate code
@@ -72,24 +71,14 @@ jobs:
         if: steps.tag_version.outputs.new_tag
         uses: actions/setup-go@v5
         with:
-          go-version: '1.24.1'
+          go-version: stable
           cache: true
 
-      - name: Set up Docker Buildx
+      - name: Set up container build environment
         if: steps.tag_version.outputs.new_tag
         uses: docker/setup-buildx-action@v3
         with:
           platforms: linux/amd64,linux/arm64
-          buildkitd-flags: --debug
-
-      - name: Set up Docker layer caching
-        if: steps.tag_version.outputs.new_tag
-        uses: actions/cache@v4
-        with:
-          path: /tmp/.buildx-cache
-          key: ${{ runner.os }}-buildx-${{ github.sha }}
-          restore-keys: |
-            ${{ runner.os }}-buildx-
 
       - name: Login to GitHub Container Registry
         if: steps.tag_version.outputs.new_tag
@@ -98,6 +87,12 @@ jobs:
           registry: ghcr.io
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install cross-compile dependencies
+        if: steps.tag_version.outputs.new_tag
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu
 
       # Checkout the repository again with the new tag
       - name: Checkout with new tag
@@ -117,4 +112,3 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VERSION: ${{ steps.tag_version.outputs.new_tag }}
-          DOCKER_CACHE_PATH: /tmp/.buildx-cache

@@ -5,20 +5,63 @@ env:
   - GO111MODULE=on
   - CGO_ENABLED=1
 
-# Docker image configurations for each platform
+before:
+  hooks:
+    - go mod download
+
+builds:
+  - id: "{{ .ProjectName }}-amd64"
+    main: .
+    binary: "{{ .ProjectName }}"
+    goos:
+      - linux
+    goarch:
+      - amd64
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+      - -X main.commit={{.ShortCommit}}
+      - -X main.date={{.Date}}
+      - -X main.builtBy=goreleaser
+  - id: "{{ .ProjectName }}-arm64"
+    main: .
+    binary: "{{ .ProjectName }}"
+    env:
+      - CC=aarch64-linux-gnu-gcc
+    goos:
+      - linux
+    goarch:
+      - arm64
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+      - -X main.commit={{.ShortCommit}}
+      - -X main.date={{.Date}}
+      - -X main.builtBy=goreleaser
+
+archives:
+  - name_template: "{{ .ProjectName }}-{{ .Version }}-{{ .Os }}-{{ .Arch }}{{ if .Arm }}v{{ .Arm }}{{ end }}"
+    wrap_in_directory: true
+    files:
+      - LICENSE
+      - README.md
+
+checksum:
+  name_template: "sha256sums.txt"
+  algorithm: sha256
+
 dockers:
   - use: buildx
     goos: linux
     goarch: amd64
-    dockerfile: Dockerfile
+    ids:
+      - "{{ .ProjectName }}-amd64"
+    dockerfile: docker/amd64/Dockerfile
     image_templates:
       - ghcr.io/edgard/{{ .ProjectName }}:{{ .Version }}-amd64
     build_flag_templates:
       - --pull
       - --platform=linux/amd64
-      - --build-arg=VERSION={{.Version}}
-      - --build-arg=COMMIT={{.ShortCommit}}
-      - --build-arg=DATE={{.Date}}
       - --label=org.opencontainers.image.title={{ .ProjectName }}
       - --label=org.opencontainers.image.description={{ .ProjectName }} {{ .Version }} {{ .Date }}
       - --label=org.opencontainers.image.created={{ .Date }}
@@ -32,7 +75,7 @@ dockers:
       - --label=org.opencontainers.image.vendor=edgard
       - --label=org.opencontainers.image.authors=edgard
       - --label=org.opencontainers.image.licenses=CC0-1.0
-      - --label=org.opencontainers.image.base.name=alpine:3.21
+      - --label=org.opencontainers.image.base.name=gcr.io/distroless/cc-debian12:latest
       - --label=org.opencontainers.image.registry=ghcr.io
       - --label=com.github.package.type=container
       - --label=com.github.package.vcs-ref={{ .FullCommit }}
@@ -49,7 +92,7 @@ dockers:
       - --annotation=org.opencontainers.image.vendor="edgard"
       - --annotation=org.opencontainers.image.authors="edgard"
       - --annotation=org.opencontainers.image.licenses="CC0-1.0"
-      - --annotation=org.opencontainers.image.base.name="alpine:3.21"
+      - --annotation=org.opencontainers.image.base.name="gcr.io/distroless/cc-debian12:latest"
       - --annotation=org.opencontainers.image.registry="ghcr.io"
       - --annotation=com.github.package.type="container"
       - --annotation=com.github.package.vcs-ref="{{ .FullCommit }}"
@@ -57,15 +100,14 @@ dockers:
   - use: buildx
     goos: linux
     goarch: arm64
-    dockerfile: Dockerfile
+    ids:
+      - "{{ .ProjectName }}-arm64"
+    dockerfile: docker/arm64/Dockerfile
     image_templates:
       - ghcr.io/edgard/{{ .ProjectName }}:{{ .Version }}-arm64
     build_flag_templates:
       - --pull
       - --platform=linux/arm64
-      - --build-arg=VERSION={{.Version}}
-      - --build-arg=COMMIT={{.ShortCommit}}
-      - --build-arg=DATE={{.Date}}
       - --label=org.opencontainers.image.title={{ .ProjectName }}
       - --label=org.opencontainers.image.description={{ .ProjectName }} {{ .Version }} {{ .Date }}
       - --label=org.opencontainers.image.created={{ .Date }}
@@ -79,7 +121,7 @@ dockers:
       - --label=org.opencontainers.image.vendor=edgard
       - --label=org.opencontainers.image.authors=edgard
       - --label=org.opencontainers.image.licenses=CC0-1.0
-      - --label=org.opencontainers.image.base.name=alpine:3.21
+      - --label=org.opencontainers.image.base.name=gcr.io/distroless/cc-debian12:latest
       - --label=org.opencontainers.image.registry=ghcr.io
       - --label=com.github.package.type=container
       - --label=com.github.package.vcs-ref={{ .FullCommit }}
@@ -96,12 +138,11 @@ dockers:
       - --annotation=org.opencontainers.image.vendor="edgard"
       - --annotation=org.opencontainers.image.authors="edgard"
       - --annotation=org.opencontainers.image.licenses="CC0-1.0"
-      - --annotation=org.opencontainers.image.base.name="alpine:3.21"
+      - --annotation=org.opencontainers.image.base.name="gcr.io/distroless/cc-debian12:latest"
       - --annotation=org.opencontainers.image.registry="ghcr.io"
       - --annotation=com.github.package.type="container"
       - --annotation=com.github.package.vcs-ref="{{ .FullCommit }}"
 
-# Multi-platform manifest configurations
 docker_manifests:
   - name_template: ghcr.io/edgard/{{ .ProjectName }}:{{ .Version }}
     image_templates:

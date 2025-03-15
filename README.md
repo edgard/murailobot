@@ -55,7 +55,7 @@ cp config.yaml.example config.yaml
 # Edit config.yaml with your tokens and admin ID
 ```
 
-3. Build and run:
+3. Run:
 ```bash
 make build
 ./murailobot
@@ -63,18 +63,10 @@ make build
 
 ## Docker
 
-MurailoBot is available as a multi-architecture Docker image supporting both AMD64 and ARM64 platforms:
-
 ```bash
 docker pull ghcr.io/edgard/murailobot:latest
 docker run -v $(pwd)/config.yaml:/app/config.yaml ghcr.io/edgard/murailobot:latest
 ```
-
-The Docker image tag format follows the versioning scheme:
-- `latest` - Always points to the most recent release
-- `x.y.z` - Specific version release (e.g., `1.2.3`)
-- `x.y` - Latest patch version of a minor release (e.g., `1.2`)
-- `x` - Latest minor.patch version of a major release (e.g., `1`)
 
 ## Configuration
 
@@ -157,8 +149,8 @@ When code is pushed to the `main` branch, the following happens automatically:
    - `BREAKING CHANGE:` in commit body → major bump
 3. A new git tag is created with the new version
 4. A GitHub release is generated with release notes
-5. Multi-architecture Docker images (amd64, arm64) are built and pushed to GitHub Container Registry
-6. Docker manifests are created for seamless platform-specific image selection
+5. Binary artifacts are built for multiple platforms
+6. Docker images are built and pushed to GitHub Container Registry
 
 ### For Contributors
 
