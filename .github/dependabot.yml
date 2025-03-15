@@ -45,44 +45,18 @@ updates:
         update-types: ["version-update:semver-major"]
 
   - package-ecosystem: "docker"
-    directory: "/docker/amd64"
+    directory: "/"
     schedule:
       interval: "weekly"
     labels:
       - "dependencies"
       - "docker"
-      - "amd64"
     commit-message:
       prefix: "chore(docker)"
       include: "scope"
     open-pull-requests-limit: 10
     groups:
-      docker-amd64:
-        patterns:
-          - "*"
-        update-types:
-          - "minor"
-          - "patch"
-    allow:
-      - dependency-type: "direct"
-    ignore:
-      - dependency-name: "*"
-        update-types: ["version-update:semver-major"]
-
-  - package-ecosystem: "docker"
-    directory: "/docker/arm64"
-    schedule:
-      interval: "weekly"
-    labels:
-      - "dependencies"
-      - "docker"
-      - "arm64"
-    commit-message:
-      prefix: "chore(docker)"
-      include: "scope"
-    open-pull-requests-limit: 10
-    groups:
-      docker-arm64:
+      docker:
         patterns:
           - "*"
         update-types:
