@@ -1,204 +1,105 @@
+// Package config provides configuration loading, validation, and management
+// for the MurailoBot application. It handles reading from YAML files,
+// setting default values, and validating configuration parameters.
 package config
 
 import (
-	"errors"
-	"fmt"
 	"os"
-	"strings"
+	"time"
 
-	"github.com/edgard/murailobot/internal/errs"
 	"github.com/go-playground/validator/v10"
 	"github.com/knadh/koanf/parsers/yaml"
-	"github.com/knadh/koanf/providers/confmap"
-	"github.com/knadh/koanf/providers/env"
 	"github.com/knadh/koanf/providers/file"
 	"github.com/knadh/koanf/v2"
 )
 
-// LoadConfig loads configuration from defaults, file, and environment variables.
-// Environment variables are prefixed with BOT_ and use underscore as separator.
-// Example: BOT_AI_TOKEN -> ai.token.
-func LoadConfig() (*Config, error) {
-	if err := loadDefaults(); err != nil {
-		return nil, err
-	}
+// Config defines the application configuration parameters for all components
+// of the MurailoBot system, including logging, bot settings, AI integration,
+// and database configuration.
+type Config struct {
+	LogLevel string `koanf:"log_level" validate:"oneof=debug info warn error"`
 
-	konfig := koanf.New(".")
+	BotToken   string `koanf:"bot_token"    validate:"required"`
+	BotAdminID int64  `koanf:"bot_admin_id" validate:"required,gt=0"`
 
-	// Load default configuration values
-	if err := konfig.Load(confmap.Provider(defaultConfig, "."), nil); err != nil {
-		return nil, errs.NewConfigError("failed to load default configuration", err)
-	}
+	BotMsgWelcome        string `koanf:"bot_msg_welcome"`
+	BotMsgNotAuthorized  string `koanf:"bot_msg_not_authorized"`
+	BotMsgProvideMessage string `koanf:"bot_msg_provide_message"`
+	BotMsgGeneralError   string `koanf:"bot_msg_general_error"`
+	BotMsgHistoryReset   string `koanf:"bot_msg_history_reset"`
+	BotMsgAnalyzing      string `koanf:"bot_msg_analyzing"`
+	BotMsgNoProfiles     string `koanf:"bot_msg_no_profiles"`
+	BotMsgProfilesHeader string `koanf:"bot_msg_profiles_header"`
 
-	// Load configuration from file if it exists
-	if err := konfig.Load(file.Provider("config.yaml"), yaml.Parser()); err != nil {
+	BotCmdStart    string `koanf:"bot_cmd_start"`
+	BotCmdReset    string `koanf:"bot_cmd_reset"`
+	BotCmdAnalyze  string `koanf:"bot_cmd_analyze"`
+	BotCmdProfiles string `koanf:"bot_cmd_profiles"`
+	BotCmdEditUser string `koanf:"bot_cmd_edit_user"`
+
+	AIToken              string        `koanf:"ai_token"               validate:"required"`
+	AIBaseURL            string        `koanf:"ai_base_url"            validate:"url"`
+	AIModel              string        `koanf:"ai_model"`
+	AITemperature        float32       `koanf:"ai_temperature"         validate:"min=0,max=2"`
+	AIInstruction        string        `koanf:"ai_instruction"         validate:"required"`
+	AIProfileInstruction string        `koanf:"ai_profile_instruction" validate:"required"`
+	AITimeout            time.Duration `koanf:"ai_timeout"             validate:"min=1s,max=10m"`
+	AIMaxContextTokens   int           `koanf:"ai_max_context_tokens"  validate:"min=1000,max=200000"`
+
+	DBPath string `koanf:"db_path"`
+}
+
+// Load reads configuration from config.yaml, sets default values for
+// optional fields, and validates the configuration. If the config file
+// doesn't exist, it uses default values for all optional fields.
+//
+// Returns the validated configuration or an error if loading or validation fails.
+func Load() (*Config, error) {
+	config := &Config{}
+
+	setDefaults(config)
+
+	k := koanf.New(".")
+	if err := k.Load(file.Provider("config.yaml"), yaml.Parser()); err != nil {
 		if !os.IsNotExist(err) {
-			return nil, errs.NewConfigError("failed to load configuration file", err)
+			return nil, err
 		}
-		// Continue with defaults if file doesn't exist
+	} else {
+		if err := k.Unmarshal("", config); err != nil {
+			return nil, err
+		}
 	}
 
-	// Load configuration from environment variables
-	envProvider := env.Provider("BOT", ".", func(s string) string {
-		return strings.ReplaceAll(
-			strings.ToLower(strings.TrimPrefix(s, "BOT_")),
-			"_",
-			".",
-		)
-	})
-	if err := konfig.Load(envProvider, nil); err != nil {
-		// Add context about which environment variables might be problematic
-		vars := os.Environ()
-
-		var botVars []string
-
-		var botVarsWithValues []string
-
-		for _, v := range vars {
-			if strings.HasPrefix(v, "BOT_") {
-				parts := strings.SplitN(v, "=", 2)
-				if len(parts) > 0 {
-					botVars = append(botVars, parts[0])
-
-					// Securely capture variable name and partial value for debugging
-					if len(parts) > 1 && len(parts[1]) > 0 {
-						// Show first few chars of value for debugging without exposing sensitive data
-						valuePreview := parts[1]
-						if len(valuePreview) > 6 {
-							valuePreview = valuePreview[:3] + "..." + valuePreview[len(valuePreview)-3:]
-						} else if len(valuePreview) > 3 {
-							valuePreview = valuePreview[:2] + "..."
-						} else {
-							valuePreview = "[set]"
-						}
-
-						botVarsWithValues = append(botVarsWithValues,
-							fmt.Sprintf("%s=%s", parts[0], valuePreview))
-					} else {
-						botVarsWithValues = append(botVarsWithValues, parts[0]+"=[empty]")
-					}
-				}
-			}
-		}
-
-		msg := "failed to load environment variables"
-		if len(botVars) > 0 {
-			msg = msg + " (found BOT_ vars: " + strings.Join(botVars, ", ") + ")"
-			msg = msg + " with values: " + strings.Join(botVarsWithValues, ", ")
-		}
-
-		return nil, errs.NewConfigError(msg, err)
-	}
-
-	// Parse configuration into struct
-	var config Config
-	if err := konfig.UnmarshalWithConf("", &config, koanf.UnmarshalConf{
-		Tag:       "koanf",
-		FlatPaths: true,
-	}); err != nil {
-		return nil, errs.NewConfigError("failed to parse configuration", err)
-	}
-
-	// Validate configuration values
-	if err := validateConfig(&config); err != nil {
+	if err := validator.New().Struct(config); err != nil {
 		return nil, err
 	}
 
-	return &config, nil
+	return config, nil
 }
 
-// validateConfig performs validation of the configuration using struct tags
-// and returns an error with all validation failures.
-func validateConfig(config *Config) error {
-	if config == nil {
-		return errs.NewValidationError("nil config", nil)
-	}
+func setDefaults(config *Config) {
+	config.LogLevel = "info"
 
-	// First validate required fields and basic types
-	v := validator.New()
-	if err := v.Struct(config); err != nil {
-		var validationErrors validator.ValidationErrors
-		if errors.As(err, &validationErrors) {
-			var validationMsgs []string
-			for _, e := range validationErrors {
-				validationMsgs = append(validationMsgs,
-					formatValidationError(e.Field(), e.Tag(), e.Param()))
-			}
+	config.AIBaseURL = "https://api.openai.com/v1"
+	config.AIModel = "gpt-4o"
+	config.AITemperature = 1.7
+	config.AIMaxContextTokens = 16000
+	config.AITimeout = 2 * time.Minute
 
-			if len(validationMsgs) > 0 {
-				return errs.NewValidationError(
-					strings.Join(validationMsgs, "; "),
-					nil,
-				)
-			}
-		}
+	config.DBPath = "storage.db"
 
-		return errs.NewValidationError("validation failed", err)
-	}
+	config.BotMsgWelcome = "I'm ready to assist you. Mention me in your group message to start a conversation."
+	config.BotMsgNotAuthorized = "You are not authorized to use this command."
+	config.BotMsgProvideMessage = "Please provide a message."
+	config.BotMsgGeneralError = "An error occurred. Please try again later."
+	config.BotMsgHistoryReset = "History has been reset."
+	config.BotMsgAnalyzing = "Analyzing messages..."
+	config.BotMsgNoProfiles = "No user profiles found."
+	config.BotMsgProfilesHeader = "User Profiles:\n\n"
 
-	// Additional validation for specific fields
-	if err := validateAIConfig(config); err != nil {
-		return err
-	}
-
-	if err := validateTelegramConfig(config); err != nil {
-		return err
-	}
-
-	return nil
-}
-
-// validateAIConfig performs additional validation on AI-specific configuration.
-func validateAIConfig(config *Config) error {
-	if config.AITimeout <= 0 {
-		return errs.NewValidationError("AI timeout must be positive", nil)
-	}
-
-	if config.AITemperature < 0 || config.AITemperature > 2 {
-		return errs.NewValidationError("AI temperature must be between 0 and 2", nil)
-	}
-
-	if config.AIInstruction == "" {
-		return errs.NewValidationError("AI instruction cannot be empty", nil)
-	}
-
-	return nil
-}
-
-// validateTelegramConfig performs additional validation on Telegram-specific configuration.
-func validateTelegramConfig(config *Config) error {
-	if config.TelegramAdminID <= 0 {
-		return errs.NewValidationError("Telegram admin ID must be positive", nil)
-	}
-
-	if config.TelegramWelcomeMessage == "" {
-		return errs.NewValidationError("Telegram welcome message cannot be empty", nil)
-	}
-
-	return nil
-}
-
-// formatValidationError creates a human-readable validation error message.
-func formatValidationError(field, tag, param string) string {
-	switch tag {
-	case "required":
-		return field + " is required"
-	case "min":
-		return field + " must be at least " + param
-	case "max":
-		return field + " must be at most " + param
-	case "oneof":
-		return field + " must be one of: " + param
-	default:
-		return field + " failed " + tag + " validation"
-	}
-}
-
-// loadDefaults ensures required default configuration is available.
-func loadDefaults() error {
-	if defaultConfig == nil {
-		return errs.NewConfigError("default configuration not initialized", nil)
-	}
-
-	return nil
+	config.BotCmdStart = "Start conversation with the bot"
+	config.BotCmdReset = "Reset chat history (admin only)"
+	config.BotCmdAnalyze = "Analyze messages and update profiles (admin only)"
+	config.BotCmdProfiles = "Show user profiles (admin only)"
+	config.BotCmdEditUser = "Edit user profile data (admin only)"
 }

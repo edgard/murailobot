@@ -11,7 +11,7 @@ before:
 
 builds:
   - id: "{{ .ProjectName }}-amd64"
-    main: .
+    main: ./cmd/murailobot
     binary: "{{ .ProjectName }}"
     goos:
       - linux
@@ -24,7 +24,7 @@ builds:
       - -X main.date={{.Date}}
       - -X main.builtBy=goreleaser
   - id: "{{ .ProjectName }}-arm64"
-    main: .
+    main: ./cmd/murailobot
     binary: "{{ .ProjectName }}"
     env:
       - CC=aarch64-linux-gnu-gcc

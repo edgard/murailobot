@@ -7,34 +7,6 @@
 
 A Telegram bot powered by AI models that provides intelligent responses through the Telegram messaging platform.
 
-## Features
-
-- Chat with AI through Telegram group mentions
-- Persistent conversation history with context preservation
-- Advanced user profiling system with behavioral analysis
-- Automated daily user profile updates
-- Role-based access control
-- Docker support
-- Simple YAML configuration
-
-## User Profiling System
-
-MurailoBot includes a sophisticated user profiling system that:
-
-- Automatically analyzes message patterns and content to build psychological profiles
-- Runs daily profile updates with data preservation mechanisms
-- Tracks user metadata including display names, locations, and age ranges
-- Maintains persistent profiles across conversations
-- Enhances AI responses with contextual user information
-- Preserves existing profile data while incrementally updating with new insights
-
-The profiling system helps the bot provide more personalized and context-aware responses by analyzing:
-- Language patterns and word choice
-- Emotional expressions and communication style
-- Recurring themes in communications
-- Cultural references and personal details
-- Group interaction dynamics
-
 ## Prerequisites
 
 - Go 1.24+
@@ -61,6 +33,28 @@ make build
 ./murailobot
 ```
 
+## Configuration
+
+Minimal config.yaml example:
+```yaml
+# Telegram Bot Token (from BotFather)
+bot_token: "your-telegram-bot-token"
+
+# Your Telegram User ID (for admin access)
+bot_admin_id: 123456789
+
+# OpenAI API Key or compatible service key
+ai_token: "your-openai-api-key"
+
+# System instruction for the AI
+ai_instruction: "You are a helpful assistant focused on providing clear and accurate responses."
+
+# Instruction for profile generation
+ai_profile_instruction: "You are a behavioral analyst with expertise in psychology, linguistics, and social dynamics.\n\nYour task is to analyze chat messages and build concise, meaningful profiles of users."
+```
+
+For a complete configuration with all options, see [config.yaml.example](config.yaml.example).
+
 ## Docker
 
 ```bash
@@ -68,56 +62,9 @@ docker pull ghcr.io/edgard/murailobot:latest
 docker run -v $(pwd)/config.yaml:/app/config.yaml ghcr.io/edgard/murailobot:latest
 ```
 
-## Configuration
+## Usage
 
-### Required Settings
-
-Minimal config.yaml example:
-```yaml
-ai:
-  token: "sk-your-token-here"            # AI API token
-  base_url: "https://api.openai.com/v1"  # API endpoint URL
-
-telegram:
-  token: "your-telegram-bot-token"    # Telegram bot token
-  admin_id: 123456789                 # Admin's Telegram ID
-```
-
-For a complete configuration with all options, see [config.yaml.example](config.yaml.example).
-
-### Advanced Configuration
-
-The bot supports additional configuration options:
-
-#### AI Options
-- `model`: Specify which AI model to use (default: "gpt-4o")
-- `temperature`: Control response randomness (0.0-2.0)
-- `timeout`: Set API call timeout duration
-- `instruction`: Customize the system prompt for the AI
-- `profile_instruction`: Customize the system prompt for profile generation
-
-#### Telegram Options
-- `commands`: Customize command descriptions shown in Telegram
-- `messages`: Customize bot message templates for various interactions
-
-#### Logging Options
-- `level`: Set logging detail level (debug, info, warn, error)
-- `format`: Choose log format (json, text)
-
-### Environment Variables
-
-Configuration can also be provided through environment variables:
-
-```bash
-export BOT_AI_TOKEN="your-ai-token"
-export BOT_AI_BASE_URL="https://api.openai.com/v1"
-export BOT_TELEGRAM_TOKEN="your-telegram-token"
-export BOT_TELEGRAM_ADMIN_ID="123456789"
-```
-
-Environment variables follow the pattern `BOT_SECTION_KEY` where section and key correspond to the YAML structure.
-
-## Commands
+### Commands
 
 - `/start` - Initialize bot conversation
 - `/mrl_reset` - Clear chat history (admin only)
@@ -125,7 +72,7 @@ Environment variables follow the pattern `BOT_SECTION_KEY` where section and key
 - `/mrl_profiles` - Show user profiles (admin only)
 - `/mrl_edit_user` - Edit user profile data (admin only)
 
-## Group Chat Usage
+### Group Chat Usage
 
 MurailoBot is designed to operate in Telegram group chats:
 
@@ -133,6 +80,35 @@ MurailoBot is designed to operate in Telegram group chats:
 2. Mention the bot (@your_bot_name) in your message to get a response
 3. The bot will analyze the conversation context and respond appropriately
 4. Group messages are saved for context and profile generation
+
+## Features
+
+- Chat with AI through Telegram group mentions
+- Persistent conversation history with context preservation
+- Advanced user profiling system with behavioral analysis
+- Automated daily user profile updates
+- Role-based access control
+- Docker support for both AMD64 and ARM64 architectures
+- Simple YAML configuration
+- Efficient message cleanup and storage management
+
+## User Profiling System
+
+MurailoBot includes a sophisticated user profiling system that:
+
+- Automatically analyzes message patterns and content to build psychological profiles
+- Runs daily profile updates with data preservation mechanisms
+- Tracks user metadata including display names, locations, and age ranges
+- Maintains persistent profiles across conversations
+- Enhances AI responses with contextual user information
+- Preserves existing profile data while incrementally updating with new insights
+
+The profiling system helps the bot provide more personalized and context-aware responses by analyzing:
+- Language patterns and word choice
+- Emotional expressions and communication style
+- Recurring themes in communications
+- Cultural references and personal details
+- Group interaction dynamics
 
 ## Release Process
 

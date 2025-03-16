@@ -1,106 +1,59 @@
-################################################################################
-# MurailoBot Configuration File                                                #
-################################################################################
+# MurailoBot Configuration Example
+# Copy this file to config.yaml and update with your settings
 
 #------------------------------------------------------------------------------
-# AI Configuration
+# REQUIRED SETTINGS - These must be configured for the bot to work
 #------------------------------------------------------------------------------
-ai:
-  token: "sk-your-token-here" # REQUIRED: API token
-  base_url: "https://api.openai.com/v1" # Optional: API endpoint URL (must be valid URL)
-  model: "gpt-4o" # Optional: Model identifier
-  temperature: 1.7 # Optional: Controls response randomness (between 0.0 and 2.0)
-  timeout: "2m" # Optional: API call timeout (between 1s and 10m)
-  max_context_tokens: 16000 # Optional: Maximum tokens to use for conversation context window
-  instruction: "You are a helpful assistant focused on providing clear and accurate responses." # Optional: System prompt for chat responses
 
-  # System prompt for user profile generation
-  # This detailed instruction guides how the AI analyzes messages and builds user profiles
-  profile_instruction: |
-    You are a behavioral analyst with expertise in psychology, linguistics, and social dynamics.
+# Telegram Bot Token (from BotFather)
+bot_token: "your-telegram-bot-token"
 
-    ## ANALYST ROLE [IMPORTANT]
-    Your task is to analyze chat messages and build concise, meaningful profiles of users.
+# Your Telegram User ID (for admin access)
+bot_admin_id: 123456789
 
-    ## ANALYSIS APPROACH
-    When analyzing messages, pay attention to:
-    1. Language patterns, word choice, and communication style
-    2. Emotional expressions and reactions to different topics
-    3. Recurring themes or topics in their communications
-    4. Interaction patterns with other users and group dynamics
-    5. Cultural references and personal details they reveal
-    6. Privacy considerations - avoid including sensitive personal information
+# OpenAI API Key or compatible service key
+ai_token: "your-openai-api-key"
 
-    ## PROFILE DATA GUIDELINES [CRITICAL]
+# System instruction for the AI
+ai_instruction: "You are a helpful assistant focused on providing clear and accurate responses."
 
-    ### PRESERVING IMPORTANT INFORMATION
-    - When existing profile information is provided, you MUST preserve all meaningful information
-    - Only replace existing profile fields when you have clear and specific new evidence
-    - For fields where you have no new information, keep the existing value
-    - If uncertain about any field, retain the existing information or use qualifiers like "possibly" or "appears to be"
-    - NEVER include sensitive personal information (addresses, phone numbers, financial details)
-
-    Example: If an existing profile has "origin_location": "Germany" but the messages don't mention location,
-    keep this value. Only update if there is clear evidence of a different origin location.
-
-    ### TRAIT QUALITY REQUIREMENTS [NOTE]
-    - BREVITY IS ESSENTIAL: Limit the entire traits section to 300-400 characters whenever possible
-    - MAXIMUM TRAITS: Include no more than 15-20 distinct traits per user, prioritizing the most defining characteristics
-    - NO REDUNDANCY: Never list the same trait twice, even in different wording
-    - CONSOLIDATE AGGRESSIVELY: Combine similar traits into single, descriptive terms
-    - PRIORITIZE: Focus on personality traits over interests and demographic information
-    - USE SIMPLE TERMS: Prefer "funny" over "has a good sense of humor"
-    - AVOID WEAK OBSERVATIONS: Only include traits with strong supporting evidence
-
-    ### EXAMPLES OF PROPER TRAIT FORMATTING
-    BAD (verbose, redundant): "goofy, likes to make jokes, humorous, enjoys making others laugh, sarcastic, makes fun of others, uses vulgar language, enjoys profanity"
-    GOOD (concise, consolidated): "humorous, sarcastic, uses vulgar language"
-    BAD (too many traits): "single, overweight, likes cycling, enjoys sleeping, observant, philosophical, playful, asks questions, enjoys insults, reflective, self-deprecating, progressive"
-    GOOD (focused, prioritized): "observant, philosophical, self-deprecating"
-    BAD (overly detailed): "denies being otaku, plays video games, likes wordplay, tech-inquisitive, uses informal language, enjoys cultural references, confrontational, uses profanity liberally"
-    GOOD (essence captured): "confrontational, tech-savvy, informal communicator"
+# Instruction for profile generation
+ai_profile_instruction: "You are a behavioral analyst with expertise in psychology, linguistics, and social dynamics.\n\nYour task is to analyze chat messages and build concise, meaningful profiles of users."
 
 #------------------------------------------------------------------------------
-# Telegram Configuration
+# OPTIONAL SETTINGS - These have sensible defaults if not specified
 #------------------------------------------------------------------------------
-telegram:
-  token: "your-telegram-bot-token" # REQUIRED: Bot token from @BotFather
-  admin_id: 123456789 # REQUIRED: Admin's Telegram user ID (must be > 0)
 
-  commands: # Optional: Command descriptions for Telegram
-    start: "Start conversation with the bot"
-    reset: "Reset chat history (admin only)"
-    analyze: "Analyze messages and update profiles (admin only)"
-    profiles: "Show user profiles (admin only)"
-    edit_user: "Edit user profile data (admin only)"
-
-  messages: # Optional: Custom message templates
-    welcome: "👋 Welcome! I'm ready to assist you. Mention me in your group message to start a conversation."
-    not_authorized: "🚫 Access denied. Please contact the administrator."
-    provide_message: "ℹ️ Please provide a message when mentioning me."
-    general_error: "❌ Error occurred. Please try again later."
-    history_reset: "✅ Chat history has been cleared successfully."
-    analyzing: "⏳ Analyzing messages and updating user profiles..."
-    profiles_header: "👥 User Profiles\n\n"
-    no_profiles: "ℹ️ No user profiles available. Run /mrl_analyze to generate profiles."
-    invalid_user_id: "❌ Invalid user ID. Please provide a valid numeric ID."
-    invalid_field: "❌ Invalid field. Please use: displaynames, origin, location, age, or traits."
-    update_success: "✅ Successfully updated %s for user %d to: %s"
-    user_edit_usage: |
-      ℹ️ Usage: /mrl_edit_user [user_id] [field] [new_value]
-
-      Fields:
-      - displaynames: User's display names
-      - origin: Origin location
-      - location: Current location
-      - age: Age range
-      - traits: Personality traits
-
-      Example: /mrl_edit_user 123456789 traits friendly, helpful, technical
-
-#------------------------------------------------------------------------------
 # Logging Configuration
+log_level: "info"   # Options: debug, info, warn, error
+
+# AI Configuration
+ai_base_url: "https://api.openai.com/v1"  # API endpoint URL
+ai_model: "gpt-4o"                        # Model identifier
+ai_temperature: 1.7                       # Range: 0.0-2.0 (higher = more random)
+ai_max_context_tokens: 16000              # Range: 1000-200000
+ai_timeout: "2m"                          # Format: 30s, 2m, 1h (Range: 1s-10m)
+
+# Database Configuration
+db_path: "storage.db"  # Path to SQLite database file
+
 #------------------------------------------------------------------------------
-log:
-  level: "info" # Optional: Log level (debug, info, warn, error)
-  format: "json" # Optional: Log format (json, text)
+# BOT MESSAGES - Default text for various bot responses
+#------------------------------------------------------------------------------
+bot_msg_welcome: "I'm ready to assist you. Mention me in your group message to start a conversation."
+bot_msg_not_authorized: "You are not authorized to use this command."
+bot_msg_provide_message: "Please provide a message."
+bot_msg_general_error: "An error occurred. Please try again later."
+bot_msg_history_reset: "History has been reset."
+bot_msg_analyzing: "Analyzing messages..."
+bot_msg_no_profiles: "No user profiles found."
+bot_msg_profiles_header: "User Profiles:\n\n"
+
+#------------------------------------------------------------------------------
+# BOT COMMANDS - Default descriptions for Telegram commands
+#------------------------------------------------------------------------------
+bot_cmd_start: "Start the bot"
+bot_cmd_reset: "Reset message history"
+bot_cmd_analyze: "Analyze user messages"
+bot_cmd_profiles: "Show user profiles"
+bot_cmd_edit_user: "Edit user profile"

@@ -3,7 +3,9 @@ BINARY_NAME=murailobot
 VERSION=$(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 COMMIT=$(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 DATE=$(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
-LDFLAGS=-s -w -X main.version=${VERSION} -X main.commit=${COMMIT} -X main.date=${DATE} -X main.builtBy=makefile
+BUILT_BY=makefile
+LDFLAGS=-s -w -X main.version=${VERSION} -X main.commit=${COMMIT} -X main.date=${DATE} -X main.builtBy=${BUILT_BY}
+MAIN_PATH=./cmd/murailobot
 
 .PHONY: all default build clean test lint vet mod generate help
 
@@ -23,7 +25,7 @@ help:
 	@echo "  generate      - Run go generate"
 
 build:
-	CGO_ENABLED=1 go build -ldflags "${LDFLAGS}" -o ${BINARY_NAME} .
+	CGO_ENABLED=1 go build -ldflags "${LDFLAGS}" -o ${BINARY_NAME} ${MAIN_PATH}
 
 clean:
 	rm -f ${BINARY_NAME}
