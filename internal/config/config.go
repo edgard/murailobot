@@ -4,6 +4,7 @@
 package config
 
 import (
+	"log/slog"
 	"os"
 	"time"
 
@@ -55,24 +56,59 @@ type Config struct {
 //
 // Returns the validated configuration or an error if loading or validation fails.
 func Load() (*Config, error) {
+	startTime := time.Now()
+	slog.Info("loading configuration")
+
 	config := &Config{}
 
+	// Set default values
+	slog.Debug("setting default configuration values")
 	setDefaults(config)
 
+	// Load configuration from file
+	configPath := "config.yaml"
+	slog.Debug("attempting to load configuration file", "path", configPath)
+
 	k := koanf.New(".")
-	if err := k.Load(file.Provider("config.yaml"), yaml.Parser()); err != nil {
+	if err := k.Load(file.Provider(configPath), yaml.Parser()); err != nil {
 		if !os.IsNotExist(err) {
+			slog.Error("failed to load configuration file",
+				"error", err,
+				"path", configPath)
 			return nil, err
 		}
+		slog.Info("configuration file not found, using defaults", "path", configPath)
 	} else {
+		slog.Debug("configuration file loaded successfully", "path", configPath)
+
 		if err := k.Unmarshal("", config); err != nil {
+			slog.Error("failed to parse configuration",
+				"error", err,
+				"path", configPath)
 			return nil, err
 		}
+		slog.Debug("configuration unmarshalled successfully")
 	}
 
+	// Validate configuration
+	slog.Debug("validating configuration")
 	if err := validator.New().Struct(config); err != nil {
+		slog.Error("configuration validation failed", "error", err)
 		return nil, err
 	}
+
+	// Log key configuration values
+	slog.Info("configuration loaded successfully",
+		"log_level", config.LogLevel,
+		"ai_model", config.AIModel,
+		"db_path", config.DBPath,
+		"duration_ms", time.Since(startTime).Milliseconds())
+
+	// Log detailed configuration at debug level
+	slog.Debug("detailed configuration",
+		"ai_temperature", config.AITemperature,
+		"ai_max_context_tokens", config.AIMaxContextTokens,
+		"ai_timeout", config.AITimeout)
 
 	return config, nil
 }

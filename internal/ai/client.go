@@ -156,18 +156,33 @@ func (c *Client) createSystemPrompt(userProfiles map[int64]*db.UserProfile) stri
 //
 // Returns the generated response as a string, or an error if the generation fails.
 func (c *Client) GenerateResponse(ctx context.Context, request *Request) (string, error) {
+	startTime := time.Now()
+
+	// Check for nil request first to avoid nil pointer dereference
 	if request == nil {
+		slog.Error("nil request provided to GenerateResponse")
 		return "", errors.New("nil request")
 	}
 
+	slog.Info("generating AI response",
+		"user_id", request.UserID,
+		"model", c.model,
+		"temperature", c.temperature)
+
 	if request.UserID <= 0 {
+		slog.Error("invalid user ID in request", "user_id", request.UserID)
 		return "", errors.New("invalid user ID")
 	}
 
 	request.Message = strings.TrimSpace(request.Message)
 	if request.Message == "" {
+		slog.Error("empty message in request", "user_id", request.UserID)
 		return "", errors.New("empty user message")
 	}
+
+	slog.Debug("creating system prompt",
+		"user_id", request.UserID,
+		"profile_count", len(request.UserProfiles))
 
 	// Create a system prompt that includes bot identity and user profiles
 	// This provides context for the AI to generate appropriate responses
@@ -186,14 +201,26 @@ func (c *Client) GenerateResponse(ctx context.Context, request *Request) (string
 	systemPromptTokens := utils.EstimateTokens(systemPrompt)
 	currentMsgTokens := utils.EstimateTokens(request.Message)
 
+	slog.Debug("token usage estimation",
+		"system_prompt_tokens", systemPromptTokens,
+		"current_message_tokens", currentMsgTokens,
+		"max_context_tokens", c.maxContextTokens)
+
 	// Select a subset of recent messages that fit within the token budget
 	// This ensures we don't exceed the model's context window limits
+	selectionStartTime := time.Now()
 	selectedMessages := utils.SelectMessages(
 		c.maxContextTokens,
 		request.RecentMessages,
 		systemPromptTokens,
 		currentMsgTokens,
 	)
+	selectionDuration := time.Since(selectionStartTime)
+
+	slog.Debug("message selection completed",
+		"available_messages", len(request.RecentMessages),
+		"selected_messages", len(selectedMessages),
+		"duration_ms", selectionDuration.Milliseconds())
 
 	// Add the selected conversation history to the messages array
 	// Properly identifying bot messages as "assistant" and user messages as "user"
@@ -221,29 +248,60 @@ func (c *Client) GenerateResponse(ctx context.Context, request *Request) (string
 		Content: currentMsg,
 	})
 
+	totalInputTokens := systemPromptTokens + currentMsgTokens
+	for _, msg := range selectedMessages {
+		totalInputTokens += utils.EstimateTokens(msg.Content)
+	}
+
+	slog.Info("sending request to AI service",
+		"message_count", len(messages),
+		"estimated_tokens", totalInputTokens,
+		"timeout", c.timeout)
+
 	// Create a timeout context to prevent hanging on API calls
 	timeoutCtx, cancel := context.WithTimeout(ctx, c.timeout)
 	defer cancel()
 
 	// Make the API call to generate a response
+	apiStartTime := time.Now()
 	resp, err := c.client.CreateChatCompletion(timeoutCtx, openai.ChatCompletionRequest{
 		Model:       c.model,
 		Messages:    messages,
 		Temperature: c.temperature,
 	})
+	apiDuration := time.Since(apiStartTime)
+
 	if err != nil {
+		slog.Error("chat completion failed",
+			"error", err,
+			"duration_ms", apiDuration.Milliseconds())
 		return "", fmt.Errorf("chat completion failed: %w", err)
 	}
 
+	slog.Info("received response from AI service",
+		"duration_ms", apiDuration.Milliseconds(),
+		"completion_tokens", resp.Usage.CompletionTokens,
+		"prompt_tokens", resp.Usage.PromptTokens,
+		"total_tokens", resp.Usage.TotalTokens)
+
 	if len(resp.Choices) == 0 {
+		slog.Error("no response choices returned from AI service")
 		return "", errors.New("no response choices returned")
 	}
 
 	// Clean and normalize the response text before returning it
-	result, err := utils.Sanitize(resp.Choices[0].Message.Content)
+	rawResponse := resp.Choices[0].Message.Content
+	result, err := utils.Sanitize(rawResponse)
 	if err != nil {
+		slog.Error("failed to sanitize response", "error", err)
 		return "", fmt.Errorf("failed to sanitize response: %w", err)
 	}
+
+	totalDuration := time.Since(startTime)
+	slog.Info("AI response generation completed",
+		"total_duration_ms", totalDuration.Milliseconds(),
+		"response_length", len(result),
+		"user_id", request.UserID)
 
 	return result, nil
 }
@@ -258,17 +316,31 @@ func (c *Client) GenerateResponse(ctx context.Context, request *Request) (string
 // Returns a map of user IDs to updated user profiles, or an error if the
 // profile generation fails.
 func (c *Client) GenerateProfiles(ctx context.Context, messages []*db.Message, existingProfiles map[int64]*db.UserProfile) (map[int64]*db.UserProfile, error) {
+	startTime := time.Now()
+	slog.Info("starting profile generation",
+		"message_count", len(messages),
+		"existing_profile_count", len(existingProfiles),
+		"model", c.model)
+
 	if len(messages) == 0 {
+		slog.Error("no messages provided for profile analysis")
 		return nil, errors.New("no messages to analyze")
 	}
 
+	// Group messages by user for more efficient processing
+	slog.Debug("grouping messages by user")
 	userMessages := make(map[int64][]*db.Message)
 	for _, msg := range messages {
 		userMessages[msg.UserID] = append(userMessages[msg.UserID], msg)
 	}
+	slog.Info("messages grouped by user", "unique_users", len(userMessages))
 
+	// Get the profile generation instruction with bot identification
 	instruction := getProfileInstruction(c.profileInstruction, c.botInfo)
+	instructionTokens := utils.EstimateTokens(instruction)
+	slog.Debug("profile instruction prepared", "token_count", instructionTokens)
 
+	// Initialize chat messages with the system instruction
 	chatMessages := []openai.ChatCompletionMessage{
 		{
 			Role:    "system",
@@ -276,9 +348,13 @@ func (c *Client) GenerateProfiles(ctx context.Context, messages []*db.Message, e
 		},
 	}
 
+	// Build the user message content with existing profiles and new messages
 	var msgBuilder strings.Builder
+	messagePreparationStart := time.Now()
 
+	// Include existing profiles if available
 	if len(existingProfiles) > 0 {
+		slog.Debug("adding existing profiles to prompt")
 		msgBuilder.WriteString("## EXISTING USER PROFILES\n\n")
 		msgBuilder.WriteString("{\n  \"users\": {\n")
 
@@ -302,12 +378,16 @@ func (c *Client) GenerateProfiles(ctx context.Context, messages []*db.Message, e
 		msgBuilder.WriteString("\n  }\n}\n\n")
 	}
 
+	// Add new messages for analysis
 	msgBuilder.WriteString("## NEW GROUP CHAT MESSAGES\n\n")
 
 	totalMessages := 0
+	messagesByUser := make(map[int64]int)
 
+	// Format messages by user
 	for userID, userMsgs := range userMessages {
 		msgBuilder.WriteString(fmt.Sprintf("Messages from User %d:\n", userID))
+		messagesByUser[userID] = len(userMsgs)
 
 		for _, msg := range userMsgs {
 			msgBuilder.WriteString(fmt.Sprintf("[%s] %s\n",
@@ -320,33 +400,88 @@ func (c *Client) GenerateProfiles(ctx context.Context, messages []*db.Message, e
 		msgBuilder.WriteString("\n")
 	}
 
+	messageContent := msgBuilder.String()
+	messageContentTokens := utils.EstimateTokens(messageContent)
+	messagePreparationDuration := time.Since(messagePreparationStart)
+
+	slog.Info("message content prepared",
+		"total_messages", totalMessages,
+		"unique_users", len(messagesByUser),
+		"token_count", messageContentTokens,
+		"preparation_duration_ms", messagePreparationDuration.Milliseconds())
+
+	// Add the user message to the chat messages
 	chatMessages = append(chatMessages, openai.ChatCompletionMessage{
 		Role:    "user",
-		Content: msgBuilder.String(),
+		Content: messageContent,
 	})
 
+	// Create a timeout context for the API call
 	timeoutCtx, cancel := context.WithTimeout(ctx, c.timeout)
 	defer cancel()
 
+	// Make the API call to generate profiles
+	slog.Info("sending profile generation request to AI service",
+		"total_tokens", instructionTokens+messageContentTokens,
+		"timeout", c.timeout)
+
+	apiStartTime := time.Now()
 	resp, err := c.client.CreateChatCompletion(timeoutCtx, openai.ChatCompletionRequest{
 		Model:       c.model,
 		Messages:    chatMessages,
 		Temperature: c.temperature,
 	})
+	apiDuration := time.Since(apiStartTime)
+
 	if err != nil {
+		slog.Error("profile generation failed",
+			"error", err,
+			"duration_ms", apiDuration.Milliseconds())
 		return nil, fmt.Errorf("profile generation failed: %w", err)
 	}
 
+	slog.Info("received profile generation response",
+		"duration_ms", apiDuration.Milliseconds(),
+		"completion_tokens", resp.Usage.CompletionTokens,
+		"prompt_tokens", resp.Usage.PromptTokens,
+		"total_tokens", resp.Usage.TotalTokens)
+
 	if len(resp.Choices) == 0 {
+		slog.Error("no response choices returned from AI service")
 		return nil, errors.New("no response choices returned")
 	}
 
-	return parseProfileResponse(resp.Choices[0].Message.Content, userMessages, existingProfiles, c.botInfo)
+	// Parse the response to extract user profiles
+	parsingStartTime := time.Now()
+	profiles, err := parseProfileResponse(resp.Choices[0].Message.Content, userMessages, existingProfiles, c.botInfo)
+	parsingDuration := time.Since(parsingStartTime)
+
+	if err != nil {
+		slog.Error("failed to parse profile response",
+			"error", err,
+			"parsing_duration_ms", parsingDuration.Milliseconds())
+		return nil, err
+	}
+
+	slog.Info("profile response parsed successfully",
+		"profile_count", len(profiles),
+		"parsing_duration_ms", parsingDuration.Milliseconds())
+
+	totalDuration := time.Since(startTime)
+	slog.Info("profile generation completed",
+		"total_duration_ms", totalDuration.Milliseconds(),
+		"profiles_generated", len(profiles))
+
+	return profiles, nil
 }
 
 func parseProfileResponse(response string, userMessages map[int64][]*db.Message, existingProfiles map[int64]*db.UserProfile, botInfo BotInfo) (map[int64]*db.UserProfile, error) {
+	startTime := time.Now()
+	slog.Debug("parsing profile response", "response_length", len(response))
+
 	response = strings.TrimSpace(response)
 	if response == "" {
+		slog.Error("empty profile response received")
 		return nil, errors.New("empty profile response")
 	}
 
@@ -356,10 +491,14 @@ func parseProfileResponse(response string, userMessages map[int64][]*db.Message,
 	jsonEnd := strings.LastIndex(response, "}")
 
 	if jsonStart == -1 || jsonEnd == -1 || jsonEnd <= jsonStart {
+		slog.Error("invalid JSON format in response",
+			"json_start", jsonStart,
+			"json_end", jsonEnd)
 		return nil, errors.New("invalid JSON format in response")
 	}
 
 	jsonContent := response[jsonStart : jsonEnd+1]
+	slog.Debug("extracted JSON content", "json_length", len(jsonContent))
 
 	// Define a struct that matches the expected JSON structure
 	var profileResponse struct {
@@ -373,13 +512,23 @@ func parseProfileResponse(response string, userMessages map[int64][]*db.Message,
 	}
 
 	// Try to parse the JSON
+	unmarshalStartTime := time.Now()
 	err := json.Unmarshal([]byte(jsonContent), &profileResponse)
+	unmarshalDuration := time.Since(unmarshalStartTime)
+
 	if err != nil {
+		slog.Error("failed to parse JSON response",
+			"error", err,
+			"unmarshal_duration_ms", unmarshalDuration.Milliseconds())
 		return nil, fmt.Errorf("failed to parse profile response: %w", err)
 	}
 
+	slog.Debug("JSON unmarshaled successfully",
+		"duration_ms", unmarshalDuration.Milliseconds())
+
 	// Initialize an empty users map if none was provided in the response
 	if profileResponse.Users == nil {
+		slog.Warn("no users found in profile response, initializing empty map")
 		profileResponse.Users = make(map[string]struct {
 			DisplayNames    string `json:"display_names"`
 			OriginLocation  string `json:"origin_location"`
@@ -387,9 +536,15 @@ func parseProfileResponse(response string, userMessages map[int64][]*db.Message,
 			AgeRange        string `json:"age_range"`
 			Traits          string `json:"traits"`
 		})
+	} else {
+		slog.Info("users found in profile response", "count", len(profileResponse.Users))
 	}
 
 	updatedProfiles := make(map[int64]*db.UserProfile)
+	newProfiles := 0
+	updatedExistingProfiles := 0
+	skippedProfiles := 0
+	botProfileUpdated := false
 
 	// Process each user profile from the response
 	for userIDStr, profile := range profileResponse.Users {
@@ -397,12 +552,14 @@ func parseProfileResponse(response string, userMessages map[int64][]*db.Message,
 		var userID int64
 		if _, err := fmt.Sscanf(userIDStr, "%d", &userID); err != nil || userID == 0 {
 			slog.Warn("invalid user ID in profile response", "user_id", userIDStr)
+			skippedProfiles++
 			continue
 		}
 
 		// Special handling for the bot's own profile
 		// This ensures the bot always has a consistent profile
 		if userID == botInfo.UserID {
+			slog.Debug("handling bot's own profile", "bot_id", botInfo.UserID)
 			botDisplayNames := botInfo.Username
 			if botInfo.DisplayName != "" && botInfo.DisplayName != botInfo.Username {
 				botDisplayNames = fmt.Sprintf("%s, %s", botInfo.DisplayName, botInfo.Username)
@@ -418,6 +575,7 @@ func parseProfileResponse(response string, userMessages map[int64][]*db.Message,
 				LastUpdated:     time.Now().UTC(),
 			}
 
+			botProfileUpdated = true
 			continue
 		}
 
@@ -425,9 +583,15 @@ func parseProfileResponse(response string, userMessages map[int64][]*db.Message,
 		// This prevents creating profiles for users that weren't part of the analysis
 		if _, hasMessages := userMessages[userID]; !hasMessages {
 			if _, hasProfile := existingProfiles[userID]; !hasProfile {
+				slog.Debug("skipping user with no messages and no existing profile",
+					"user_id", userID)
+				skippedProfiles++
 				continue
 			}
 		}
+
+		// Check if this is a new profile or an update to an existing one
+		_, isExisting := existingProfiles[userID]
 
 		// Create updated profile for the user
 		updatedProfiles[userID] = &db.UserProfile{
@@ -439,12 +603,39 @@ func parseProfileResponse(response string, userMessages map[int64][]*db.Message,
 			Traits:          profile.Traits,
 			LastUpdated:     time.Now().UTC(),
 		}
+
+		if isExisting {
+			updatedExistingProfiles++
+		} else {
+			newProfiles++
+		}
+
+		slog.Debug("profile created",
+			"user_id", userID,
+			"is_update", isExisting,
+			"display_names", profile.DisplayNames)
 	}
+
+	totalDuration := time.Since(startTime)
+	slog.Info("profile parsing completed",
+		"total_profiles", len(updatedProfiles),
+		"new_profiles", newProfiles,
+		"updated_profiles", updatedExistingProfiles,
+		"skipped_profiles", skippedProfiles,
+		"bot_profile_updated", botProfileUpdated,
+		"duration_ms", totalDuration.Milliseconds())
 
 	return updatedProfiles, nil
 }
 
 func getProfileInstruction(configInstruction string, botInfo BotInfo) string {
+	slog.Debug("generating profile instruction",
+		"bot_id", botInfo.UserID,
+		"bot_username", botInfo.Username)
+
+	startTime := time.Now()
+
+	// Create the bot identification and fixed instruction part
 	botIdentificationAndFixedPart := fmt.Sprintf(`
 ## BOT IDENTIFICATION [IMPORTANT]
 Bot UID: %d
@@ -471,5 +662,20 @@ Return ONLY a JSON object, no additional text, with this structure:
   }
 }`, botInfo.UserID, botInfo.Username, botInfo.DisplayName)
 
-	return fmt.Sprintf("%s\n\n%s", configInstruction, botIdentificationAndFixedPart)
+	// Combine the configured instruction with the fixed part
+	fullInstruction := fmt.Sprintf("%s\n\n%s", configInstruction, botIdentificationAndFixedPart)
+
+	// Log information about the generated instruction
+	instructionLength := len(fullInstruction)
+	configLength := len(configInstruction)
+	fixedPartLength := len(botIdentificationAndFixedPart)
+
+	duration := time.Since(startTime)
+	slog.Debug("profile instruction generated",
+		"total_length", instructionLength,
+		"config_length", configLength,
+		"fixed_part_length", fixedPartLength,
+		"duration_ms", duration.Milliseconds())
+
+	return fullInstruction
 }

@@ -36,6 +36,8 @@ type Bot struct {
 // It initializes the Telegram API client, sets up command handlers,
 // and configures the bot's information in the AI client.
 func New(cfg *config.Config, database *db.DB, aiClient *ai.Client, scheduler *utils.Scheduler) (*Bot, error) {
+	slog.Info("initializing bot")
+
 	if database == nil {
 		return nil, errors.New("nil database")
 	}
@@ -48,10 +50,15 @@ func New(cfg *config.Config, database *db.DB, aiClient *ai.Client, scheduler *ut
 		return nil, errors.New("nil scheduler")
 	}
 
+	slog.Info("connecting to Telegram API")
 	api, err := tgbotapi.NewBotAPI(cfg.BotToken)
 	if err != nil {
+		slog.Error("failed to connect to Telegram API", "error", err)
 		return nil, err
 	}
+	slog.Info("connected to Telegram API",
+		"bot_username", api.Self.UserName,
+		"bot_id", api.Self.ID)
 
 	api.Debug = false
 	ctx := context.Background()
@@ -66,14 +73,17 @@ func New(cfg *config.Config, database *db.DB, aiClient *ai.Client, scheduler *ut
 		ctx:       ctx,
 	}
 
+	slog.Info("configuring bot info in AI client")
 	if err := aiClient.SetBotInfo(ai.BotInfo{
 		UserID:      api.Self.ID,
 		Username:    api.Self.UserName,
 		DisplayName: api.Self.FirstName,
 	}); err != nil {
+		slog.Error("failed to set bot info in AI client", "error", err)
 		return nil, err
 	}
 
+	slog.Info("registering command handlers")
 	bot.handlers = map[string]func(*tgbotapi.Message) error{
 		"start":         bot.handleStartCommand,
 		"mrl_reset":     bot.handleResetCommand,
@@ -81,6 +91,7 @@ func New(cfg *config.Config, database *db.DB, aiClient *ai.Client, scheduler *ut
 		"mrl_profiles":  bot.handleProfilesCommand,
 		"mrl_edit_user": bot.handleEditUserCommand,
 	}
+	slog.Info("bot initialization complete")
 
 	return bot, nil
 }
@@ -90,27 +101,44 @@ func New(cfg *config.Config, database *db.DB, aiClient *ai.Client, scheduler *ut
 // schedules maintenance tasks, and starts the message processing loop.
 // The errCh parameter allows reporting runtime errors back to the main goroutine.
 func (b *Bot) Start(errCh chan<- error) error {
+	slog.Info("starting bot")
+
+	slog.Info("setting up bot commands")
 	if err := b.setupCommands(); err != nil {
+		slog.Error("failed to setup commands", "error", err)
 		return err
 	}
+	slog.Info("bot commands registered successfully")
 
+	slog.Info("configuring update channel")
 	updateConfig := tgbotapi.NewUpdate(0)
 	updateConfig.Timeout = 60
 	updates := b.api.GetUpdatesChan(updateConfig)
+	slog.Info("update channel configured", "timeout", updateConfig.Timeout)
 
+	slog.Info("scheduling maintenance tasks")
 	if err := b.scheduleMaintenanceTasks(); err != nil {
+		slog.Error("failed to schedule maintenance tasks", "error", err)
 		return err
 	}
+	slog.Info("maintenance tasks scheduled successfully")
 
+	slog.Info("starting to process updates")
 	return b.processUpdates(updates, errCh)
 }
 
 // Stop gracefully shuts down the bot by stopping the update receiver
 // and signaling all goroutines to terminate.
 func (b *Bot) Stop() error {
+	slog.Info("stopping bot")
+
+	slog.Info("stopping update receiver")
 	b.api.StopReceivingUpdates()
+
+	slog.Info("signaling goroutines to terminate")
 	close(b.running)
 
+	slog.Info("bot stopped successfully")
 	return nil
 }
 
@@ -135,12 +163,16 @@ func (b *Bot) setupCommands() error {
 }
 
 func (b *Bot) processUpdates(updates tgbotapi.UpdatesChannel, errCh chan<- error) error {
+	slog.Info("starting to process message updates")
+
 	for {
 		select {
 		case <-b.running:
+			slog.Info("update processing stopped due to bot shutdown")
 			return nil
 		case update, ok := <-updates:
 			if !ok {
+				slog.Info("update channel closed")
 				return nil
 			}
 
@@ -148,26 +180,73 @@ func (b *Bot) processUpdates(updates tgbotapi.UpdatesChannel, errCh chan<- error
 				continue
 			}
 
+			// Log basic message information
+			chatType := "private"
+			if update.Message.Chat.IsGroup() {
+				chatType = "group"
+			} else if update.Message.Chat.IsSuperGroup() {
+				chatType = "supergroup"
+			}
+
+			slog.Debug("received message",
+				"message_id", update.Message.MessageID,
+				"chat_id", update.Message.Chat.ID,
+				"chat_type", chatType,
+				"user_id", update.Message.From.ID,
+				"username", update.Message.From.UserName)
+
 			if update.Message.IsCommand() {
+				command := update.Message.Command()
+				slog.Debug("processing command",
+					"command", command,
+					"chat_id", update.Message.Chat.ID,
+					"user_id", update.Message.From.ID)
+
 				if err := b.handleCommand(update); err != nil {
 					// Only send critical errors that should terminate the application
 					if isCriticalError(err) {
+						slog.Error("critical command error",
+							"error", err,
+							"command", command,
+							"chat_id", update.Message.Chat.ID)
 						errCh <- fmt.Errorf("critical command error: %w", err)
 					} else {
-						slog.Error("command handler error", "error", err)
+						slog.Error("command handler error",
+							"error", err,
+							"command", command,
+							"chat_id", update.Message.Chat.ID)
 					}
+				} else {
+					slog.Info("command processed successfully",
+						"command", command,
+						"chat_id", update.Message.Chat.ID)
 				}
 			} else if update.Message.Chat.IsGroup() || update.Message.Chat.IsSuperGroup() {
+				slog.Debug("processing group message",
+					"chat_id", update.Message.Chat.ID,
+					"chat_title", update.Message.Chat.Title,
+					"message_length", len(update.Message.Text))
+
 				if err := b.handleGroupMessage(update.Message); err != nil {
 					// Only send critical errors that should terminate the application
 					if isCriticalError(err) {
+						slog.Error("critical group message error",
+							"error", err,
+							"chat_id", update.Message.Chat.ID)
 						errCh <- fmt.Errorf("critical group message error: %w", err)
 					} else {
 						slog.Error("failed to handle group message",
 							"error", err,
 							"chat_id", update.Message.Chat.ID)
 					}
+				} else {
+					slog.Info("group message processed successfully",
+						"chat_id", update.Message.Chat.ID)
 				}
+			} else {
+				slog.Info("ignoring non-group message",
+					"chat_id", update.Message.Chat.ID,
+					"chat_type", chatType)
 			}
 		}
 	}
@@ -210,7 +289,7 @@ func (b *Bot) handleCommand(update tgbotapi.Update) error {
 
 	if err != nil {
 		if strings.Contains(err.Error(), "unauthorized access") {
-			slog.Info("unauthorized access",
+			slog.Warn("unauthorized access",
 				"error", err,
 				"command", msg.Command(),
 				"user_id", msg.From.ID,
@@ -382,14 +461,29 @@ func (b *Bot) handleEditUserCommand(msg *tgbotapi.Message) error {
 }
 
 func (b *Bot) handleGroupMessage(msg *tgbotapi.Message) error {
+	slog.Debug("validating group message",
+		"chat_id", msg.Chat.ID,
+		"user_id", msg.From.ID)
+
 	if err := b.validateMessage(msg); err != nil {
+		slog.Error("invalid message",
+			"error", err,
+			"chat_id", msg.Chat.ID)
 		return err
 	}
 
 	botMention := "@" + b.api.Self.UserName
 	if strings.Contains(msg.Text, botMention) {
+		slog.Info("bot mention detected",
+			"chat_id", msg.Chat.ID,
+			"user_id", msg.From.ID,
+			"username", msg.From.UserName)
 		return b.handleMentionMessage(msg)
 	} else {
+		slog.Debug("saving regular group message",
+			"chat_id", msg.Chat.ID,
+			"user_id", msg.From.ID)
+
 		message := &db.Message{
 			GroupID:   msg.Chat.ID,
 			GroupName: msg.Chat.Title,
@@ -398,16 +492,35 @@ func (b *Bot) handleGroupMessage(msg *tgbotapi.Message) error {
 			Timestamp: time.Now().UTC(),
 		}
 
-		return b.db.SaveMessage(b.ctx, message)
+		err := b.db.SaveMessage(b.ctx, message)
+		if err != nil {
+			slog.Error("failed to save group message",
+				"error", err,
+				"chat_id", msg.Chat.ID)
+		} else {
+			slog.Debug("group message saved successfully",
+				"chat_id", msg.Chat.ID)
+		}
+
+		return err
 	}
 }
 
 func (b *Bot) handleMentionMessage(msg *tgbotapi.Message) error {
+	slog.Info("handling mention message",
+		"chat_id", msg.Chat.ID,
+		"user_id", msg.From.ID,
+		"username", msg.From.UserName)
+
 	stopTyping := b.StartTyping(msg.Chat.ID)
 	defer close(stopTyping)
 
 	recentLimit := 50
+	slog.Debug("fetching recent messages",
+		"chat_id", msg.Chat.ID,
+		"limit", recentLimit)
 
+	startTime := time.Now()
 	recentMessages, err := b.db.GetRecentMessages(b.ctx, msg.Chat.ID, recentLimit)
 	if err != nil {
 		slog.Error("failed to get recent messages",
@@ -415,10 +528,14 @@ func (b *Bot) handleMentionMessage(msg *tgbotapi.Message) error {
 			"chat_id", msg.Chat.ID)
 
 		b.sendErrorMessage(msg.Chat.ID)
-
 		return err
 	}
+	slog.Debug("retrieved recent messages",
+		"chat_id", msg.Chat.ID,
+		"count", len(recentMessages),
+		"duration_ms", time.Since(startTime).Milliseconds())
 
+	slog.Debug("fetching user profiles", "chat_id", msg.Chat.ID)
 	userProfiles, err := b.db.GetAllUserProfiles(b.ctx)
 	if err != nil {
 		slog.Error("failed to get user profiles",
@@ -427,6 +544,9 @@ func (b *Bot) handleMentionMessage(msg *tgbotapi.Message) error {
 
 		userProfiles = make(map[int64]*db.UserProfile)
 	}
+	slog.Debug("retrieved user profiles",
+		"chat_id", msg.Chat.ID,
+		"count", len(userProfiles))
 
 	request := &ai.Request{
 		UserID:         msg.From.ID,
@@ -435,13 +555,30 @@ func (b *Bot) handleMentionMessage(msg *tgbotapi.Message) error {
 		UserProfiles:   userProfiles,
 	}
 
+	slog.Info("generating AI response",
+		"chat_id", msg.Chat.ID,
+		"user_id", msg.From.ID,
+		"message_length", len(msg.Text))
+
+	aiStartTime := time.Now()
 	response, err := b.ai.GenerateResponse(b.ctx, request)
 	if err != nil {
+		slog.Error("failed to generate AI response",
+			"error", err,
+			"chat_id", msg.Chat.ID)
 		b.sendErrorMessage(msg.Chat.ID)
-
 		return err
 	}
 
+	aiDuration := time.Since(aiStartTime)
+	slog.Info("AI response generated",
+		"chat_id", msg.Chat.ID,
+		"duration_ms", aiDuration.Milliseconds(),
+		"response_length", len(response))
+
+	slog.Debug("saving user message to database",
+		"chat_id", msg.Chat.ID,
+		"user_id", msg.From.ID)
 	userMessage := &db.Message{
 		GroupID:   msg.Chat.ID,
 		GroupName: msg.Chat.Title,
@@ -450,9 +587,16 @@ func (b *Bot) handleMentionMessage(msg *tgbotapi.Message) error {
 		Timestamp: time.Now().UTC(),
 	}
 	if err := b.db.SaveMessage(b.ctx, userMessage); err != nil {
-		slog.Error("failed to save user group message", "error", err)
+		slog.Error("failed to save user group message",
+			"error", err,
+			"chat_id", msg.Chat.ID)
+	} else {
+		slog.Debug("user message saved successfully",
+			"chat_id", msg.Chat.ID)
 	}
 
+	slog.Debug("saving bot response to database",
+		"chat_id", msg.Chat.ID)
 	botMessage := &db.Message{
 		GroupID:   msg.Chat.ID,
 		GroupName: msg.Chat.Title,
@@ -461,59 +605,114 @@ func (b *Bot) handleMentionMessage(msg *tgbotapi.Message) error {
 		Timestamp: time.Now().UTC(),
 	}
 	if err := b.db.SaveMessage(b.ctx, botMessage); err != nil {
-		slog.Error("failed to save bot group message", "error", err)
+		slog.Error("failed to save bot group message",
+			"error", err,
+			"chat_id", msg.Chat.ID)
+	} else {
+		slog.Debug("bot message saved successfully",
+			"chat_id", msg.Chat.ID)
 	}
 
+	slog.Info("sending response to chat",
+		"chat_id", msg.Chat.ID,
+		"response_length", len(response))
 	reply := tgbotapi.NewMessage(msg.Chat.ID, response)
 
-	return b.SendMessage(reply)
+	err = b.SendMessage(reply)
+	if err != nil {
+		slog.Error("failed to send message",
+			"error", err,
+			"chat_id", msg.Chat.ID)
+	} else {
+		slog.Info("response sent successfully",
+			"chat_id", msg.Chat.ID)
+	}
+
+	return err
 }
 
 func (b *Bot) scheduleMaintenanceTasks() error {
+	slog.Info("scheduling daily profile update task", "cron", "0 0 * * *")
 	err := b.scheduler.AddJob(
 		"daily-profile-update",
 		"0 0 * * *",
 		func() {
+			slog.Info("starting scheduled daily profile update")
+			startTime := time.Now()
+
 			if err := b.processAndUpdateUserProfiles(); err != nil {
 				slog.Error("daily profile update failed", "error", err)
+			} else {
+				duration := time.Since(startTime)
+				slog.Info("daily profile update completed successfully",
+					"duration_ms", duration.Milliseconds())
 			}
 		},
 	)
 	if err != nil {
+		slog.Error("failed to schedule daily profile update", "error", err)
 		return err
 	}
+	slog.Info("daily profile update scheduled successfully")
 
+	slog.Info("scheduling daily messages cleanup task", "cron", "0 12 * * *")
 	err = b.scheduler.AddJob(
 		"daily-messages-cleanup",
 		"0 12 * * *",
 		func() {
-			if err := b.cleanupProcessedMessages(time.Now().UTC().AddDate(0, 0, -7)); err != nil {
+			cutoffTime := time.Now().UTC().AddDate(0, 0, -7)
+			slog.Info("starting scheduled messages cleanup",
+				"cutoff_time", cutoffTime.Format(time.RFC3339))
+			startTime := time.Now()
+
+			if err := b.cleanupProcessedMessages(cutoffTime); err != nil {
 				slog.Error("daily messages cleanup failed", "error", err)
+			} else {
+				duration := time.Since(startTime)
+				slog.Info("daily messages cleanup completed successfully",
+					"duration_ms", duration.Milliseconds())
 			}
 		},
 	)
 	if err != nil {
+		slog.Error("failed to schedule daily messages cleanup", "error", err)
 		return err
 	}
+	slog.Info("daily messages cleanup scheduled successfully")
 
 	return nil
 }
 
 func (b *Bot) cleanupProcessedMessages(cutoffTime time.Time) error {
+	slog.Info("starting message cleanup process",
+		"cutoff_time", cutoffTime.Format(time.RFC3339))
+
 	// Get all unique group chats that have messages in the database
+	slog.Debug("fetching unique group chats")
 	groups, err := b.db.GetUniqueGroupChats(b.ctx)
 	if err != nil {
+		slog.Error("failed to get unique group chats", "error", err)
 		return err
 	}
+	slog.Info("found groups to process", "group_count", len(groups))
 
 	// Set a reasonable limit for the number of recent messages to preserve per group
 	// This balances between maintaining sufficient conversation context and database size
 	messagesPerGroup := 1000
+	slog.Debug("messages to preserve per group", "limit", messagesPerGroup)
+
+	totalProcessed := 0
+	totalPreserved := 0
 
 	// Process each group chat separately to maintain independent conversation histories
-	for _, groupID := range groups {
+	for i, groupID := range groups {
+		slog.Info("processing group",
+			"group_id", groupID,
+			"progress", fmt.Sprintf("%d/%d", i+1, len(groups)))
+
 		// Retrieve the most recent messages for this group to preserve them
 		// These messages will be kept regardless of their processed status or age
+		startTime := time.Now()
 		recentMessages, err := b.db.GetRecentMessages(b.ctx, groupID, messagesPerGroup)
 		if err != nil {
 			slog.Error("failed to get recent messages for group",
@@ -524,6 +723,14 @@ func (b *Bot) cleanupProcessedMessages(cutoffTime time.Time) error {
 			continue
 		}
 
+		fetchDuration := time.Since(startTime)
+		slog.Debug("retrieved recent messages",
+			"group_id", groupID,
+			"message_count", len(recentMessages),
+			"duration_ms", fetchDuration.Milliseconds())
+
+		totalPreserved += len(recentMessages)
+
 		// Extract the IDs of messages to preserve
 		preserveIDs := make([]uint, 0, len(recentMessages))
 		for _, msg := range recentMessages {
@@ -532,45 +739,90 @@ func (b *Bot) cleanupProcessedMessages(cutoffTime time.Time) error {
 
 		// Delete old processed messages while preserving the recent ones
 		// This maintains conversation context while keeping the database size manageable
+		deleteStartTime := time.Now()
 		if err := b.db.DeleteProcessedMessagesExcept(b.ctx, groupID, cutoffTime, preserveIDs); err != nil {
 			slog.Error("failed to clean up messages for group",
 				"error", err,
 				"group_id", groupID)
+		} else {
+			deleteDuration := time.Since(deleteStartTime)
+			slog.Info("cleaned up messages for group",
+				"group_id", groupID,
+				"duration_ms", deleteDuration.Milliseconds())
+			totalProcessed++
 		}
 	}
+
+	slog.Info("message cleanup completed",
+		"groups_processed", totalProcessed,
+		"total_groups", len(groups),
+		"messages_preserved", totalPreserved)
 
 	return nil
 }
 
 func (b *Bot) processAndUpdateUserProfiles() error {
+	slog.Info("starting user profile update process")
+
 	// Retrieve all messages that haven't been processed for user profile analysis yet
+	slog.Debug("fetching unprocessed messages")
+	startTime := time.Now()
 	unprocessedMessages, err := b.db.GetUnprocessedMessages(b.ctx)
 	if err != nil {
+		slog.Error("failed to get unprocessed messages", "error", err)
 		return err
 	}
+	fetchDuration := time.Since(startTime)
+	slog.Info("retrieved unprocessed messages",
+		"count", len(unprocessedMessages),
+		"duration_ms", fetchDuration.Milliseconds())
 
 	// If there are no unprocessed messages, there's nothing to do
 	if len(unprocessedMessages) == 0 {
+		slog.Info("no unprocessed messages found, skipping profile update")
 		return nil
 	}
 
+	// Group messages by user for logging purposes
+	userMessageCounts := make(map[int64]int)
+	for _, msg := range unprocessedMessages {
+		userMessageCounts[msg.UserID]++
+	}
+	slog.Info("message distribution by user", "user_count", len(userMessageCounts))
+
 	// Get existing user profiles to provide context for the AI analysis
 	// and to ensure we preserve existing data when merging profiles
+	slog.Debug("fetching existing user profiles")
 	existingProfiles, err := b.db.GetAllUserProfiles(b.ctx)
 	if err != nil {
 		// If we can't get existing profiles, start with an empty map
 		// This allows the system to continue functioning even if profile retrieval fails
+		slog.Warn("failed to get existing profiles, starting with empty map", "error", err)
 		existingProfiles = make(map[int64]*db.UserProfile)
 	}
+	slog.Info("retrieved existing profiles", "count", len(existingProfiles))
 
 	// Use AI to analyze messages and generate updated user profiles
+	slog.Info("generating user profiles with AI",
+		"message_count", len(unprocessedMessages),
+		"existing_profile_count", len(existingProfiles))
+	aiStartTime := time.Now()
 	updatedProfiles, err := b.ai.GenerateProfiles(b.ctx, unprocessedMessages, existingProfiles)
 	if err != nil {
+		slog.Error("failed to generate profiles with AI", "error", err)
 		return err
 	}
+	aiDuration := time.Since(aiStartTime)
+	slog.Info("AI profile generation completed",
+		"duration_ms", aiDuration.Milliseconds(),
+		"profiles_generated", len(updatedProfiles))
 
 	// Merge new profile data with existing profiles
 	// This ensures we don't lose information when the AI doesn't detect certain attributes
+	slog.Debug("merging new profile data with existing profiles")
+	updatedCount := 0
+	newCount := 0
+
 	for userID, newProfile := range updatedProfiles {
 		if existingProfile, exists := existingProfiles[userID]; exists {
 			// For each field, keep the existing value if the AI didn't provide a new one
@@ -598,25 +850,53 @@ func (b *Bot) processAndUpdateUserProfiles() error {
 			// Preserve database metadata from the existing profile
 			newProfile.ID = existingProfile.ID
 			newProfile.CreatedAt = existingProfile.CreatedAt
+			updatedCount++
+		} else {
+			newCount++
 		}
 	}
+	slog.Info("profiles prepared for saving",
+		"updated_profiles", updatedCount,
+		"new_profiles", newCount)
 
 	// Save all updated profiles to the database
-	for _, profile := range updatedProfiles {
+	slog.Debug("saving profiles to database")
+	saveStartTime := time.Now()
+	for userID, profile := range updatedProfiles {
 		if err := b.db.SaveUserProfile(b.ctx, profile); err != nil {
+			slog.Error("failed to save user profile",
+				"error", err,
+				"user_id", userID)
 			return err
 		}
 	}
+	saveDuration := time.Since(saveStartTime)
+	slog.Info("profiles saved to database",
+		"count", len(updatedProfiles),
+		"duration_ms", saveDuration.Milliseconds())
 
 	// Mark all processed messages as such to avoid reprocessing them
+	slog.Debug("marking messages as processed")
 	messageIDs := make([]uint, 0, len(unprocessedMessages))
 	for _, msg := range unprocessedMessages {
 		messageIDs = append(messageIDs, msg.ID)
 	}
 
+	markStartTime := time.Now()
 	if err := b.db.MarkMessagesAsProcessed(b.ctx, messageIDs); err != nil {
+		slog.Error("failed to mark messages as processed", "error", err)
 		return err
 	}
+	markDuration := time.Since(markStartTime)
+	slog.Info("messages marked as processed",
+		"count", len(messageIDs),
+		"duration_ms", markDuration.Milliseconds())
+
+	totalDuration := time.Since(startTime)
+	slog.Info("user profile update process completed",
+		"total_duration_ms", totalDuration.Milliseconds(),
+		"profiles_updated", len(updatedProfiles),
+		"messages_processed", len(unprocessedMessages))
 
 	return nil
 }
@@ -625,12 +905,30 @@ func (b *Bot) processAndUpdateUserProfiles() error {
 // It returns an error if the Telegram API client is nil or if sending fails.
 func (b *Bot) SendMessage(msg tgbotapi.MessageConfig) error {
 	if b.api == nil {
+		slog.Error("cannot send message: nil telegram API client")
 		return errors.New("nil telegram API client")
 	}
 
-	_, err := b.api.Send(msg)
+	slog.Debug("sending message to chat",
+		"chat_id", msg.ChatID,
+		"message_length", len(msg.Text))
 
-	return err
+	startTime := time.Now()
+	sentMsg, err := b.api.Send(msg)
+	if err != nil {
+		slog.Error("failed to send message",
+			"error", err,
+			"chat_id", msg.ChatID)
+		return err
+	}
+
+	duration := time.Since(startTime)
+	slog.Debug("message sent successfully",
+		"chat_id", msg.ChatID,
+		"message_id", sentMsg.MessageID,
+		"duration_ms", duration.Milliseconds())
+
+	return nil
 }
 
 // StartTyping sends periodic typing indicators to a chat until the returned

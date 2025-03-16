@@ -22,15 +22,31 @@ type Scheduler struct {
 //
 // Returns an error if the scheduler creation fails.
 func NewScheduler() (*Scheduler, error) {
+	slog.Debug("creating new scheduler")
+	startTime := time.Now()
+
 	s, err := gocron.NewScheduler(
 		gocron.WithLocation(time.UTC),
 		gocron.WithLogger(&gocronLogAdapter{}),
 	)
 	if err != nil {
+		slog.Error("failed to create scheduler",
+			"error", err,
+			"duration_ms", time.Since(startTime).Milliseconds())
 		return nil, fmt.Errorf("failed to create scheduler: %w", err)
 	}
 
+	slog.Debug("scheduler created, starting scheduler")
+	schedulerStartTime := time.Now()
+
 	s.Start()
+
+	startDuration := time.Since(schedulerStartTime)
+	totalDuration := time.Since(startTime)
+
+	slog.Debug("scheduler started successfully",
+		"start_duration_ms", startDuration.Milliseconds(),
+		"total_duration_ms", totalDuration.Milliseconds())
 
 	return &Scheduler{scheduler: s}, nil
 }
@@ -45,25 +61,78 @@ func NewScheduler() (*Scheduler, error) {
 //
 // Returns an error if any parameters are invalid or if scheduling fails.
 func (s *Scheduler) AddJob(name, cronExpr string, job func()) error {
+	slog.Debug("adding scheduled job",
+		"job_name", name,
+		"cron_expression", cronExpr)
+
+	startTime := time.Now()
+
 	if name == "" {
+		slog.Error("failed to add job: empty job name")
 		return errors.New("empty job name")
 	}
 
 	if cronExpr == "" {
+		slog.Error("failed to add job: empty cron expression", "job_name", name)
 		return errors.New("empty cron expression")
 	}
 
 	if job == nil {
+		slog.Error("failed to add job: nil job function", "job_name", name)
 		return errors.New("nil job function")
 	}
 
-	_, err := s.scheduler.NewJob(
+	// Create a wrapper function that adds logging around the job execution
+	wrappedJob := func() {
+		jobStartTime := time.Now()
+		slog.Debug("starting scheduled job",
+			"job_name", name,
+			"scheduled_at", time.Now().Format(time.RFC3339))
+
+		// Execute the original job function
+		job()
+
+		jobDuration := time.Since(jobStartTime)
+		slog.Debug("scheduled job completed",
+			"job_name", name,
+			"duration_ms", jobDuration.Milliseconds())
+
+		// Add Warning for slow job execution
+		slowThreshold := 5 * time.Second
+		if jobDuration > slowThreshold {
+			slog.Warn("slow job execution detected",
+				"job_name", name,
+				"duration_ms", jobDuration.Milliseconds(),
+				"threshold_ms", slowThreshold.Milliseconds())
+		}
+	}
+
+	scheduledJob, err := s.scheduler.NewJob(
 		gocron.CronJob(cronExpr, false),
-		gocron.NewTask(job),
+		gocron.NewTask(wrappedJob),
 		gocron.WithName(name),
 	)
 	if err != nil {
+		slog.Error("failed to schedule job",
+			"error", err,
+			"job_name", name,
+			"cron_expression", cronExpr)
 		return fmt.Errorf("failed to schedule job: %w", err)
+	}
+
+	// Get the next run time to log it
+	nextRun, err := scheduledJob.NextRun()
+	if err == nil {
+		slog.Debug("job scheduled successfully",
+			"job_name", name,
+			"cron_expression", cronExpr,
+			"next_run", nextRun.Format(time.RFC3339),
+			"setup_duration_ms", time.Since(startTime).Milliseconds())
+	} else {
+		slog.Debug("job scheduled successfully",
+			"job_name", name,
+			"cron_expression", cronExpr,
+			"setup_duration_ms", time.Since(startTime).Milliseconds())
 	}
 
 	return nil
@@ -74,9 +143,24 @@ func (s *Scheduler) AddJob(name, cronExpr string, job func()) error {
 //
 // Returns an error if the shutdown process fails.
 func (s *Scheduler) Stop() error {
+	slog.Debug("stopping scheduler")
+	startTime := time.Now()
+
+	// Get the number of jobs before shutdown for logging
+	jobs := s.scheduler.Jobs()
+	slog.Debug("preparing to shutdown scheduler",
+		"active_jobs", len(jobs))
+
 	if err := s.scheduler.Shutdown(); err != nil {
+		slog.Error("failed to shutdown scheduler",
+			"error", err,
+			"duration_ms", time.Since(startTime).Milliseconds())
 		return fmt.Errorf("failed to shutdown scheduler: %w", err)
 	}
+
+	shutdownDuration := time.Since(startTime)
+	slog.Debug("scheduler stopped successfully",
+		"duration_ms", shutdownDuration.Milliseconds())
 
 	return nil
 }
