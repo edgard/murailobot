@@ -52,8 +52,8 @@ bot_msg_profiles_header: "User Profiles:\n\n"
 #------------------------------------------------------------------------------
 # BOT COMMANDS - Default descriptions for Telegram commands
 #------------------------------------------------------------------------------
-bot_cmd_start: "Start the bot"
-bot_cmd_reset: "Reset message history"
-bot_cmd_analyze: "Analyze user messages"
-bot_cmd_profiles: "Show user profiles"
-bot_cmd_edit_user: "Edit user profile"
+bot_cmd_start: "Start conversation with the bot"
+bot_cmd_reset: "Reset chat history (admin only)"
+bot_cmd_analyze: "Analyze messages and update profiles (admin only)"
+bot_cmd_profiles: "Show user profiles (admin only)"
+bot_cmd_edit_user: "Edit user profile data (admin only)"
