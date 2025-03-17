@@ -67,9 +67,15 @@ func New(cfg *config.Config) (*DB, error) {
 		return nil, fmt.Errorf("failed to get database instance: %w", err)
 	}
 
-	// Configure connection pool
-	sqlDB.SetMaxOpenConns(1)
-	slog.Debug("database connection pool configured", "max_open_conns", 1)
+	// Configure connection pool for SQLite
+	sqlDB.SetMaxOpenConns(1)                // Limit to a single connection
+	sqlDB.SetMaxIdleConns(1)                // Keep the connection idle in the pool when not in use
+	sqlDB.SetConnMaxLifetime(1 * time.Hour) // Recycle connection after 1 hour
+
+	slog.Debug("database connection pool configured",
+		"max_open_conns", 1,
+		"max_idle_conns", 1,
+		"conn_max_lifetime", "1h")
 
 	// Run migrations
 	slog.Debug("running database migrations")
