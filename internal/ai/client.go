@@ -160,32 +160,20 @@ func (c *Client) GenerateResponse(ctx context.Context, request *Request) (string
 
 	// Check for nil request first to avoid nil pointer dereference
 	if request == nil {
-		slog.Error("nil request provided to GenerateResponse")
 		return "", errors.New("nil request")
 	}
 
-	slog.Info("generating AI response",
-		"user_id", request.UserID,
-		"model", c.model,
-		"temperature", c.temperature)
+	slog.Debug("generating AI response", "user_id", request.UserID)
 
 	if request.UserID <= 0 {
-		slog.Error("invalid user ID in request", "user_id", request.UserID)
 		return "", errors.New("invalid user ID")
 	}
 
 	request.Message = strings.TrimSpace(request.Message)
 	if request.Message == "" {
-		slog.Error("empty message in request", "user_id", request.UserID)
 		return "", errors.New("empty user message")
 	}
 
-	slog.Debug("creating system prompt",
-		"user_id", request.UserID,
-		"profile_count", len(request.UserProfiles))
-
-	// Create a system prompt that includes bot identity and user profiles
-	// This provides context for the AI to generate appropriate responses
 	systemPrompt := c.createSystemPrompt(request.UserProfiles)
 
 	// Initialize the messages array with the system prompt
@@ -197,30 +185,21 @@ func (c *Client) GenerateResponse(ctx context.Context, request *Request) (string
 	}
 
 	// Calculate token usage for system prompt and current message
-	// This is needed for token budget management
 	systemPromptTokens := utils.EstimateTokens(systemPrompt)
 	currentMsgTokens := utils.EstimateTokens(request.Message)
 
-	slog.Debug("token usage estimation",
-		"system_prompt_tokens", systemPromptTokens,
-		"current_message_tokens", currentMsgTokens,
-		"max_context_tokens", c.maxContextTokens)
-
-	// Select a subset of recent messages that fit within the token budget
-	// This ensures we don't exceed the model's context window limits
-	selectionStartTime := time.Now()
 	selectedMessages := utils.SelectMessages(
 		c.maxContextTokens,
 		request.RecentMessages,
 		systemPromptTokens,
 		currentMsgTokens,
 	)
-	selectionDuration := time.Since(selectionStartTime)
 
-	slog.Debug("message selection completed",
-		"available_messages", len(request.RecentMessages),
-		"selected_messages", len(selectedMessages),
-		"duration_ms", selectionDuration.Milliseconds())
+	if len(selectedMessages) < len(request.RecentMessages) {
+		slog.Debug("message selection filtered",
+			"available", len(request.RecentMessages),
+			"selected", len(selectedMessages))
+	}
 
 	// Add the selected conversation history to the messages array
 	// Properly identifying bot messages as "assistant" and user messages as "user"
@@ -236,7 +215,6 @@ func (c *Client) GenerateResponse(ctx context.Context, request *Request) (string
 		})
 	}
 
-	// Format and add the current user message
 	currentMsg := formatMessage(&db.Message{
 		UserID:    request.UserID,
 		Content:   request.Message,
@@ -248,21 +226,21 @@ func (c *Client) GenerateResponse(ctx context.Context, request *Request) (string
 		Content: currentMsg,
 	})
 
-	totalInputTokens := systemPromptTokens + currentMsgTokens
-	for _, msg := range selectedMessages {
-		totalInputTokens += utils.EstimateTokens(msg.Content)
+	if slog.Default().Enabled(ctx, slog.LevelDebug) {
+		totalInputTokens := systemPromptTokens + currentMsgTokens
+		for _, msg := range selectedMessages {
+			totalInputTokens += utils.EstimateTokens(msg.Content)
+		}
+		slog.Debug("sending AI request",
+			"messages", len(messages),
+			"tokens", totalInputTokens)
 	}
-
-	slog.Info("sending request to AI service",
-		"message_count", len(messages),
-		"estimated_tokens", totalInputTokens,
-		"timeout", c.timeout)
 
 	// Create a timeout context to prevent hanging on API calls
 	timeoutCtx, cancel := context.WithTimeout(ctx, c.timeout)
 	defer cancel()
 
-	// Make the API call to generate a response
+	// Make API call with timeout
 	apiStartTime := time.Now()
 	resp, err := c.client.CreateChatCompletion(timeoutCtx, openai.ChatCompletionRequest{
 		Model:       c.model,
@@ -272,36 +250,29 @@ func (c *Client) GenerateResponse(ctx context.Context, request *Request) (string
 	apiDuration := time.Since(apiStartTime)
 
 	if err != nil {
-		slog.Error("chat completion failed",
-			"error", err,
-			"duration_ms", apiDuration.Milliseconds())
 		return "", fmt.Errorf("chat completion failed: %w", err)
 	}
 
-	slog.Info("received response from AI service",
-		"duration_ms", apiDuration.Milliseconds(),
-		"completion_tokens", resp.Usage.CompletionTokens,
-		"prompt_tokens", resp.Usage.PromptTokens,
+	slog.Debug("AI response received",
+		"api_duration_ms", apiDuration.Milliseconds(),
 		"total_tokens", resp.Usage.TotalTokens)
 
 	if len(resp.Choices) == 0 {
-		slog.Error("no response choices returned from AI service")
 		return "", errors.New("no response choices returned")
 	}
 
-	// Clean and normalize the response text before returning it
 	rawResponse := resp.Choices[0].Message.Content
 	result, err := utils.Sanitize(rawResponse)
 	if err != nil {
-		slog.Error("failed to sanitize response", "error", err)
 		return "", fmt.Errorf("failed to sanitize response: %w", err)
 	}
 
-	totalDuration := time.Since(startTime)
-	slog.Info("AI response generation completed",
-		"total_duration_ms", totalDuration.Milliseconds(),
-		"response_length", len(result),
-		"user_id", request.UserID)
+	// Single comprehensive log with all relevant metrics
+	slog.Info("AI response generated",
+		"user_id", request.UserID,
+		"duration_ms", time.Since(startTime).Milliseconds(),
+		"api_ms", apiDuration.Milliseconds(),
+		"tokens", resp.Usage.TotalTokens)
 
 	return result, nil
 }
@@ -317,30 +288,21 @@ func (c *Client) GenerateResponse(ctx context.Context, request *Request) (string
 // profile generation fails.
 func (c *Client) GenerateProfiles(ctx context.Context, messages []*db.Message, existingProfiles map[int64]*db.UserProfile) (map[int64]*db.UserProfile, error) {
 	startTime := time.Now()
-	slog.Info("starting profile generation",
-		"message_count", len(messages),
-		"existing_profile_count", len(existingProfiles),
-		"model", c.model)
+	slog.Debug("starting profile generation",
+		"messages", len(messages),
+		"profiles", len(existingProfiles))
 
 	if len(messages) == 0 {
-		slog.Error("no messages provided for profile analysis")
 		return nil, errors.New("no messages to analyze")
 	}
 
-	// Group messages by user for more efficient processing
-	slog.Debug("grouping messages by user")
 	userMessages := make(map[int64][]*db.Message)
 	for _, msg := range messages {
 		userMessages[msg.UserID] = append(userMessages[msg.UserID], msg)
 	}
-	slog.Info("messages grouped by user", "unique_users", len(userMessages))
 
-	// Get the profile generation instruction with bot identification
 	instruction := getProfileInstruction(c.profileInstruction, c.botInfo)
-	instructionTokens := utils.EstimateTokens(instruction)
-	slog.Debug("profile instruction prepared", "token_count", instructionTokens)
 
-	// Initialize chat messages with the system instruction
 	chatMessages := []openai.ChatCompletionMessage{
 		{
 			Role:    "system",
@@ -348,13 +310,9 @@ func (c *Client) GenerateProfiles(ctx context.Context, messages []*db.Message, e
 		},
 	}
 
-	// Build the user message content with existing profiles and new messages
 	var msgBuilder strings.Builder
-	messagePreparationStart := time.Now()
 
-	// Include existing profiles if available
 	if len(existingProfiles) > 0 {
-		slog.Debug("adding existing profiles to prompt")
 		msgBuilder.WriteString("## EXISTING USER PROFILES\n\n")
 		msgBuilder.WriteString("{\n  \"users\": {\n")
 
@@ -378,37 +336,29 @@ func (c *Client) GenerateProfiles(ctx context.Context, messages []*db.Message, e
 		msgBuilder.WriteString("\n  }\n}\n\n")
 	}
 
-	// Add new messages for analysis
 	msgBuilder.WriteString("## NEW GROUP CHAT MESSAGES\n\n")
-
-	totalMessages := 0
-	messagesByUser := make(map[int64]int)
 
 	// Format messages by user
 	for userID, userMsgs := range userMessages {
 		msgBuilder.WriteString(fmt.Sprintf("Messages from User %d:\n", userID))
-		messagesByUser[userID] = len(userMsgs)
 
 		for _, msg := range userMsgs {
 			msgBuilder.WriteString(fmt.Sprintf("[%s] %s\n",
 				msg.Timestamp.Format(time.RFC3339),
 				msg.Content))
-
-			totalMessages++
 		}
 
 		msgBuilder.WriteString("\n")
 	}
 
 	messageContent := msgBuilder.String()
-	messageContentTokens := utils.EstimateTokens(messageContent)
-	messagePreparationDuration := time.Since(messagePreparationStart)
 
-	slog.Info("message content prepared",
-		"total_messages", totalMessages,
-		"unique_users", len(messagesByUser),
-		"token_count", messageContentTokens,
-		"preparation_duration_ms", messagePreparationDuration.Milliseconds())
+	if slog.Default().Enabled(ctx, slog.LevelDebug) {
+		messageContentTokens := utils.EstimateTokens(messageContent)
+		slog.Debug("message content prepared",
+			"users", len(userMessages),
+			"tokens", messageContentTokens)
+	}
 
 	// Add the user message to the chat messages
 	chatMessages = append(chatMessages, openai.ChatCompletionMessage{
@@ -420,11 +370,6 @@ func (c *Client) GenerateProfiles(ctx context.Context, messages []*db.Message, e
 	timeoutCtx, cancel := context.WithTimeout(ctx, c.timeout)
 	defer cancel()
 
-	// Make the API call to generate profiles
-	slog.Info("sending profile generation request to AI service",
-		"total_tokens", instructionTokens+messageContentTokens,
-		"timeout", c.timeout)
-
 	apiStartTime := time.Now()
 	resp, err := c.client.CreateChatCompletion(timeoutCtx, openai.ChatCompletionRequest{
 		Model:       c.model,
@@ -434,43 +379,24 @@ func (c *Client) GenerateProfiles(ctx context.Context, messages []*db.Message, e
 	apiDuration := time.Since(apiStartTime)
 
 	if err != nil {
-		slog.Error("profile generation failed",
-			"error", err,
-			"duration_ms", apiDuration.Milliseconds())
 		return nil, fmt.Errorf("profile generation failed: %w", err)
 	}
 
-	slog.Info("received profile generation response",
-		"duration_ms", apiDuration.Milliseconds(),
-		"completion_tokens", resp.Usage.CompletionTokens,
-		"prompt_tokens", resp.Usage.PromptTokens,
-		"total_tokens", resp.Usage.TotalTokens)
-
 	if len(resp.Choices) == 0 {
-		slog.Error("no response choices returned from AI service")
 		return nil, errors.New("no response choices returned")
 	}
 
-	// Parse the response to extract user profiles
-	parsingStartTime := time.Now()
 	profiles, err := parseProfileResponse(resp.Choices[0].Message.Content, userMessages, existingProfiles, c.botInfo)
-	parsingDuration := time.Since(parsingStartTime)
-
 	if err != nil {
-		slog.Error("failed to parse profile response",
-			"error", err,
-			"parsing_duration_ms", parsingDuration.Milliseconds())
-		return nil, err
+		return nil, fmt.Errorf("failed to parse profiles: %w", err)
 	}
 
-	slog.Info("profile response parsed successfully",
-		"profile_count", len(profiles),
-		"parsing_duration_ms", parsingDuration.Milliseconds())
-
-	totalDuration := time.Since(startTime)
+	// Consolidated log with all metrics
 	slog.Info("profile generation completed",
-		"total_duration_ms", totalDuration.Milliseconds(),
-		"profiles_generated", len(profiles))
+		"duration_ms", time.Since(startTime).Milliseconds(),
+		"api_ms", apiDuration.Milliseconds(),
+		"profile_count", len(profiles),
+		"tokens", resp.Usage.TotalTokens)
 
 	return profiles, nil
 }
@@ -536,15 +462,12 @@ func parseProfileResponse(response string, userMessages map[int64][]*db.Message,
 			AgeRange        string `json:"age_range"`
 			Traits          string `json:"traits"`
 		})
-	} else {
-		slog.Info("users found in profile response", "count", len(profileResponse.Users))
 	}
 
 	updatedProfiles := make(map[int64]*db.UserProfile)
 	newProfiles := 0
 	updatedExistingProfiles := 0
 	skippedProfiles := 0
-	botProfileUpdated := false
 
 	// Process each user profile from the response
 	for userIDStr, profile := range profileResponse.Users {
@@ -575,7 +498,6 @@ func parseProfileResponse(response string, userMessages map[int64][]*db.Message,
 				LastUpdated:     time.Now().UTC(),
 			}
 
-			botProfileUpdated = true
 			continue
 		}
 
@@ -616,14 +538,10 @@ func parseProfileResponse(response string, userMessages map[int64][]*db.Message,
 			"display_names", profile.DisplayNames)
 	}
 
-	totalDuration := time.Since(startTime)
-	slog.Info("profile parsing completed",
+	// Only log parsing completion at DEBUG with minimal info
+	slog.Debug("profile parsing completed",
 		"total_profiles", len(updatedProfiles),
-		"new_profiles", newProfiles,
-		"updated_profiles", updatedExistingProfiles,
-		"skipped_profiles", skippedProfiles,
-		"bot_profile_updated", botProfileUpdated,
-		"duration_ms", totalDuration.Milliseconds())
+		"duration_ms", time.Since(startTime).Milliseconds())
 
 	return updatedProfiles, nil
 }

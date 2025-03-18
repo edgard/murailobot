@@ -3,7 +3,7 @@ package main
 
 import (
 	"context"
-	"fmt"
+	"log/slog"
 	"os"
 	"os/signal"
 	"syscall"
@@ -13,12 +13,17 @@ import (
 )
 
 func main() {
+	// Set up a default logger for early initialization and startup errors
+	// app.New() will reconfigure this logger with settings from config.yaml
+	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo})))
+
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 
+	slog.Info("starting MurailoBot")
 	application, err := app.New()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error initializing application: %v\n", err)
+		slog.Error("failed to initialize application", "error", err)
 		os.Exit(1)
 	}
 
@@ -33,29 +38,27 @@ func main() {
 	var exitCode int
 	select {
 	case sig := <-quit:
-		fmt.Printf("Received shutdown signal: %v\n", sig)
+		slog.Info("received shutdown signal", "signal", sig)
 
 		// Create a context with timeout for shutdown
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 
 		if err := application.Stop(ctx); err != nil {
-			fmt.Fprintf(os.Stderr, "Error during shutdown: %v\n", err)
 			exitCode = 1
 		}
 	case err := <-errCh:
-		fmt.Fprintf(os.Stderr, "Application error: %v\n", err)
+		slog.Error("application error", "error", err)
 
 		// Create a context with timeout for shutdown
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 
-		if err := application.Stop(ctx); err != nil {
-			fmt.Fprintf(os.Stderr, "Error during shutdown after application error: %v\n", err)
-		}
+		_ = application.Stop(ctx)
 
 		exitCode = 1
 	}
 
+	slog.Debug("exiting", "code", exitCode)
 	os.Exit(exitCode)
 }

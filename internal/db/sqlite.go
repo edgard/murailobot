@@ -29,7 +29,7 @@ type DB struct {
 // Returns an error if database initialization fails.
 func New(cfg *config.Config) (*DB, error) {
 	startTime := time.Now()
-	slog.Info("initializing database", "path", cfg.DBPath)
+	slog.Debug("initializing database", "path", cfg.DBPath)
 
 	// Configure GORM logger
 	gormLogger := logger.New(
@@ -46,8 +46,7 @@ func New(cfg *config.Config) (*DB, error) {
 		Logger: gormLogger,
 	}
 
-	// Open database connection
-	slog.Debug("opening database connection", "path", cfg.DBPath)
+	// Open database connection and configure pool
 	dbOpenStart := time.Now()
 	db, err := gorm.Open(sqlite.Open(cfg.DBPath), gormConfig)
 	if err != nil {
@@ -57,28 +56,24 @@ func New(cfg *config.Config) (*DB, error) {
 			"duration_ms", time.Since(dbOpenStart).Milliseconds())
 		return nil, fmt.Errorf("failed to open database: %w", err)
 	}
-	slog.Debug("database connection opened",
-		"duration_ms", time.Since(dbOpenStart).Milliseconds())
 
-	// Get SQL DB instance for configuration
+	// Get SQL DB instance for connection pool configuration
 	sqlDB, err := db.DB()
 	if err != nil {
 		slog.Error("failed to get database instance", "error", err)
 		return nil, fmt.Errorf("failed to get database instance: %w", err)
 	}
 
-	// Configure connection pool for SQLite
-	sqlDB.SetMaxOpenConns(1)                // Limit to a single connection
-	sqlDB.SetMaxIdleConns(1)                // Keep the connection idle in the pool when not in use
-	sqlDB.SetConnMaxLifetime(1 * time.Hour) // Recycle connection after 1 hour
+	// Configure connection pool
+	sqlDB.SetMaxOpenConns(1)                // Single connection for SQLite
+	sqlDB.SetMaxIdleConns(1)                // Keep connection idle in pool
+	sqlDB.SetConnMaxLifetime(1 * time.Hour) // Recycle after 1 hour
 
-	slog.Debug("database connection pool configured",
-		"max_open_conns", 1,
-		"max_idle_conns", 1,
-		"conn_max_lifetime", "1h")
+	slog.Debug("database connection configured",
+		"path", cfg.DBPath,
+		"duration_ms", time.Since(dbOpenStart).Milliseconds())
 
 	// Run migrations
-	slog.Debug("running database migrations")
 	migrationStart := time.Now()
 	if err := db.AutoMigrate(&Message{}, &UserProfile{}); err != nil {
 		slog.Error("failed to run migrations",
@@ -86,12 +81,11 @@ func New(cfg *config.Config) (*DB, error) {
 			"duration_ms", time.Since(migrationStart).Milliseconds())
 		return nil, fmt.Errorf("failed to run migrations: %w", err)
 	}
-	slog.Debug("database migrations completed",
-		"duration_ms", time.Since(migrationStart).Milliseconds())
 
 	totalDuration := time.Since(startTime)
 	slog.Info("database initialization complete",
-		"duration_ms", totalDuration.Milliseconds())
+		"duration_ms", totalDuration.Milliseconds(),
+		"migration_ms", time.Since(migrationStart).Milliseconds())
 
 	return &DB{
 		db: db,
@@ -102,43 +96,25 @@ func New(cfg *config.Config) (*DB, error) {
 // Returns an error if the message is nil or if the database operation fails.
 func (r *DB) SaveMessage(ctx context.Context, msg *Message) error {
 	if msg == nil {
-		slog.Error("cannot save message: nil message")
 		return errors.New("nil message")
 	}
 
+	// Only measure timing if we're going to log it (slow operation)
 	startTime := time.Now()
-	slog.Debug("saving message to database",
-		"group_id", msg.GroupID,
-		"user_id", msg.UserID,
-		"message_length", len(msg.Content))
 
 	err := r.db.WithContext(ctx).Create(msg).Error
 	if err != nil {
-		slog.Error("failed to save message",
-			"error", err,
-			"group_id", msg.GroupID,
-			"user_id", msg.UserID,
-			"duration_ms", time.Since(startTime).Milliseconds())
-		return err
+		return fmt.Errorf("failed to save message for user %d: %w", msg.UserID, err)
 	}
 
-	duration := time.Since(startTime)
-	slog.Debug("message saved successfully",
-		"message_id", msg.ID,
-		"group_id", msg.GroupID,
-		"user_id", msg.UserID,
-		"duration_ms", duration.Milliseconds())
-
-	// Add Warning for slow database operations
+	// Only log slow operations to reduce noise
 	slowThreshold := 100 * time.Millisecond
+	duration := time.Since(startTime)
 	if duration > slowThreshold {
 		slog.Warn("slow database operation detected",
 			"operation", "save_message",
-			"message_id", msg.ID,
 			"group_id", msg.GroupID,
-			"user_id", msg.UserID,
-			"duration_ms", duration.Milliseconds(),
-			"threshold_ms", slowThreshold.Milliseconds())
+			"duration_ms", duration.Milliseconds())
 	}
 
 	return nil
@@ -153,47 +129,31 @@ func (r *DB) SaveMessage(ctx context.Context, msg *Message) error {
 //
 // Returns an error if the limit is invalid or if the database operation fails.
 func (r *DB) GetRecentMessages(ctx context.Context, groupID int64, limit int) ([]*Message, error) {
-	startTime := time.Now()
-	slog.Debug("retrieving recent messages",
-		"group_id", groupID,
-		"limit", limit)
-
 	if limit <= 0 {
-		slog.Error("invalid limit for recent messages", "limit", limit)
 		return nil, errors.New("invalid limit")
 	}
 
 	// Query the database
-	queryStart := time.Now()
 	var messages []*Message
 	if err := r.db.WithContext(ctx).
 		Where("group_id = ?", groupID).
 		Order("timestamp desc").
 		Limit(limit).
 		Find(&messages).Error; err != nil {
-		slog.Error("failed to get recent messages",
-			"error", err,
-			"group_id", groupID,
-			"limit", limit,
-			"duration_ms", time.Since(queryStart).Milliseconds())
 		return nil, fmt.Errorf("failed to get recent messages: %w", err)
 	}
-	queryDuration := time.Since(queryStart)
 
 	// Sort messages chronologically
-	sortStart := time.Now()
 	sort.Slice(messages, func(i, j int) bool {
 		return messages[i].Timestamp.Before(messages[j].Timestamp)
 	})
-	sortDuration := time.Since(sortStart)
 
-	totalDuration := time.Since(startTime)
-	slog.Debug("recent messages retrieved successfully",
-		"group_id", groupID,
-		"message_count", len(messages),
-		"query_duration_ms", queryDuration.Milliseconds(),
-		"sort_duration_ms", sortDuration.Milliseconds(),
-		"total_duration_ms", totalDuration.Milliseconds())
+	// Only log if an unusual number of messages is retrieved
+	if len(messages) == 0 || len(messages) == limit {
+		slog.Debug("messages retrieved",
+			"group_id", groupID,
+			"count", len(messages))
+	}
 
 	return messages, nil
 }
@@ -429,82 +389,49 @@ func (r *DB) GetUserProfile(ctx context.Context, userID int64) (*UserProfile, er
 // Returns an error if the profile is nil, has an invalid user ID,
 // or if the database operation fails.
 func (r *DB) SaveUserProfile(ctx context.Context, profile *UserProfile) error {
-	startTime := time.Now()
-
 	if profile == nil {
-		slog.Error("cannot save profile: nil profile")
 		return errors.New("nil profile")
 	}
 
 	if profile.UserID <= 0 {
-		slog.Error("cannot save profile: invalid user ID", "user_id", profile.UserID)
 		return errors.New("invalid user ID")
 	}
-
-	slog.Debug("saving user profile",
-		"user_id", profile.UserID,
-		"display_names", profile.DisplayNames)
 
 	// Set last updated timestamp
 	profile.LastUpdated = time.Now().UTC()
 
 	// Check if profile already exists
-	checkStart := time.Now()
 	var existingProfile UserProfile
 	result := r.db.WithContext(ctx).Where("user_id = ?", profile.UserID).First(&existingProfile)
-	checkDuration := time.Since(checkStart)
 
 	var err error
-	var operation string
+	var isNew bool
 
 	// Update or create based on existence
-	saveStart := time.Now()
 	if result.Error == nil {
-		// Update existing profile
-		operation = "update"
-		slog.Debug("updating existing user profile",
-			"user_id", profile.UserID,
-			"profile_id", existingProfile.ID,
-			"created_at", existingProfile.CreatedAt)
-
-		// Preserve metadata
+		// Update existing profile - preserve metadata
 		profile.ID = existingProfile.ID
 		profile.CreatedAt = existingProfile.CreatedAt
-
 		err = r.db.WithContext(ctx).Save(profile).Error
 	} else if errors.Is(result.Error, gorm.ErrRecordNotFound) {
 		// Create new profile
-		operation = "create"
-		slog.Debug("creating new user profile", "user_id", profile.UserID)
+		isNew = true
 		err = r.db.WithContext(ctx).Create(profile).Error
 	} else {
 		// Unexpected error
-		slog.Error("failed to check existing profile",
-			"error", result.Error,
-			"user_id", profile.UserID,
-			"duration_ms", checkDuration.Milliseconds())
 		return fmt.Errorf("failed to check existing profile: %w", result.Error)
 	}
-	saveDuration := time.Since(saveStart)
 
-	// Handle save result
 	if err != nil {
-		slog.Error("failed to save user profile",
-			"error", err,
-			"operation", operation,
-			"user_id", profile.UserID,
-			"save_duration_ms", saveDuration.Milliseconds(),
-			"total_duration_ms", time.Since(startTime).Milliseconds())
-		return err
+		return fmt.Errorf("failed to save user profile: %w", err)
 	}
 
-	totalDuration := time.Since(startTime)
-	slog.Debug("user profile saved successfully",
-		"user_id", profile.UserID,
-		"operation", operation,
-		"check_duration_ms", checkDuration.Milliseconds(),
-		"save_duration_ms", saveDuration.Milliseconds(),
-		"total_duration_ms", totalDuration.Milliseconds())
+	// Only log at Info level for new profiles, Debug for updates
+	if isNew {
+		slog.Info("new user profile created", "user_id", profile.UserID)
+	} else {
+		slog.Debug("user profile updated", "user_id", profile.UserID)
+	}
 
 	return nil
 }
@@ -547,25 +474,16 @@ func (r *DB) DeleteAll(ctx context.Context) error {
 //
 // Returns an error if closing the connection fails.
 func (r *DB) Close() error {
-	startTime := time.Now()
-	slog.Info("closing database connection")
-
+	// Get database connection
 	sqlDB, err := r.db.DB()
 	if err != nil {
-		slog.Error("failed to get database instance for closing",
-			"error", err,
-			"duration_ms", time.Since(startTime).Milliseconds())
 		return fmt.Errorf("failed to get database instance: %w", err)
 	}
 
 	// Get connection stats before closing
 	stats := sqlDB.Stats()
-	slog.Debug("database connection stats before closing",
-		"open_connections", stats.OpenConnections,
-		"in_use", stats.InUse,
-		"idle", stats.Idle)
 
-	// Add Warning if connection metrics indicate potential issues
+	// Only log warnings if there are issues with the connection pool
 	if stats.OpenConnections > 5 || float64(stats.InUse)/float64(stats.OpenConnections+1) > 0.8 {
 		slog.Warn("database connection pool pressure detected",
 			"open_connections", stats.OpenConnections,
@@ -574,18 +492,11 @@ func (r *DB) Close() error {
 	}
 
 	// Close the connection
-	closeStart := time.Now()
 	if err := sqlDB.Close(); err != nil {
-		slog.Error("failed to close database",
-			"error", err,
-			"duration_ms", time.Since(closeStart).Milliseconds())
 		return fmt.Errorf("failed to close database: %w", err)
 	}
 
-	closeDuration := time.Since(startTime)
-	slog.Info("database connection closed successfully",
-		"duration_ms", closeDuration.Milliseconds())
-
+	slog.Debug("database connection closed")
 	return nil
 }
 
