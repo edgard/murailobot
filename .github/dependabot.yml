@@ -8,11 +8,11 @@ updates:
       - "dependencies"
       - "github-actions"
     commit-message:
-      prefix: "chore(ci)"
+      prefix: "chore"
       include: "scope"
-    open-pull-requests-limit: 10
+    open-pull-requests-limit: 1
     groups:
-      github-actions:
+      minor-patches:
         patterns:
           - "*"
         update-types:
@@ -21,6 +21,7 @@ updates:
     ignore:
       - dependency-name: "*"
         update-types: ["version-update:semver-major"]
+    rebase-strategy: "auto"
 
   - package-ecosystem: "gomod"
     directory: "/"
@@ -30,11 +31,11 @@ updates:
       - "dependencies"
       - "go"
     commit-message:
-      prefix: "chore(deps)"
+      prefix: "chore"
       include: "scope"
-    open-pull-requests-limit: 10
+    open-pull-requests-limit: 1
     groups:
-      go-minor-patch:
+      minor-patches:
         patterns:
           - "*"
         update-types:
@@ -43,6 +44,7 @@ updates:
     ignore:
       - dependency-name: "*"
         update-types: ["version-update:semver-major"]
+    rebase-strategy: "auto"
 
   - package-ecosystem: "docker"
     directory: "/docker/amd64"
@@ -53,21 +55,20 @@ updates:
       - "docker"
       - "amd64"
     commit-message:
-      prefix: "chore(docker)"
+      prefix: "chore"
       include: "scope"
-    open-pull-requests-limit: 10
+    open-pull-requests-limit: 1
     groups:
-      docker-amd64:
+      minor-patches:
         patterns:
           - "*"
         update-types:
           - "minor"
           - "patch"
-    allow:
-      - dependency-type: "direct"
     ignore:
       - dependency-name: "*"
         update-types: ["version-update:semver-major"]
+    rebase-strategy: "auto"
 
   - package-ecosystem: "docker"
     directory: "/docker/arm64"
@@ -78,18 +79,17 @@ updates:
       - "docker"
       - "arm64"
     commit-message:
-      prefix: "chore(docker)"
+      prefix: "chore"
       include: "scope"
-    open-pull-requests-limit: 10
+    open-pull-requests-limit: 1
     groups:
-      docker-arm64:
+      minor-patches:
         patterns:
           - "*"
         update-types:
           - "minor"
           - "patch"
-    allow:
-      - dependency-type: "direct"
     ignore:
       - dependency-name: "*"
         update-types: ["version-update:semver-major"]
+    rebase-strategy: "auto"
