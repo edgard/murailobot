@@ -29,7 +29,6 @@ type Client struct {
 	instruction        string
 	profileInstruction string
 	timeout            time.Duration
-	maxContextTokens   int
 	storage            *db.DB
 	botInfo            BotInfo
 }
@@ -51,7 +50,6 @@ func New(cfg *config.Config, storage *db.DB) (*Client, error) {
 		instruction:        cfg.AIInstruction,
 		profileInstruction: cfg.AIProfileInstruction,
 		timeout:            cfg.AITimeout,
-		maxContextTokens:   cfg.AIMaxContextTokens,
 		storage:            storage,
 	}
 

@@ -45,7 +45,7 @@ type Config struct {
 	AIInstruction        string        `koanf:"ai_instruction"         validate:"required"`
 	AIProfileInstruction string        `koanf:"ai_profile_instruction" validate:"required"`
 	AITimeout            time.Duration `koanf:"ai_timeout"             validate:"min=1s,max=10m"`
-	AIMaxContextTokens   int           `koanf:"ai_max_context_tokens"  validate:"min=1000,max=200000"`
+	AIMaxContextTokens   int           `koanf:"ai_max_context_tokens"  validate:"min=1000,max=1000000"`
 
 	DBPath string `koanf:"db_path"`
 }
