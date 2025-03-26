@@ -84,7 +84,14 @@ func formatMessage(msg *db.Message) string {
 		msg.Content)
 }
 
-func (c *Client) createSystemPrompt(userProfiles map[int64]*db.UserProfile) string {
+// CreateSystemPrompt generates the system prompt for the AI model based on the bot's identity
+// and user profiles. This prompt helps the AI understand its role in the conversation.
+//
+// Parameters:
+// - userProfiles: A map of user IDs to their profile information
+//
+// Returns a formatted system prompt string.
+func (c *Client) CreateSystemPrompt(userProfiles map[int64]*db.UserProfile) string {
 	// Use the bot's display name if available, otherwise fall back to username
 	displayName := c.botInfo.Username
 	if c.botInfo.DisplayName != "" {
@@ -174,7 +181,7 @@ func (c *Client) GenerateResponse(ctx context.Context, request *Request) (string
 		return "", errors.New("empty user message")
 	}
 
-	systemPrompt := c.createSystemPrompt(request.UserProfiles)
+	systemPrompt := c.CreateSystemPrompt(request.UserProfiles)
 
 	// Initialize the messages array with the system prompt
 	messages := []openai.ChatCompletionMessage{
@@ -184,26 +191,9 @@ func (c *Client) GenerateResponse(ctx context.Context, request *Request) (string
 		},
 	}
 
-	// Calculate token usage for system prompt and current message
-	systemPromptTokens := utils.EstimateTokens(systemPrompt)
-	currentMsgTokens := utils.EstimateTokens(request.Message)
-
-	selectedMessages := utils.SelectMessages(
-		c.maxContextTokens,
-		request.RecentMessages,
-		systemPromptTokens,
-		currentMsgTokens,
-	)
-
-	if len(selectedMessages) < len(request.RecentMessages) {
-		slog.Debug("message selection filtered",
-			"available", len(request.RecentMessages),
-			"selected", len(selectedMessages))
-	}
-
-	// Add the selected conversation history to the messages array
+	// Add the conversation history to the messages array
 	// Properly identifying bot messages as "assistant" and user messages as "user"
-	for _, msg := range selectedMessages {
+	for _, msg := range request.RecentMessages {
 		role := "user"
 		if msg.UserID == c.botInfo.UserID {
 			role = "assistant"
@@ -227,8 +217,9 @@ func (c *Client) GenerateResponse(ctx context.Context, request *Request) (string
 	})
 
 	if slog.Default().Enabled(ctx, slog.LevelDebug) {
-		totalInputTokens := systemPromptTokens + currentMsgTokens
-		for _, msg := range selectedMessages {
+		// Estimate total tokens for logging purposes
+		totalInputTokens := utils.EstimateTokens(systemPrompt) + utils.EstimateTokens(request.Message)
+		for _, msg := range request.RecentMessages {
 			totalInputTokens += utils.EstimateTokens(msg.Content)
 		}
 		slog.Debug("sending AI request",

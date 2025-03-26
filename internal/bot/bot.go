@@ -491,14 +491,6 @@ func (b *Bot) handleMentionMessage(msg *tgbotapi.Message) error {
 
 	// Collect context for AI response - consolidated logging
 	startTime := time.Now()
-	recentLimit := 50
-
-	// Get recent messages
-	recentMessages, err := b.db.GetRecentMessages(b.ctx, msg.Chat.ID, recentLimit)
-	if err != nil {
-		b.sendErrorMessage(msg.Chat.ID)
-		return fmt.Errorf("failed to fetch recent messages: %w", err)
-	}
 
 	// Get user profiles - failure is non-critical
 	userProfiles, err := b.db.GetAllUserProfiles(b.ctx)
@@ -509,18 +501,91 @@ func (b *Bot) handleMentionMessage(msg *tgbotapi.Message) error {
 		userProfiles = make(map[int64]*db.UserProfile)
 	}
 
+	// Calculate token budget available for message history
+	systemPrompt := b.ai.CreateSystemPrompt(userProfiles)
+	systemPromptTokens := utils.EstimateTokens(systemPrompt)
+
+	// Estimate current message token count
+	currentMessageTokens := utils.EstimateTokens(msg.Text)
+
+	// Calculate available tokens for history
+	availableTokens := b.config.AIMaxContextTokens - systemPromptTokens - currentMessageTokens
+
+	// Retrieve messages in batches until token limit or no more messages
+	batchSize := 200
+	var beforeTimestamp time.Time // Zero time initially (get latest messages)
+	var beforeID uint = 0         // Zero ID initially
+	var allMessages []*db.Message
+	totalTokens := 0
+
+	for {
+		// Get a batch of messages before the current timestamp and ID
+		batchMessages, err := b.db.GetRecentMessages(b.ctx, msg.Chat.ID, batchSize, beforeTimestamp, beforeID)
+		if err != nil {
+			b.sendErrorMessage(msg.Chat.ID)
+			return fmt.Errorf("failed to fetch batch of messages: %w", err)
+		}
+
+		// If no messages returned, we've retrieved all available messages
+		if len(batchMessages) == 0 {
+			break
+		}
+
+		// Calculate token usage for this batch
+		batchTokens := 0
+		for _, message := range batchMessages {
+			// Add 15 tokens overhead per message for metadata
+			msgTokens := utils.EstimateTokens(message.Content) + 15
+			batchTokens += msgTokens
+		}
+
+		// Check if adding this batch would exceed our token budget
+		if totalTokens+batchTokens > availableTokens {
+			// We would exceed token limit, so don't add all messages from this batch
+			// Instead, add messages one by one until we reach the limit
+			for _, message := range batchMessages {
+				msgTokens := utils.EstimateTokens(message.Content) + 15
+				if totalTokens+msgTokens <= availableTokens {
+					allMessages = append(allMessages, message)
+					totalTokens += msgTokens
+				} else {
+					// Stop adding messages once we exceed the token limit
+					break
+				}
+			}
+			break
+		}
+
+		// Add all messages from this batch
+		allMessages = append(allMessages, batchMessages...)
+		totalTokens += batchTokens
+
+		// If we got fewer messages than the batch size, we've reached the end
+		if len(batchMessages) < batchSize {
+			break
+		}
+
+		// Update timestamp and ID for next batch - use the values from the oldest message in this batch
+		// The messages are sorted in ascending order by timestamp, so we want the first element
+		if len(batchMessages) > 0 {
+			oldestMessage := batchMessages[0]
+			beforeTimestamp = oldestMessage.Timestamp
+			beforeID = oldestMessage.ID
+		}
+	}
+
 	slog.Debug("context collection completed",
 		"chat_id", msg.Chat.ID,
-		"message_count", len(recentMessages),
+		"total_messages_retrieved", len(allMessages),
 		"profile_count", len(userProfiles),
+		"estimated_tokens", totalTokens,
 		"duration_ms", time.Since(startTime).Milliseconds())
 
-	// Generate AI response - already logged in AI client, no need to log here
-
+	// Generate AI response
 	request := &ai.Request{
 		UserID:         msg.From.ID,
 		Message:        msg.Text,
-		RecentMessages: recentMessages,
+		RecentMessages: allMessages,
 		UserProfiles:   userProfiles,
 	}
 
@@ -651,7 +716,7 @@ func (b *Bot) cleanupProcessedMessages(cutoffTime time.Time) error {
 		// Retrieve the most recent messages for this group to preserve them
 		// These messages will be kept regardless of their processed status or age
 		startTime := time.Now()
-		recentMessages, err := b.db.GetRecentMessages(b.ctx, groupID, messagesPerGroup)
+		recentMessages, err := b.db.GetRecentMessages(b.ctx, groupID, messagesPerGroup, time.Time{}, 0)
 		if err != nil {
 			slog.Error("failed to get recent messages for group",
 				"error", err,

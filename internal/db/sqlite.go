@@ -120,39 +120,64 @@ func (r *DB) SaveMessage(ctx context.Context, msg *Message) error {
 	return nil
 }
 
-// GetRecentMessages retrieves the most recent messages from a specific group chat.
+// GetRecentMessages retrieves messages from a specific group chat with combined timestamp and ID-based pagination.
 // Messages are returned in chronological order (oldest first).
 //
 // Parameters:
 // - groupID: The Telegram group chat ID
-// - limit: Maximum number of messages to retrieve
+// - limit: Maximum number of messages to retrieve per batch
+// - beforeTimestamp: Only retrieve messages with timestamps before or equal to this value
+// - beforeID: Only retrieve messages with IDs less than this value (used to break timestamp ties)
 //
-// Returns an error if the limit is invalid or if the database operation fails.
-func (r *DB) GetRecentMessages(ctx context.Context, groupID int64, limit int) ([]*Message, error) {
+// Returns an error if the parameters are invalid or if the database operation fails.
+func (r *DB) GetRecentMessages(ctx context.Context, groupID int64, limit int, beforeTimestamp time.Time, beforeID uint) ([]*Message, error) {
 	if limit <= 0 {
 		return nil, errors.New("invalid limit")
 	}
 
+	query := r.db.WithContext(ctx).
+		Where("group_id = ?", groupID).
+		Order("timestamp desc, id desc").
+		Limit(limit)
+
+	// Apply timestamp and ID filters if provided
+	if !beforeTimestamp.IsZero() {
+		if beforeID > 0 {
+			// When both timestamp and ID are provided
+			query = query.Where("(timestamp < ?) OR (timestamp = ? AND id < ?)",
+				beforeTimestamp, beforeTimestamp, beforeID)
+		} else {
+			// When only timestamp is provided
+			query = query.Where("timestamp <= ?", beforeTimestamp)
+		}
+	} else if beforeID > 0 {
+		// When only ID is provided
+		query = query.Where("id < ?", beforeID)
+	}
+
 	// Query the database
 	var messages []*Message
-	if err := r.db.WithContext(ctx).
-		Where("group_id = ?", groupID).
-		Order("timestamp desc").
-		Limit(limit).
-		Find(&messages).Error; err != nil {
+	if err := query.Find(&messages).Error; err != nil {
 		return nil, fmt.Errorf("failed to get recent messages: %w", err)
 	}
 
 	// Sort messages chronologically
 	sort.Slice(messages, func(i, j int) bool {
-		return messages[i].Timestamp.Before(messages[j].Timestamp)
+		// First sort by timestamp
+		if !messages[i].Timestamp.Equal(messages[j].Timestamp) {
+			return messages[i].Timestamp.Before(messages[j].Timestamp)
+		}
+		// If timestamps are equal, sort by ID for consistent ordering
+		return messages[i].ID < messages[j].ID
 	})
 
 	// Only log if an unusual number of messages is retrieved
 	if len(messages) == 0 || len(messages) == limit {
 		slog.Debug("messages retrieved",
 			"group_id", groupID,
-			"count", len(messages))
+			"count", len(messages),
+			"before_timestamp", beforeTimestamp,
+			"before_id", beforeID)
 	}
 
 	return messages, nil
