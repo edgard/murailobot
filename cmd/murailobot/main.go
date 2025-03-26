@@ -21,6 +21,7 @@ func main() {
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 
 	slog.Info("starting MurailoBot")
+
 	application, err := app.New()
 	if err != nil {
 		slog.Error("failed to initialize application", "error", err)

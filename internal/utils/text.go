@@ -10,7 +10,6 @@ import (
 	"sync"
 	"unicode"
 
-	"github.com/edgard/murailobot/internal/db"
 	"github.com/pkoukk/tiktoken-go"
 )
 
@@ -67,16 +66,19 @@ func normalizeLineWhitespace(line string) string {
 	// This function collapses all consecutive whitespace characters into a single space
 	// and trims leading/trailing whitespace, preserving the content while normalizing spacing
 	var strBuilder strings.Builder
+
 	var space bool
 
 	for _, r := range line {
 		if unicode.IsSpace(r) {
 			if !space {
 				strBuilder.WriteRune(' ')
+
 				space = true
 			}
 		} else {
 			strBuilder.WriteRune(r)
+
 			space = false
 		}
 	}
@@ -163,60 +165,4 @@ func EstimateTokens(text string) int {
 
 	// No need to log routine token estimations
 	return estimate
-}
-
-// SelectMessages chooses a subset of messages that fit within a specified
-// token budget, prioritizing the most recent messages. This is used to
-// create a context window for AI models that have token limits.
-//
-// Parameters:
-// - maxTokens: The maximum total tokens allowed
-// - messages: The full list of messages to select from
-// - systemPromptTokens: Tokens already used by the system prompt
-// - currentMessageTokens: Tokens used by the current user message
-//
-// Returns a slice of messages that fit within the token budget.
-func SelectMessages(
-	maxTokens int,
-	messages []*db.Message,
-	systemPromptTokens int,
-	currentMessageTokens int,
-) []*db.Message {
-	// Calculate remaining token budget
-	availableTokens := maxTokens - systemPromptTokens - currentMessageTokens
-
-	if availableTokens <= 0 || len(messages) == 0 {
-		return []*db.Message{}
-	}
-
-	usedTokens := 0
-	lastIncludedIndex := len(messages)
-
-	// Iterate backwards through messages (newest to oldest)
-	for i := len(messages) - 1; i >= 0; i-- {
-		msgTokens := EstimateTokens(messages[i].Content)
-		totalMsgTokens := msgTokens + 15 // Add 15 for metadata overhead
-
-		if usedTokens+totalMsgTokens > availableTokens {
-			lastIncludedIndex = i + 1
-			break
-		}
-
-		usedTokens += totalMsgTokens
-		lastIncludedIndex = i
-	}
-
-	// Get the selected messages
-	selectedMessages := messages[lastIncludedIndex:]
-
-	// Only log if a significant portion of messages was dropped
-	if len(selectedMessages) < len(messages) {
-		percentIncluded := float64(len(selectedMessages)) / float64(len(messages)) * 100
-		slog.Debug("message context truncated",
-			"included", len(selectedMessages),
-			"total", len(messages),
-			"percent_included", int(percentIncluded))
-	}
-
-	return selectedMessages
 }

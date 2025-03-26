@@ -51,11 +51,14 @@ func New(cfg *config.Config, database *db.DB, aiClient *ai.Client, scheduler *ut
 	}
 
 	slog.Debug("connecting to Telegram API")
+
 	api, err := tgbotapi.NewBotAPI(cfg.BotToken)
 	if err != nil {
 		slog.Error("failed to connect to Telegram API", "error", err)
+
 		return nil, err
 	}
+
 	slog.Info("connected to Telegram API",
 		"bot_username", api.Self.UserName,
 		"bot_id", api.Self.ID)
@@ -74,16 +77,19 @@ func New(cfg *config.Config, database *db.DB, aiClient *ai.Client, scheduler *ut
 	}
 
 	slog.Debug("configuring bot info in AI client")
+
 	if err := aiClient.SetBotInfo(ai.BotInfo{
 		UserID:      api.Self.ID,
 		Username:    api.Self.UserName,
 		DisplayName: api.Self.FirstName,
 	}); err != nil {
 		slog.Error("failed to set bot info in AI client", "error", err)
+
 		return nil, err
 	}
 
 	slog.Debug("registering command handlers")
+
 	bot.handlers = map[string]func(*tgbotapi.Message) error{
 		"start":         bot.handleStartCommand,
 		"mrl_reset":     bot.handleResetCommand,
@@ -91,6 +97,7 @@ func New(cfg *config.Config, database *db.DB, aiClient *ai.Client, scheduler *ut
 		"mrl_profiles":  bot.handleProfilesCommand,
 		"mrl_edit_user": bot.handleEditUserCommand,
 	}
+
 	slog.Info("bot initialization complete")
 
 	return bot, nil
@@ -104,22 +111,29 @@ func (b *Bot) Start(errCh chan<- error) error {
 	slog.Info("starting bot")
 
 	slog.Debug("setting up bot commands")
+
 	if err := b.setupCommands(); err != nil {
 		slog.Error("failed to setup commands", "error", err)
+
 		return err
 	}
 
 	slog.Debug("configuring update channel")
+
 	updateConfig := tgbotapi.NewUpdate(0)
 	updateConfig.Timeout = 60
 	updates := b.api.GetUpdatesChan(updateConfig)
 
 	slog.Debug("scheduling maintenance tasks")
+
 	if err := b.scheduleMaintenanceTasks(); err != nil {
 		slog.Error("failed to schedule maintenance tasks", "error", err)
+
 		return err
 	}
+
 	slog.Info("bot started and processing updates")
+
 	return b.processUpdates(updates, errCh)
 }
 
@@ -132,6 +146,7 @@ func (b *Bot) Stop() error {
 	close(b.running)
 
 	slog.Debug("bot stopped successfully")
+
 	return nil
 }
 
@@ -166,10 +181,12 @@ func (b *Bot) processUpdates(updates tgbotapi.UpdatesChannel, errCh chan<- error
 		select {
 		case <-b.running:
 			slog.Info("update processing stopped due to bot shutdown")
+
 			return nil
 		case update, ok := <-updates:
 			if !ok {
 				slog.Info("update channel closed")
+
 				return nil
 			}
 
@@ -182,12 +199,14 @@ func (b *Bot) processUpdates(updates tgbotapi.UpdatesChannel, errCh chan<- error
 				slog.Info("telegram message processing stats",
 					"messages_processed", messageCount,
 					"period_minutes", 5)
+
 				messageCount = 0
 				lastLogTime = time.Now()
 			}
 
 			msg := update.Message
 			chatID := msg.Chat.ID
+
 			chatType := "private"
 			if msg.Chat.IsGroup() {
 				chatType = "group"
@@ -295,6 +314,7 @@ func (b *Bot) handleCommand(update tgbotapi.Update) error {
 				"command", msg.Command(),
 				"user_id", msg.From.ID,
 				"chat_id", msg.Chat.ID)
+
 			return fmt.Errorf("unauthorized access for command '%s': %w", cmd, err)
 		}
 		// Return error with context but don't log redundantly
@@ -357,10 +377,12 @@ func (b *Bot) handleResetCommand(msg *tgbotapi.Message) error {
 
 	if err := b.db.DeleteAll(b.ctx); err != nil {
 		b.sendErrorMessage(msg.Chat.ID)
+
 		return fmt.Errorf("failed to delete all records: %w", err)
 	}
 
 	reply := tgbotapi.NewMessage(msg.Chat.ID, b.config.BotMsgHistoryReset)
+
 	return b.SendMessage(reply)
 }
 
@@ -405,6 +427,7 @@ func (b *Bot) handleEditUserCommand(msg *tgbotapi.Message) error {
 	}
 
 	var userID int64
+
 	var field, value string
 
 	_, err := fmt.Sscanf(args, "%d %s %s", &userID, &field, &value)
@@ -465,6 +488,7 @@ func (b *Bot) handleGroupMessage(msg *tgbotapi.Message) error {
 		slog.Info("processing bot mention",
 			"chat_id", msg.Chat.ID,
 			"user_id", msg.From.ID)
+
 		return b.handleMentionMessage(msg)
 	}
 
@@ -498,6 +522,7 @@ func (b *Bot) handleMentionMessage(msg *tgbotapi.Message) error {
 		slog.Warn("proceeding with empty user profiles",
 			"error", err,
 			"chat_id", msg.Chat.ID)
+
 		userProfiles = make(map[int64]*db.UserProfile)
 	}
 
@@ -513,9 +538,13 @@ func (b *Bot) handleMentionMessage(msg *tgbotapi.Message) error {
 
 	// Retrieve messages in batches until token limit or no more messages
 	batchSize := 200
+
 	var beforeTimestamp time.Time // Zero time initially (get latest messages)
-	var beforeID uint = 0         // Zero ID initially
+
+	var beforeID uint = 0 // Zero ID initially
+
 	var allMessages []*db.Message
+
 	totalTokens := 0
 
 	for {
@@ -523,6 +552,7 @@ func (b *Bot) handleMentionMessage(msg *tgbotapi.Message) error {
 		batchMessages, err := b.db.GetRecentMessages(b.ctx, msg.Chat.ID, batchSize, beforeTimestamp, beforeID)
 		if err != nil {
 			b.sendErrorMessage(msg.Chat.ID)
+
 			return fmt.Errorf("failed to fetch batch of messages: %w", err)
 		}
 
@@ -533,6 +563,7 @@ func (b *Bot) handleMentionMessage(msg *tgbotapi.Message) error {
 
 		// Calculate token usage for this batch
 		batchTokens := 0
+
 		for _, message := range batchMessages {
 			// Add 15 tokens overhead per message for metadata
 			msgTokens := utils.EstimateTokens(message.Content) + 15
@@ -553,6 +584,7 @@ func (b *Bot) handleMentionMessage(msg *tgbotapi.Message) error {
 					break
 				}
 			}
+
 			break
 		}
 
@@ -592,6 +624,7 @@ func (b *Bot) handleMentionMessage(msg *tgbotapi.Message) error {
 	response, err := b.ai.GenerateResponse(b.ctx, request)
 	if err != nil {
 		b.sendErrorMessage(msg.Chat.ID)
+
 		return fmt.Errorf("failed to generate AI response: %w", err)
 	}
 
@@ -638,11 +671,13 @@ func (b *Bot) handleMentionMessage(msg *tgbotapi.Message) error {
 
 func (b *Bot) scheduleMaintenanceTasks() error {
 	slog.Debug("scheduling daily profile update task", "cron", "0 0 * * *")
+
 	err := b.scheduler.AddJob(
 		"daily-profile-update",
 		"0 0 * * *",
 		func() {
 			slog.Debug("starting scheduled daily profile update")
+
 			startTime := time.Now()
 
 			if err := b.processAndUpdateUserProfiles(); err != nil {
@@ -656,10 +691,12 @@ func (b *Bot) scheduleMaintenanceTasks() error {
 	)
 	if err != nil {
 		slog.Error("failed to schedule daily profile update", "error", err)
+
 		return err
 	}
 
 	slog.Info("maintenance tasks scheduled successfully")
+
 	return nil
 }
 
@@ -675,6 +712,7 @@ func (b *Bot) processAndUpdateUserProfiles() error {
 	// If there are no unprocessed messages, there's nothing to do
 	if len(unprocessedMessages) == 0 {
 		slog.Debug("no unprocessed messages found, skipping profile update")
+
 		return nil
 	}
 
@@ -685,6 +723,7 @@ func (b *Bot) processAndUpdateUserProfiles() error {
 	if err != nil {
 		// If we can't get existing profiles, start with an empty map
 		slog.Warn("failed to get existing profiles", "error", err)
+
 		existingProfiles = make(map[int64]*db.UserProfile)
 	}
 
@@ -705,15 +744,19 @@ func (b *Bot) processAndUpdateUserProfiles() error {
 			if newProfile.DisplayNames == "" {
 				newProfile.DisplayNames = existingProfile.DisplayNames
 			}
+
 			if newProfile.OriginLocation == "" {
 				newProfile.OriginLocation = existingProfile.OriginLocation
 			}
+
 			if newProfile.CurrentLocation == "" {
 				newProfile.CurrentLocation = existingProfile.CurrentLocation
 			}
+
 			if newProfile.AgeRange == "" {
 				newProfile.AgeRange = existingProfile.AgeRange
 			}
+
 			if newProfile.Traits == "" {
 				newProfile.Traits = existingProfile.Traits
 			}
@@ -728,6 +771,7 @@ func (b *Bot) processAndUpdateUserProfiles() error {
 	for userID, profile := range updatedProfiles {
 		if err := b.db.SaveUserProfile(b.ctx, profile); err != nil {
 			slog.Error("failed to save user profile", "error", err, "user_id", userID)
+
 			return err
 		}
 	}
@@ -743,6 +787,7 @@ func (b *Bot) processAndUpdateUserProfiles() error {
 	}
 
 	slog.Info("user profile update completed", "profiles_updated", len(updatedProfiles))
+
 	return nil
 }
 
@@ -836,15 +881,18 @@ func (b *Bot) SendUserProfiles(ctx context.Context, chatID int64) error {
 	profiles, err := b.db.GetAllUserProfiles(ctx)
 	if err != nil {
 		b.sendErrorMessage(chatID)
+
 		return fmt.Errorf("failed to get user profiles: %w", err)
 	}
 
 	if len(profiles) == 0 {
 		reply := tgbotapi.NewMessage(chatID, b.config.BotMsgNoProfiles)
+
 		return b.SendMessage(reply)
 	}
 
 	var profilesReport strings.Builder
+
 	profilesReport.WriteString(b.config.BotMsgProfilesHeader)
 
 	// Sort user IDs for consistent display
@@ -852,6 +900,7 @@ func (b *Bot) SendUserProfiles(ctx context.Context, chatID int64) error {
 	for userID := range profiles {
 		userIDs = append(userIDs, userID)
 	}
+
 	sort.Slice(userIDs, func(i, j int) bool {
 		return userIDs[i] < userIDs[j]
 	})
@@ -862,6 +911,7 @@ func (b *Bot) SendUserProfiles(ctx context.Context, chatID int64) error {
 	}
 
 	reply := tgbotapi.NewMessage(chatID, profilesReport.String())
+
 	return b.SendMessage(reply)
 }
 

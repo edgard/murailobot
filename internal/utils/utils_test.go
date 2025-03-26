@@ -471,6 +471,7 @@ func TestSanitize(t *testing.T) {
 
 	// Create a very long input string (50KB) for the long text test
 	var longString string
+
 	pattern := "abcdefghijklmnopqrstuvwxyz0123456789"
 	for range 1280 {
 		longString += pattern
@@ -494,18 +495,23 @@ func TestSanitize(t *testing.T) {
 
 	// Run all test groups as subtests
 	for groupName, testCases := range testGroups {
-		testCases := testCases // Capture range variable
+		// Capture range variable
+
 		t.Run(groupName, func(t *testing.T) {
 			t.Parallel()
+
 			for _, tc := range testCases {
-				tc := tc // Capture range variable
+				// Capture range variable
 				t.Run(tc.name, func(t *testing.T) {
 					t.Parallel()
+
 					actual, err := utils.Sanitize(tc.input)
 					if (err != nil) != tc.wantErr {
 						t.Errorf("Sanitize() error = %v, wantErr %v", err, tc.wantErr)
+
 						return
 					}
+
 					if !tc.wantErr && actual != tc.expected {
 						t.Errorf("input: %q, expected: %q, actual: %q", tc.input, tc.expected, actual)
 					}

@@ -31,6 +31,7 @@ type App struct {
 func New() (*App, error) {
 	// Load configuration
 	slog.Debug("initializing application")
+
 	cfg, err := config.Load()
 	if err != nil {
 		return nil, fmt.Errorf("failed to load configuration: %w", err)
@@ -124,10 +125,11 @@ func (a *App) Stop(ctx context.Context) error {
 	// Wait for either completion or timeout
 	select {
 	case <-ctx.Done():
-		return fmt.Errorf("shutdown timed out: %v", ctx.Err())
+		return fmt.Errorf("shutdown timed out: %w", ctx.Err())
 	case <-done:
 		// Collect any errors
 		close(errCh)
+
 		for err := range errCh {
 			errs = append(errs, err)
 		}
@@ -137,6 +139,7 @@ func (a *App) Stop(ctx context.Context) error {
 		}
 
 		slog.Info("application shutdown completed")
+
 		return nil
 	}
 }

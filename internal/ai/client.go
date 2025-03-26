@@ -220,6 +220,7 @@ func (c *Client) GenerateResponse(ctx context.Context, request *Request) (string
 		for _, msg := range request.RecentMessages {
 			totalInputTokens += utils.EstimateTokens(msg.Content)
 		}
+
 		slog.Debug("sending AI request",
 			"messages", len(messages),
 			"tokens", totalInputTokens)
@@ -251,6 +252,7 @@ func (c *Client) GenerateResponse(ctx context.Context, request *Request) (string
 	}
 
 	rawResponse := resp.Choices[0].Message.Content
+
 	result, err := utils.Sanitize(rawResponse)
 	if err != nil {
 		return "", fmt.Errorf("failed to sanitize response: %w", err)
@@ -277,6 +279,7 @@ func (c *Client) GenerateResponse(ctx context.Context, request *Request) (string
 // profile generation fails.
 func (c *Client) GenerateProfiles(ctx context.Context, messages []*db.Message, existingProfiles map[int64]*db.UserProfile) (map[int64]*db.UserProfile, error) {
 	startTime := time.Now()
+
 	slog.Debug("starting profile generation",
 		"messages", len(messages),
 		"profiles", len(existingProfiles))
@@ -392,11 +395,13 @@ func (c *Client) GenerateProfiles(ctx context.Context, messages []*db.Message, e
 
 func parseProfileResponse(response string, userMessages map[int64][]*db.Message, existingProfiles map[int64]*db.UserProfile, botInfo BotInfo) (map[int64]*db.UserProfile, error) {
 	startTime := time.Now()
+
 	slog.Debug("parsing profile response", "response_length", len(response))
 
 	response = strings.TrimSpace(response)
 	if response == "" {
 		slog.Error("empty profile response received")
+
 		return nil, errors.New("empty profile response")
 	}
 
@@ -409,6 +414,7 @@ func parseProfileResponse(response string, userMessages map[int64][]*db.Message,
 		slog.Error("invalid JSON format in response",
 			"json_start", jsonStart,
 			"json_end", jsonEnd)
+
 		return nil, errors.New("invalid JSON format in response")
 	}
 
@@ -435,6 +441,7 @@ func parseProfileResponse(response string, userMessages map[int64][]*db.Message,
 		slog.Error("failed to parse JSON response",
 			"error", err,
 			"unmarshal_duration_ms", unmarshalDuration.Milliseconds())
+
 		return nil, fmt.Errorf("failed to parse profile response: %w", err)
 	}
 
@@ -444,6 +451,7 @@ func parseProfileResponse(response string, userMessages map[int64][]*db.Message,
 	// Initialize an empty users map if none was provided in the response
 	if profileResponse.Users == nil {
 		slog.Warn("no users found in profile response, initializing empty map")
+
 		profileResponse.Users = make(map[string]struct {
 			DisplayNames    string `json:"display_names"`
 			OriginLocation  string `json:"origin_location"`
@@ -464,7 +472,9 @@ func parseProfileResponse(response string, userMessages map[int64][]*db.Message,
 		var userID int64
 		if _, err := fmt.Sscanf(userIDStr, "%d", &userID); err != nil || userID == 0 {
 			slog.Warn("invalid user ID in profile response", "user_id", userIDStr)
+
 			skippedProfiles++
+
 			continue
 		}
 
@@ -472,6 +482,7 @@ func parseProfileResponse(response string, userMessages map[int64][]*db.Message,
 		// This ensures the bot always has a consistent profile
 		if userID == botInfo.UserID {
 			slog.Debug("handling bot's own profile", "bot_id", botInfo.UserID)
+
 			botDisplayNames := botInfo.Username
 			if botInfo.DisplayName != "" && botInfo.DisplayName != botInfo.Username {
 				botDisplayNames = fmt.Sprintf("%s, %s", botInfo.DisplayName, botInfo.Username)
@@ -496,7 +507,9 @@ func parseProfileResponse(response string, userMessages map[int64][]*db.Message,
 			if _, hasProfile := existingProfiles[userID]; !hasProfile {
 				slog.Debug("skipping user with no messages and no existing profile",
 					"user_id", userID)
+
 				skippedProfiles++
+
 				continue
 			}
 		}

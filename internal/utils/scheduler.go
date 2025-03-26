@@ -64,6 +64,7 @@ func (s *Scheduler) AddJob(name, cronExpr string, job func()) error {
 	wrappedJob := func() {
 		// Log start for long jobs only
 		var startTime time.Time
+
 		const slowThreshold = 5 * time.Second
 
 		// Using a closure to conditionally time the execution

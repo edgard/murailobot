@@ -29,6 +29,7 @@ type DB struct {
 // Returns an error if database initialization fails.
 func New(cfg *config.Config) (*DB, error) {
 	startTime := time.Now()
+
 	slog.Debug("initializing database", "path", cfg.DBPath)
 
 	// Configure GORM logger
@@ -54,6 +55,7 @@ func New(cfg *config.Config) (*DB, error) {
 			"error", err,
 			"path", cfg.DBPath,
 			"duration_ms", time.Since(dbOpenStart).Milliseconds())
+
 		return nil, fmt.Errorf("failed to open database: %w", err)
 	}
 
@@ -61,6 +63,7 @@ func New(cfg *config.Config) (*DB, error) {
 	sqlDB, err := db.DB()
 	if err != nil {
 		slog.Error("failed to get database instance", "error", err)
+
 		return nil, fmt.Errorf("failed to get database instance: %w", err)
 	}
 
@@ -79,6 +82,7 @@ func New(cfg *config.Config) (*DB, error) {
 		slog.Error("failed to run migrations",
 			"error", err,
 			"duration_ms", time.Since(migrationStart).Milliseconds())
+
 		return nil, fmt.Errorf("failed to run migrations: %w", err)
 	}
 
@@ -110,6 +114,7 @@ func (r *DB) SaveMessage(ctx context.Context, msg *Message) error {
 	// Only log slow operations to reduce noise
 	slowThreshold := 100 * time.Millisecond
 	duration := time.Since(startTime)
+
 	if duration > slowThreshold {
 		slog.Warn("slow database operation detected",
 			"operation", "save_message",
@@ -183,50 +188,6 @@ func (r *DB) GetRecentMessages(ctx context.Context, groupID int64, limit int, be
 	return messages, nil
 }
 
-// GetMessagesInTimeRange retrieves all messages within a specified time range.
-// The time range must be valid (start before end) and cannot exceed 31 days.
-//
-// Returns an error if the time range is invalid or if the database operation fails.
-func (r *DB) GetMessagesInTimeRange(ctx context.Context, start, end time.Time) ([]*Message, error) {
-	if start.IsZero() || end.IsZero() {
-		return nil, errors.New("zero time value")
-	}
-
-	if start.After(end) {
-		return nil, errors.New("invalid time range: start after end")
-	}
-
-	if end.Sub(start) > 31*24*time.Hour {
-		return nil, errors.New("time range exceeds maximum")
-	}
-
-	var messages []*Message
-	if err := r.db.WithContext(ctx).
-		Where("timestamp >= ? AND timestamp < ?", start, end).
-		Order("timestamp asc").
-		Find(&messages).Error; err != nil {
-		return nil, fmt.Errorf("failed to get messages in time range: %w", err)
-	}
-
-	return messages, nil
-}
-
-// GetAllMessages retrieves all messages stored in the database,
-// ordered chronologically by timestamp.
-//
-// Returns an error if the database operation fails.
-func (r *DB) GetAllMessages(ctx context.Context) ([]*Message, error) {
-	var messages []*Message
-
-	if err := r.db.WithContext(ctx).
-		Order("timestamp asc").
-		Find(&messages).Error; err != nil {
-		return nil, fmt.Errorf("failed to get all messages: %w", err)
-	}
-
-	return messages, nil
-}
-
 // GetUnprocessedMessages retrieves all messages that have not been processed yet
 // for user profile analysis, ordered chronologically by timestamp.
 //
@@ -274,22 +235,6 @@ func (r *DB) MarkMessagesAsProcessed(ctx context.Context, messageIDs []uint) err
 	return nil
 }
 
-// GetUniqueGroupChats returns the IDs of all distinct group chats in the database.
-//
-// Returns an error if the database operation fails.
-func (r *DB) GetUniqueGroupChats(ctx context.Context) ([]int64, error) {
-	var groupIDs []int64
-
-	if err := r.db.WithContext(ctx).
-		Model(&Message{}).
-		Distinct("group_id").
-		Pluck("group_id", &groupIDs).Error; err != nil {
-		return nil, fmt.Errorf("failed to get unique group chats: %w", err)
-	}
-
-	return groupIDs, nil
-}
-
 // GetUserProfile retrieves a user's profile by user ID.
 // Returns nil without an error if the profile doesn't exist.
 //
@@ -332,6 +277,7 @@ func (r *DB) SaveUserProfile(ctx context.Context, profile *UserProfile) error {
 	result := r.db.WithContext(ctx).Where("user_id = ?", profile.UserID).First(&existingProfile)
 
 	var err error
+
 	var isNew bool
 
 	// Update or create based on existence
@@ -424,6 +370,7 @@ func (r *DB) Close() error {
 	}
 
 	slog.Debug("database connection closed")
+
 	return nil
 }
 

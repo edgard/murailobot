@@ -57,10 +57,12 @@ type Config struct {
 // Returns the validated configuration or an error if loading or validation fails.
 func Load() (*Config, error) {
 	slog.Debug("loading configuration")
+
 	config := &Config{}
 
 	// Set default values and load configuration from file
 	setDefaults(config)
+
 	configPath := "config.yaml"
 
 	k := koanf.New(".")
@@ -68,6 +70,7 @@ func Load() (*Config, error) {
 		if !os.IsNotExist(err) {
 			return nil, err
 		}
+
 		slog.Debug("using default configuration (no config file found)")
 	} else {
 		// Only log parsing errors, don't log normal parsing operations
