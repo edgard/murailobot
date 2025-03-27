@@ -376,7 +376,7 @@ func (c *Client) GenerateProfiles(ctx context.Context, messages []*db.Message, e
 
 	// Add structured output settings
 	chatReq.Provider = &Provider{
-		RequireParameters: true,
+		RequireParameters: true, // Required for strict schema enforcement
 	}
 	chatReq.ResponseFormat = &ResponseFormat{
 		Type: "json_schema",
@@ -387,15 +387,11 @@ func (c *Client) GenerateProfiles(ctx context.Context, messages []*db.Message, e
 				Type: "object",
 				Properties: map[string]Property{
 					"users": {
-						Type:        "array",
-						Description: "List of user profiles",
-						Items: &Property{
+						Type:        "object", // Changed from "array" to match parser expectations
+						Description: "Map of user profiles keyed by user ID",
+						AdditionalProperties: &Property{ // Define structure of properties
 							Type: "object",
 							Properties: map[string]Property{
-								"user_id": {
-									Type:        "integer",
-									Description: "Numeric ID of the user",
-								},
 								"display_names": {
 									Type:        "string",
 									Description: "Comma-separated list of names/nicknames used by the user",
@@ -418,7 +414,6 @@ func (c *Client) GenerateProfiles(ctx context.Context, messages []*db.Message, e
 								},
 							},
 							Required: []string{
-								"user_id",
 								"display_names",
 								"origin_location",
 								"current_location",
@@ -441,11 +436,22 @@ func (c *Client) GenerateProfiles(ctx context.Context, messages []*db.Message, e
 	apiDuration := time.Since(apiStartTime)
 
 	if err != nil {
+		slog.Error("profile generation API request failed",
+			"error", err,
+			"model", c.model)
 		return nil, fmt.Errorf("profile generation failed: %w", err)
 	}
 
 	if len(resp.Choices) == 0 {
+		slog.Error("empty choices in API response")
 		return nil, errors.New("no response choices returned")
+	}
+
+	// Log the response for debugging
+	if slog.Default().Enabled(ctx, slog.LevelDebug) {
+		slog.Debug("structured output response received",
+			"finish_reason", resp.Choices[0].FinishReason,
+			"content_length", len(resp.Choices[0].Message.Content))
 	}
 
 	// Parse the response
@@ -455,11 +461,15 @@ func (c *Client) GenerateProfiles(ctx context.Context, messages []*db.Message, e
 		existingProfiles,
 		c.botInfo)
 	if err != nil {
+		slog.Error("profile parsing failed",
+			"error", err,
+			"content_preview", truncateString(resp.Choices[0].Message.Content, 100))
 		return nil, fmt.Errorf("failed to parse profiles: %w", err)
 	}
 
-	slog.Debug("API response received",
-		"api_duration_ms", apiDuration.Milliseconds())
+	slog.Debug("API response received and parsed successfully",
+		"api_duration_ms", apiDuration.Milliseconds(),
+		"profile_count", len(profiles))
 
 	// Consolidated log with all metrics
 	slog.Info("profile generation completed",
@@ -468,6 +478,14 @@ func (c *Client) GenerateProfiles(ctx context.Context, messages []*db.Message, e
 		"profile_count", len(profiles))
 
 	return profiles, nil
+}
+
+// truncateString limits a string to the specified maximum length and adds an ellipsis if truncated
+func truncateString(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen] + "..."
 }
 
 func getProfileInstruction(configInstruction string, botInfo BotInfo) string {
@@ -517,26 +535,10 @@ func parseProfileResponse(response string, userMessages map[int64][]*db.Message,
 	response = strings.TrimSpace(response)
 	if response == "" {
 		slog.Error("empty profile response received")
-
 		return nil, errors.New("empty profile response")
 	}
 
-	// Extract the JSON content from the response
-	// AI models sometimes include explanatory text before/after the JSON
-	jsonStart := strings.Index(response, "{")
-	jsonEnd := strings.LastIndex(response, "}")
-
-	if jsonStart == -1 || jsonEnd == -1 || jsonEnd <= jsonStart {
-		slog.Error("invalid JSON format in response",
-			"json_start", jsonStart,
-			"json_end", jsonEnd)
-
-		return nil, errors.New("invalid JSON format in response")
-	}
-
-	jsonContent := response[jsonStart : jsonEnd+1]
-	slog.Debug("extracted JSON content", "json_length", len(jsonContent))
-
+	// With properly configured structured outputs, we can parse the response directly
 	// Define a struct that matches the expected JSON structure
 	var profileResponse struct {
 		Users map[string]struct {
@@ -548,17 +550,44 @@ func parseProfileResponse(response string, userMessages map[int64][]*db.Message,
 		} `json:"users"`
 	}
 
-	// Try to parse the JSON
+	// Parse the JSON directly without manual extraction
 	unmarshalStartTime := time.Now()
-	err := json.Unmarshal([]byte(jsonContent), &profileResponse)
+	err := json.Unmarshal([]byte(response), &profileResponse)
 	unmarshalDuration := time.Since(unmarshalStartTime)
 
 	if err != nil {
 		slog.Error("failed to parse JSON response",
 			"error", err,
+			"raw_response", response, // Log the raw response for debugging
 			"unmarshal_duration_ms", unmarshalDuration.Milliseconds())
 
-		return nil, fmt.Errorf("failed to parse profile response: %w", err)
+		// Try to identify common structured output issues
+		if strings.Contains(err.Error(), "cannot unmarshal array") {
+			slog.Error("Schema mismatch: Expected object but received array. Check schema definition.")
+		} else if strings.Contains(err.Error(), "cannot unmarshal object") {
+			slog.Error("Schema mismatch: Expected array but received object. Check schema definition.")
+		} else if strings.Contains(err.Error(), "looking for beginning of value") {
+			slog.Error("Invalid JSON: The response might not be valid JSON format.")
+		}
+
+		// As a fallback, try to extract JSON if direct parsing fails
+		// This helps during transition to proper structured outputs
+		jsonStart := strings.Index(response, "{")
+		jsonEnd := strings.LastIndex(response, "}")
+
+		if jsonStart != -1 && jsonEnd != -1 && jsonEnd > jsonStart {
+			jsonContent := response[jsonStart : jsonEnd+1]
+			slog.Debug("attempting fallback with extracted JSON content", "json_length", len(jsonContent))
+
+			fallbackErr := json.Unmarshal([]byte(jsonContent), &profileResponse)
+			if fallbackErr == nil {
+				slog.Warn("fallback JSON extraction succeeded, but structured output should be fixed")
+			} else {
+				return nil, fmt.Errorf("failed to parse profile response (both direct and fallback): %w", err)
+			}
+		} else {
+			return nil, fmt.Errorf("failed to parse profile response: %w", err)
+		}
 	}
 
 	slog.Debug("JSON unmarshaled successfully",
