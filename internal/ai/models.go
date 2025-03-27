@@ -34,7 +34,7 @@ type ChatMessage struct {
 
 // Provider represents provider-specific settings for the API request
 type Provider struct {
-	RequireParameters bool `json:"require_parameters,omitempty"`
+	RequireParameters bool `json:"require_parameters"`
 }
 
 // JSONSchema represents the structure of the JSON schema for response validation
@@ -46,8 +46,7 @@ type JSONSchema struct {
 
 // ResponseFormat represents the desired format for the API response
 type ResponseFormat struct {
-	Type       string      `json:"type,omitempty"`
-	Format     string      `json:"format,omitempty"`
+	Type       string      `json:"type"`
 	JSONSchema *JSONSchema `json:"json_schema,omitempty"`
 }
 
