@@ -484,7 +484,26 @@ Bot Display Name: %s
 - If the bot mentions a topic and the user merely responds, this is not evidence of a personal trait
 - Only identify traits from topics and interests the user has independently demonstrated
 - Ignore creative embellishments that might have been added by the bot in previous responses
-`, botInfo.UserID, botInfo.Username, botInfo.DisplayName)
+
+### OUTPUT REQUIREMENTS [CRITICAL]
+- Your response must be ONLY the JSON object, no other text
+- All fields are required for each user
+- Use empty string "" if information is unknown
+- Do not include explanations or notes outside the JSON
+
+### RESPONSE FORMAT [CRITICAL]
+You MUST respond in valid JSON format matching this exact structure:
+{
+	"users": {
+		"[user_id]": {
+			"display_names": "comma-separated list of names",
+			"origin_location": "where they are from",
+			"current_location": "where they live now",
+			"age_range": "approximate age range",
+			"traits": "comma-separated personality traits"
+		}
+	}
+}`, botInfo.UserID, botInfo.Username, botInfo.DisplayName)
 
 	// Combine the configured instruction with the fixed part
 	fullInstruction := fmt.Sprintf("%s\n\n%s", configInstruction, botIdentificationAndFixedPart)
