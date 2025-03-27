@@ -3,7 +3,7 @@ module github.com/edgard/murailobot
 go 1.24
 
 require (
-	github.com/go-co-op/gocron/v2 v2.16.0
+	github.com/go-co-op/gocron/v2 v2.16.1
 	github.com/go-playground/validator/v10 v10.25.0
 	github.com/go-telegram-bot-api/telegram-bot-api/v5 v5.5.1
 	github.com/knadh/koanf/parsers/yaml v0.1.0
