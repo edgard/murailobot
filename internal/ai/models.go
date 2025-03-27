@@ -25,3 +25,56 @@ type BotInfo struct {
 	Username    string
 	DisplayName string
 }
+
+// ChatMessage represents a single message in the chat completion API request/response
+type ChatMessage struct {
+	Role    string `json:"role"`
+	Content string `json:"content"`
+}
+
+// Provider represents provider-specific settings for the API request
+type Provider struct {
+	RequireParameters bool `json:"require_parameters"`
+}
+
+// JSONSchema represents the structure of the JSON schema for response validation
+type JSONSchema struct {
+	Name   string                 `json:"name"`
+	Strict bool                   `json:"strict"`
+	Schema map[string]interface{} `json:"schema"`
+}
+
+// ResponseFormat represents the desired format for the API response
+type ResponseFormat struct {
+	Type       string      `json:"type"`
+	JSONSchema *JSONSchema `json:"json_schema,omitempty"`
+}
+
+// ChatCompletionRequest represents the request structure for chat completion API
+type ChatCompletionRequest struct {
+	Model          string          `json:"model"`
+	Messages       []ChatMessage   `json:"messages"`
+	Temperature    float32         `json:"temperature"`
+	Provider       *Provider       `json:"provider,omitempty"`
+	ResponseFormat *ResponseFormat `json:"response_format,omitempty"`
+}
+
+// ChatCompletionResponse represents the response structure from chat completion API
+type ChatCompletionResponse struct {
+	ID      string `json:"id"`
+	Object  string `json:"object"`
+	Created int64  `json:"created"`
+	Model   string `json:"model"`
+	Usage   struct {
+		PromptTokens     int `json:"prompt_tokens"`
+		CompletionTokens int `json:"completion_tokens"`
+		TotalTokens      int `json:"total_tokens"`
+	} `json:"usage"`
+	Choices []struct {
+		Message struct {
+			Role    string `json:"role"`
+			Content string `json:"content"`
+		} `json:"message"`
+		FinishReason string `json:"finish_reason"`
+	} `json:"choices"`
+}

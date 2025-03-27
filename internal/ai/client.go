@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"sort"
 	"strings"
 	"time"
@@ -16,41 +17,43 @@ import (
 	"github.com/edgard/murailobot/internal/config"
 	"github.com/edgard/murailobot/internal/db"
 	"github.com/edgard/murailobot/internal/utils"
-	"github.com/sashabaranov/go-openai"
 )
 
 // Client implements AI functionality for generating responses to user messages
 // and analyzing user profiles based on message history. It uses OpenAI's API
 // or compatible services to provide natural language processing capabilities.
 type Client struct {
-	client             *openai.Client
-	model              string
-	temperature        float32
-	instruction        string
-	profileInstruction string
-	timeout            time.Duration
-	storage            *db.DB
-	botInfo            BotInfo
+	httpClient          *http.Client
+	baseURL             string
+	token               string
+	model               string
+	temperature         float32
+	instruction         string
+	profileInstruction  string
+	timeout             time.Duration
+	storage             *db.DB
+	botInfo             BotInfo
+	useStructuredOutput bool
 }
 
 // New creates a new AI client with the provided configuration and storage.
-// It initializes the OpenAI client with the appropriate API token and base URL.
+// It initializes the HTTP client with the appropriate timeout settings.
 func New(cfg *config.Config, storage *db.DB) (*Client, error) {
 	if storage == nil {
 		return nil, errors.New("nil storage")
 	}
 
-	aiConfig := openai.DefaultConfig(cfg.AIToken)
-	aiConfig.BaseURL = cfg.AIBaseURL
-
 	client := &Client{
-		client:             openai.NewClientWithConfig(aiConfig),
-		model:              cfg.AIModel,
-		temperature:        cfg.AITemperature,
-		instruction:        cfg.AIInstruction,
-		profileInstruction: cfg.AIProfileInstruction,
-		timeout:            cfg.AITimeout,
-		storage:            storage,
+		httpClient:          &http.Client{},
+		baseURL:             cfg.AIBaseURL,
+		token:               cfg.AIToken,
+		model:               cfg.AIModel,
+		temperature:         cfg.AITemperature,
+		instruction:         cfg.AIInstruction,
+		profileInstruction:  cfg.AIProfileInstruction,
+		timeout:             cfg.AITimeout,
+		storage:             storage,
+		useStructuredOutput: cfg.AIUseStructuredOutput,
 	}
 
 	return client, nil
@@ -182,7 +185,7 @@ func (c *Client) GenerateResponse(ctx context.Context, request *Request) (string
 	systemPrompt := c.CreateSystemPrompt(request.UserProfiles)
 
 	// Initialize the messages array with the system prompt
-	messages := []openai.ChatCompletionMessage{
+	messages := []ChatMessage{
 		{
 			Role:    "system",
 			Content: systemPrompt,
@@ -197,7 +200,7 @@ func (c *Client) GenerateResponse(ctx context.Context, request *Request) (string
 			role = "assistant"
 		}
 
-		messages = append(messages, openai.ChatCompletionMessage{
+		messages = append(messages, ChatMessage{
 			Role:    role,
 			Content: formatMessage(msg),
 		})
@@ -209,7 +212,7 @@ func (c *Client) GenerateResponse(ctx context.Context, request *Request) (string
 		Timestamp: time.Now().UTC(),
 	})
 
-	messages = append(messages, openai.ChatCompletionMessage{
+	messages = append(messages, ChatMessage{
 		Role:    "user",
 		Content: currentMsg,
 	})
@@ -230,13 +233,15 @@ func (c *Client) GenerateResponse(ctx context.Context, request *Request) (string
 	timeoutCtx, cancel := context.WithTimeout(ctx, c.timeout)
 	defer cancel()
 
-	// Make API call with timeout
-	apiStartTime := time.Now()
-	resp, err := c.client.CreateChatCompletion(timeoutCtx, openai.ChatCompletionRequest{
+	chatReq := ChatCompletionRequest{
 		Model:       c.model,
 		Messages:    messages,
 		Temperature: c.temperature,
-	})
+	}
+
+	var resp ChatCompletionResponse
+	apiStartTime := time.Now()
+	err := c.doRequest(timeoutCtx, "POST", "/chat/completions", chatReq, &resp)
 	apiDuration := time.Since(apiStartTime)
 
 	if err != nil {
@@ -295,7 +300,7 @@ func (c *Client) GenerateProfiles(ctx context.Context, messages []*db.Message, e
 
 	instruction := getProfileInstruction(c.profileInstruction, c.botInfo)
 
-	chatMessages := []openai.ChatCompletionMessage{
+	reqMessages := []ChatMessage{
 		{
 			Role:    "system",
 			Content: instruction,
@@ -353,7 +358,7 @@ func (c *Client) GenerateProfiles(ctx context.Context, messages []*db.Message, e
 	}
 
 	// Add the user message to the chat messages
-	chatMessages = append(chatMessages, openai.ChatCompletionMessage{
+	reqMessages = append(reqMessages, ChatMessage{
 		Role:    "user",
 		Content: messageContent,
 	})
@@ -362,12 +367,72 @@ func (c *Client) GenerateProfiles(ctx context.Context, messages []*db.Message, e
 	timeoutCtx, cancel := context.WithTimeout(ctx, c.timeout)
 	defer cancel()
 
-	apiStartTime := time.Now()
-	resp, err := c.client.CreateChatCompletion(timeoutCtx, openai.ChatCompletionRequest{
+	// Create the request body with structured output support
+	chatReq := ChatCompletionRequest{
 		Model:       c.model,
-		Messages:    chatMessages,
+		Messages:    reqMessages,
 		Temperature: c.temperature,
-	})
+	}
+
+	// Add structured output settings
+	chatReq.Provider = &Provider{
+		RequireParameters: true,
+	}
+	chatReq.ResponseFormat = &ResponseFormat{
+		Type: "json_schema",
+		JSONSchema: &JSONSchema{
+			Name:   "profile_generation",
+			Strict: true,
+			Schema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"users": map[string]interface{}{
+						"type": "object",
+						"patternProperties": map[string]interface{}{
+							"^[0-9]+$": map[string]interface{}{
+								"type": "object",
+								"properties": map[string]interface{}{
+									"display_names": map[string]interface{}{
+										"type":        "string",
+										"description": "Comma-separated list of names/nicknames used by the user",
+									},
+									"origin_location": map[string]interface{}{
+										"type":        "string",
+										"description": "Where the user is from",
+									},
+									"current_location": map[string]interface{}{
+										"type":        "string",
+										"description": "Where the user currently lives",
+									},
+									"age_range": map[string]interface{}{
+										"type":        "string",
+										"description": "Approximate age range (20s, 30s, etc.)",
+									},
+									"traits": map[string]interface{}{
+										"type":        "string",
+										"description": "Comma-separated list of personality traits and characteristics",
+									},
+								},
+								"required": []string{
+									"display_names",
+									"origin_location",
+									"current_location",
+									"age_range",
+									"traits",
+								},
+							},
+						},
+					},
+				},
+				"required":             []string{"users"},
+				"additionalProperties": false,
+			},
+		},
+	}
+
+	var resp ChatCompletionResponse
+	apiStartTime := time.Now()
+	err := c.doRequest(timeoutCtx, "POST", "/chat/completions", chatReq, &resp)
 	apiDuration := time.Since(apiStartTime)
 
 	if err != nil {
@@ -378,19 +443,65 @@ func (c *Client) GenerateProfiles(ctx context.Context, messages []*db.Message, e
 		return nil, errors.New("no response choices returned")
 	}
 
-	profiles, err := parseProfileResponse(resp.Choices[0].Message.Content, userMessages, existingProfiles, c.botInfo)
+	// Parse the response
+	profiles, err := parseProfileResponse(
+		resp.Choices[0].Message.Content,
+		userMessages,
+		existingProfiles,
+		c.botInfo)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse profiles: %w", err)
 	}
+
+	slog.Debug("API response received",
+		"api_duration_ms", apiDuration.Milliseconds())
 
 	// Consolidated log with all metrics
 	slog.Info("profile generation completed",
 		"duration_ms", time.Since(startTime).Milliseconds(),
 		"api_ms", apiDuration.Milliseconds(),
-		"profile_count", len(profiles),
-		"tokens", resp.Usage.TotalTokens)
+		"profile_count", len(profiles))
 
 	return profiles, nil
+}
+
+func getProfileInstruction(configInstruction string, botInfo BotInfo) string {
+	slog.Debug("generating profile instruction",
+		"bot_id", botInfo.UserID,
+		"bot_username", botInfo.Username)
+
+	startTime := time.Now()
+
+	// Create the bot identification and fixed instruction part
+	botIdentificationAndFixedPart := fmt.Sprintf(`
+## BOT IDENTIFICATION [IMPORTANT]
+Bot UID: %d
+Bot Username: %s
+Bot Display Name: %s
+
+### BOT INFLUENCE AWARENESS [IMPORTANT]
+- DO NOT attribute traits based on topics introduced by the bot
+- If the bot mentions a topic and the user merely responds, this is not evidence of a personal trait
+- Only identify traits from topics and interests the user has independently demonstrated
+- Ignore creative embellishments that might have been added by the bot in previous responses
+`, botInfo.UserID, botInfo.Username, botInfo.DisplayName)
+
+	// Combine the configured instruction with the fixed part
+	fullInstruction := fmt.Sprintf("%s\n\n%s", configInstruction, botIdentificationAndFixedPart)
+
+	// Log information about the generated instruction
+	instructionLength := len(fullInstruction)
+	configLength := len(configInstruction)
+	fixedPartLength := len(botIdentificationAndFixedPart)
+
+	duration := time.Since(startTime)
+	slog.Debug("profile instruction generated",
+		"total_length", instructionLength,
+		"config_length", configLength,
+		"fixed_part_length", fixedPartLength,
+		"duration_ms", duration.Milliseconds())
+
+	return fullInstruction
 }
 
 func parseProfileResponse(response string, userMessages map[int64][]*db.Message, existingProfiles map[int64]*db.UserProfile, botInfo BotInfo) (map[int64]*db.UserProfile, error) {
@@ -546,56 +657,4 @@ func parseProfileResponse(response string, userMessages map[int64][]*db.Message,
 		"duration_ms", time.Since(startTime).Milliseconds())
 
 	return updatedProfiles, nil
-}
-
-func getProfileInstruction(configInstruction string, botInfo BotInfo) string {
-	slog.Debug("generating profile instruction",
-		"bot_id", botInfo.UserID,
-		"bot_username", botInfo.Username)
-
-	startTime := time.Now()
-
-	// Create the bot identification and fixed instruction part
-	botIdentificationAndFixedPart := fmt.Sprintf(`
-## BOT IDENTIFICATION [IMPORTANT]
-Bot UID: %d
-Bot Username: %s
-Bot Display Name: %s
-
-### BOT INFLUENCE AWARENESS [IMPORTANT]
-- DO NOT attribute traits based on topics introduced by the bot
-- If the bot mentions a topic and the user merely responds, this is not evidence of a personal trait
-- Only identify traits from topics and interests the user has independently demonstrated
-- Ignore creative embellishments that might have been added by the bot in previous responses
-
-## OUTPUT FORMAT [CRITICAL]
-Return ONLY a JSON object, no additional text, with this structure:
-{
-  "users": {
-    "[user_id]": {
-      "display_names": "Comma-separated list of names/nicknames",
-      "origin_location": "Where the user is from",
-      "current_location": "Where the user currently lives",
-      "age_range": "Approximate age range (20s, 30s, etc.)",
-      "traits": "Comma-separated list of personality traits and characteristics"
-    }
-  }
-}`, botInfo.UserID, botInfo.Username, botInfo.DisplayName)
-
-	// Combine the configured instruction with the fixed part
-	fullInstruction := fmt.Sprintf("%s\n\n%s", configInstruction, botIdentificationAndFixedPart)
-
-	// Log information about the generated instruction
-	instructionLength := len(fullInstruction)
-	configLength := len(configInstruction)
-	fixedPartLength := len(botIdentificationAndFixedPart)
-
-	duration := time.Since(startTime)
-	slog.Debug("profile instruction generated",
-		"total_length", instructionLength,
-		"config_length", configLength,
-		"fixed_part_length", fixedPartLength,
-		"duration_ms", duration.Milliseconds())
-
-	return fullInstruction
 }
