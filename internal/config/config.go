@@ -38,15 +38,14 @@ type Config struct {
 	BotCmdProfiles string `koanf:"bot_cmd_profiles"`
 	BotCmdEditUser string `koanf:"bot_cmd_edit_user"`
 
-	AIToken               string        `koanf:"ai_token"               validate:"required"`
-	AIBaseURL             string        `koanf:"ai_base_url"            validate:"url"`
-	AIModel               string        `koanf:"ai_model"`
-	AITemperature         float32       `koanf:"ai_temperature"         validate:"min=0,max=2"`
-	AIInstruction         string        `koanf:"ai_instruction"         validate:"required"`
-	AIProfileInstruction  string        `koanf:"ai_profile_instruction" validate:"required"`
-	AITimeout             time.Duration `koanf:"ai_timeout"             validate:"min=1s,max=10m"`
-	AIMaxContextTokens    int           `koanf:"ai_max_context_tokens"  validate:"min=1000,max=1000000"`
-	AIUseStructuredOutput bool          `koanf:"ai_use_structured_output"`
+	AIToken              string        `koanf:"ai_token"               validate:"required"`
+	AIBaseURL            string        `koanf:"ai_base_url"            validate:"url"`
+	AIModel              string        `koanf:"ai_model"`
+	AITemperature        float32       `koanf:"ai_temperature"         validate:"min=0,max=2"`
+	AIInstruction        string        `koanf:"ai_instruction"         validate:"required"`
+	AIProfileInstruction string        `koanf:"ai_profile_instruction" validate:"required"`
+	AITimeout            time.Duration `koanf:"ai_timeout"             validate:"min=1s,max=10m"`
+	AIMaxContextTokens   int           `koanf:"ai_max_context_tokens"  validate:"min=1000,max=1000000"`
 
 	DBPath string `koanf:"db_path"`
 }
@@ -98,12 +97,11 @@ func Load() (*Config, error) {
 func setDefaults(config *Config) {
 	config.LogLevel = "info"
 
-	config.AIBaseURL = "https://api.openrouter.ai/api/v1"
+	config.AIBaseURL = "https://api.openai.com/v1"
 	config.AIModel = "gpt-4o"
 	config.AITemperature = 1.7
 	config.AIMaxContextTokens = 16000
 	config.AITimeout = 2 * time.Minute
-	config.AIUseStructuredOutput = true
 
 	config.DBPath = "storage.db"
 

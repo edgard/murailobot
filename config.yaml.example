@@ -28,12 +28,11 @@ ai_profile_instruction: "You are a behavioral analyst with expertise in psycholo
 log_level: "info"   # Options: debug, info, warn, error
 
 # AI Configuration
-ai_base_url: "https://api.openrouter.ai/api/v1"  # API endpoint URL
-ai_model: "gpt-4o"                               # Model identifier
-ai_temperature: 1.7                              # Range: 0.0-2.0 (higher = more random)
-ai_max_context_tokens: 16000                     # Range: 1000-1000000
-ai_timeout: "2m"                                 # Format: 30s, 2m, 1h (Range: 1s-10m)
-ai_use_structured_output: true                   # Enable structured JSON responses
+ai_base_url: "https://api.openai.com/v1"  # API endpoint URL
+ai_model: "gpt-4o"                        # Model identifier
+ai_temperature: 1.7                       # Range: 0.0-2.0 (higher = more random)
+ai_max_context_tokens: 16000              # Range: 1000-1000000
+ai_timeout: "2m"                          # Format: 30s, 2m, 1h (Range: 1s-10m)
 
 # Database Configuration
 db_path: "storage.db"  # Path to SQLite database file
