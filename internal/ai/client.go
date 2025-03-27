@@ -383,49 +383,54 @@ func (c *Client) GenerateProfiles(ctx context.Context, messages []*db.Message, e
 		JSONSchema: &JSONSchema{
 			Name:   "profile_generation",
 			Strict: true,
-			Schema: map[string]interface{}{
-				"type": "object",
-				"properties": map[string]interface{}{
-					"users": map[string]interface{}{
-						"type": "object",
-						"patternProperties": map[string]interface{}{
-							"^[0-9]+$": map[string]interface{}{
-								"type": "object",
-								"properties": map[string]interface{}{
-									"display_names": map[string]interface{}{
-										"type":        "string",
-										"description": "Comma-separated list of names/nicknames used by the user",
-									},
-									"origin_location": map[string]interface{}{
-										"type":        "string",
-										"description": "Where the user is from",
-									},
-									"current_location": map[string]interface{}{
-										"type":        "string",
-										"description": "Where the user currently lives",
-									},
-									"age_range": map[string]interface{}{
-										"type":        "string",
-										"description": "Approximate age range (20s, 30s, etc.)",
-									},
-									"traits": map[string]interface{}{
-										"type":        "string",
-										"description": "Comma-separated list of personality traits and characteristics",
-									},
+			Schema: SchemaType{
+				Type: "object",
+				Properties: map[string]Property{
+					"users": {
+						Type:        "array",
+						Description: "List of user profiles",
+						Items: &Property{
+							Type: "object",
+							Properties: map[string]Property{
+								"user_id": {
+									Type:        "integer",
+									Description: "Numeric ID of the user",
 								},
-								"required": []string{
-									"display_names",
-									"origin_location",
-									"current_location",
-									"age_range",
-									"traits",
+								"display_names": {
+									Type:        "string",
+									Description: "Comma-separated list of names/nicknames used by the user",
+								},
+								"origin_location": {
+									Type:        "string",
+									Description: "Where the user is from",
+								},
+								"current_location": {
+									Type:        "string",
+									Description: "Where the user currently lives",
+								},
+								"age_range": {
+									Type:        "string",
+									Description: "Approximate age range (20s, 30s, etc.)",
+								},
+								"traits": {
+									Type:        "string",
+									Description: "Comma-separated list of personality traits and characteristics",
 								},
 							},
+							Required: []string{
+								"user_id",
+								"display_names",
+								"origin_location",
+								"current_location",
+								"age_range",
+								"traits",
+							},
+							AdditionalProperties: false,
 						},
 					},
 				},
-				"required":             []string{"users"},
-				"additionalProperties": false,
+				Required:             []string{"users"},
+				AdditionalProperties: false,
 			},
 		},
 	}

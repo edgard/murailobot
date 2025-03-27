@@ -37,11 +37,29 @@ type Provider struct {
 	RequireParameters bool `json:"require_parameters"`
 }
 
+// SchemaType represents a JSON schema structure
+type SchemaType struct {
+	Type                 string              `json:"type"`
+	Properties           map[string]Property `json:"properties"`
+	Required             []string            `json:"required"`
+	AdditionalProperties bool                `json:"additionalProperties"`
+}
+
+// Property represents a JSON schema property with optional nested schema
+type Property struct {
+	Type                 string              `json:"type,omitempty"`
+	Description          string              `json:"description,omitempty"`
+	Properties           map[string]Property `json:"properties,omitempty"`
+	Required             []string            `json:"required,omitempty"`
+	AdditionalProperties interface{}         `json:"additionalProperties,omitempty"`
+	Items                *Property           `json:"items,omitempty"`
+}
+
 // JSONSchema represents the structure of the JSON schema for response validation
 type JSONSchema struct {
-	Name   string                 `json:"name"`
-	Strict bool                   `json:"strict"`
-	Schema map[string]interface{} `json:"schema"`
+	Name   string     `json:"name"`
+	Strict bool       `json:"strict"`
+	Schema SchemaType `json:"schema"`
 }
 
 // ResponseFormat represents the desired format for the API response
