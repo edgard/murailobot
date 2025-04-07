@@ -2,14 +2,9 @@ package interfaces
 
 import (
 	"context"
-)
 
-// BotInfo holds the bot's identification information
-type BotInfo struct {
-	UserID      int64
-	Username    string
-	DisplayName string
-}
+	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+)
 
 // Bot defines the interface for bot operations
 type Bot interface {
@@ -19,11 +14,8 @@ type Bot interface {
 	// Stop halts bot operation
 	Stop() error
 
-	// SetName updates bot name information
-	SetName(username, displayName string)
-
 	// GetInfo returns the bot's identification information
-	GetInfo() BotInfo
+	GetInfo() *tgbotapi.User
 
 	// SendMessage sends a message to a chat
 	SendMessage(chatID int64, text string) error

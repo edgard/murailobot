@@ -96,34 +96,41 @@ func New(cfg Config) (*Application, error) {
 		return nil, fmt.Errorf("%w: database initialization failed", common.ErrInitialization)
 	}
 
-	// Initialize AI service
-	cfg.OpenAI.Bot = nil // Will be set after bot initialization
-	ai, err := services.NewOpenAI(cfg.OpenAI)
-	if err != nil {
-		return nil, fmt.Errorf("%w: AI service initialization failed", common.ErrInitialization)
-	}
-
 	// Initialize scheduler
 	scheduler, err := services.NewCron(cfg.Cron)
 	if err != nil {
 		return nil, fmt.Errorf("%w: scheduler initialization failed", common.ErrInitialization)
 	}
 
-	// Initialize bot configuration
-	cfg.Telegram.AI = ai
+	// Initialize bot configuration with database and scheduler
 	cfg.Telegram.DB = db
 	cfg.Telegram.Scheduler = scheduler
 	cfg.Telegram.Commands = cfg.Commands
 	cfg.Telegram.Templates = cfg.Templates
 
-	// Initialize bot
+	// Initialize bot first to get bot info
 	bot, err := services.NewTelegram(cfg.Telegram)
 	if err != nil {
 		return nil, fmt.Errorf("%w: bot initialization failed", common.ErrInitialization)
 	}
 
-	// Set bot reference in OpenAI service
-	cfg.OpenAI.Bot = bot
+	// Set bot info in OpenAI config
+	cfg.OpenAI.BotUser = bot.GetInfo()
+
+	// Initialize AI service
+	ai, err := services.NewOpenAI(cfg.OpenAI)
+	if err != nil {
+		return nil, fmt.Errorf("%w: AI service initialization failed", common.ErrInitialization)
+	}
+
+	// Update bot configuration with AI service
+	cfg.Telegram.AI = ai
+
+	// Re-initialize Telegram service with complete configuration
+	bot, err = services.NewTelegram(cfg.Telegram)
+	if err != nil {
+		return nil, fmt.Errorf("%w: bot re-initialization failed", common.ErrInitialization)
+	}
 
 	return &Application{
 		db:        db,

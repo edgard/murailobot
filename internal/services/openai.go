@@ -12,6 +12,7 @@ import (
 	"github.com/edgard/murailobot/internal/common"
 	"github.com/edgard/murailobot/internal/interfaces"
 	"github.com/edgard/murailobot/internal/models"
+	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/sashabaranov/go-openai"
 )
 
@@ -25,7 +26,7 @@ type OpenAIConfig struct {
 	Timeout            time.Duration
 	Instruction        string
 	ProfileInstruction string
-	Bot                interfaces.Bot
+	BotUser            *tgbotapi.User
 }
 
 // OpenAI implements the AI interface using OpenAI's API
@@ -57,10 +58,6 @@ func NewOpenAI(config OpenAIConfig) (interfaces.AI, error) {
 		config.MaxTokens = 4000
 	}
 
-	if config.Bot == nil {
-		return nil, common.ErrBotRequired
-	}
-
 	aiConfig := openai.DefaultConfig(config.Token)
 	if config.BaseURL != "" {
 		aiConfig.BaseURL = config.BaseURL
@@ -78,10 +75,9 @@ func NewOpenAI(config OpenAIConfig) (interfaces.AI, error) {
 
 // createSystemPrompt generates the system prompt for the AI model
 func (o *OpenAI) createSystemPrompt(userProfiles map[int64]*models.UserProfile) string {
-	botInfo := o.config.Bot.GetInfo()
-	displayName := botInfo.Username
-	if botInfo.DisplayName != "" {
-		displayName = botInfo.DisplayName
+	displayName := o.config.BotUser.UserName
+	if o.config.BotUser.FirstName != "" {
+		displayName = o.config.BotUser.FirstName
 	}
 
 	botIdentityHeader := fmt.Sprintf(
@@ -90,7 +86,7 @@ func (o *OpenAI) createSystemPrompt(userProfiles map[int64]*models.UserProfile) 
 			"this is normal and expected. Always respond directly to the content of the message. "+
 			"Even if the message doesn't contain a clear question, assume it's directed at you "+
 			"and respond appropriately.\n\n",
-		displayName, botInfo.Username, botInfo.Username)
+		displayName, o.config.BotUser.UserName, o.config.BotUser.UserName)
 
 	systemPrompt := botIdentityHeader + o.config.Instruction
 
@@ -109,10 +105,10 @@ func (o *OpenAI) createSystemPrompt(userProfiles map[int64]*models.UserProfile) 
 
 		for _, id := range userIDs {
 			profile := userProfiles[id]
-			if id == botInfo.UserID {
-				botDisplayNames := botInfo.Username
-				if botInfo.DisplayName != "" && botInfo.DisplayName != botInfo.Username {
-					botDisplayNames = fmt.Sprintf("%s, %s", botInfo.DisplayName, botInfo.Username)
+			if id == o.config.BotUser.ID {
+				botDisplayNames := o.config.BotUser.UserName
+				if o.config.BotUser.FirstName != "" && o.config.BotUser.FirstName != o.config.BotUser.UserName {
+					botDisplayNames = fmt.Sprintf("%s, %s", o.config.BotUser.FirstName, o.config.BotUser.UserName)
 				}
 				profileInfo.WriteString(fmt.Sprintf("UID %d (%s) | Internet | Internet | N/A | Group Chat Bot\n",
 					id, botDisplayNames))
@@ -215,8 +211,6 @@ func (o *OpenAI) GenerateProfile(ctx context.Context, userID int64, messages []*
 		return nil, common.ErrInvalidUserID
 	}
 
-	botInfo := o.config.Bot.GetInfo()
-
 	// Create instruction
 	instruction := fmt.Sprintf(`
 ## BOT IDENTIFICATION [IMPORTANT]
@@ -240,7 +234,7 @@ Return ONLY a JSON object with this structure:
     "traits": "Comma-separated list of personality traits and characteristics"
 }
 
-%s`, botInfo.UserID, botInfo.Username, botInfo.DisplayName, o.config.ProfileInstruction)
+%s`, o.config.BotUser.ID, o.config.BotUser.UserName, o.config.BotUser.FirstName, o.config.ProfileInstruction)
 
 	// Calculate available tokens after instruction
 	systemTokens, err := common.CountTokens(instruction)
@@ -325,10 +319,10 @@ Return ONLY a JSON object with this structure:
 	profile.LastUpdated = time.Now().UTC()
 
 	// Special handling for bot's own profile
-	if userID == botInfo.UserID {
-		botDisplayNames := botInfo.Username
-		if botInfo.DisplayName != "" && botInfo.DisplayName != botInfo.Username {
-			botDisplayNames = fmt.Sprintf("%s, %s", botInfo.DisplayName, botInfo.Username)
+	if userID == o.config.BotUser.ID {
+		botDisplayNames := o.config.BotUser.UserName
+		if o.config.BotUser.FirstName != "" && o.config.BotUser.FirstName != o.config.BotUser.UserName {
+			botDisplayNames = fmt.Sprintf("%s, %s", o.config.BotUser.FirstName, o.config.BotUser.UserName)
 		}
 		profile = models.UserProfile{
 			UserID:          userID,
@@ -339,7 +333,7 @@ Return ONLY a JSON object with this structure:
 			Traits:          "Group Chat Bot",
 			LastUpdated:     time.Now().UTC(),
 			IsBot:           true,
-			Username:        botInfo.Username,
+			Username:        o.config.BotUser.UserName,
 		}
 	}
 

@@ -24,18 +24,16 @@ type TelegramConfig struct {
 	Commands       map[string]string // Command -> Description
 	Templates      map[string]string // Template name -> Message template
 	MaxContextSize int               // Maximum number of messages for context
+	BotUser        *tgbotapi.User
 }
 
 // Telegram implements the Bot interface for Telegram
 type Telegram struct {
-	api         *tgbotapi.BotAPI
-	config      TelegramConfig
-	userID      int64
-	username    string
-	displayName string
-	ctx         context.Context
-	running     chan struct{}
-	handlers    map[string]func(*tgbotapi.Message) error
+	api      *tgbotapi.BotAPI
+	config   TelegramConfig
+	ctx      context.Context
+	running  chan struct{}
+	handlers map[string]func(*tgbotapi.Message) error
 }
 
 // messageProcessor encapsulates context for message processing
@@ -68,13 +66,16 @@ func NewTelegram(config TelegramConfig) (interfaces.Bot, error) {
 		return nil, fmt.Errorf("%w: failed to get bot info", common.ErrInitialization)
 	}
 
+	config.BotUser = &tgbotapi.User{
+		ID:        botUser.ID,
+		UserName:  botUser.UserName,
+		FirstName: botUser.FirstName,
+	}
+
 	t := &Telegram{
-		api:         bot,
-		config:      config,
-		userID:      botUser.ID,
-		username:    botUser.UserName,
-		displayName: botUser.FirstName,
-		running:     make(chan struct{}),
+		api:     bot,
+		config:  config,
+		running: make(chan struct{}),
 	}
 
 	// Initialize command handlers
@@ -143,19 +144,9 @@ func (t *Telegram) Stop() error {
 	return nil
 }
 
-// SetName updates bot name information
-func (t *Telegram) SetName(username, displayName string) {
-	t.username = username
-	t.displayName = displayName
-}
-
 // GetInfo returns the bot's identification information
-func (t *Telegram) GetInfo() interfaces.BotInfo {
-	return interfaces.BotInfo{
-		UserID:      t.userID,
-		Username:    t.username,
-		DisplayName: t.displayName,
-	}
+func (t *Telegram) GetInfo() *tgbotapi.User {
+	return t.config.BotUser
 }
 
 // SendMessage sends a message to a chat
@@ -285,7 +276,7 @@ func (t *Telegram) startTyping(chatID int64) chan struct{} {
 // handleGroupMessage processes a message from a group chat
 func (t *Telegram) handleGroupMessage(ctx context.Context, message *tgbotapi.Message) error {
 	// Check for bot mention
-	botMention := "@" + t.username
+	botMention := "@" + t.config.BotUser.UserName
 	if !strings.Contains(message.Text, botMention) {
 		// For non-mention messages, just save and return
 		msg := &models.Message{
@@ -351,7 +342,7 @@ func (t *Telegram) handleGroupMessage(ctx context.Context, message *tgbotapi.Mes
 			IsFromBot: false,
 		},
 		{
-			UserID:    t.userID,
+			UserID:    t.config.BotUser.ID,
 			GroupID:   message.Chat.ID,
 			Content:   response,
 			CreatedAt: now,
