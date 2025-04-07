@@ -5,7 +5,6 @@ import (
 	"encoding/hex"
 	"fmt"
 	"log/slog"
-	"sync"
 	"time"
 
 	"github.com/edgard/murailobot/internal/common"
@@ -23,7 +22,6 @@ type Cron struct {
 	scheduler gocron.Scheduler
 	config    CronConfig
 	jobs      map[string]gocron.Job
-	jobsMu    sync.RWMutex
 	stopCh    chan struct{}
 }
 
@@ -104,9 +102,6 @@ func (c *Cron) AddJob(name, cronExpr string, job func()) error {
 	if job == nil {
 		return common.ErrNilJobFunction
 	}
-
-	c.jobsMu.Lock()
-	defer c.jobsMu.Unlock()
 
 	// Check if job already exists
 	if _, exists := c.jobs[name]; exists {

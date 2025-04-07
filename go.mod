@@ -11,6 +11,7 @@ require (
 	github.com/knadh/koanf/v2 v2.1.2
 	github.com/pkoukk/tiktoken-go v0.1.7
 	github.com/sashabaranov/go-openai v1.38.0
+	golang.org/x/sync v0.13.0
 	gorm.io/driver/sqlite v1.5.7
 	gorm.io/gorm v1.25.12
 )

@@ -12,6 +12,7 @@ import (
 	"github.com/edgard/murailobot/internal/interfaces"
 	"github.com/edgard/murailobot/internal/models"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+	"golang.org/x/sync/errgroup"
 )
 
 // TelegramConfig holds configuration for Telegram bot
@@ -99,27 +100,33 @@ func (t *Telegram) Start(ctx context.Context) error {
 	u.Timeout = 60
 	updates := t.api.GetUpdatesChan(u)
 
-	slog.Info("bot started and processing updates")
+	g, gctx := errgroup.WithContext(ctx)
+	g.Go(func() error {
+		for {
+			select {
+			case <-gctx.Done():
+				close(t.running)
+				return ctx.Err()
 
-	for {
-		select {
-		case <-ctx.Done():
-			close(t.running)
-			return ctx.Err()
+			case update, ok := <-updates:
+				if !ok {
+					slog.Info("update channel closed")
+					return nil
+				}
 
-		case update, ok := <-updates:
-			if !ok {
-				slog.Info("update channel closed")
-				return nil
+				if update.Message == nil {
+					continue
+				}
+
+				g.Go(func() error {
+					return t.handleMessage(gctx, update.Message)
+				})
 			}
-
-			if update.Message == nil {
-				continue
-			}
-
-			go t.handleMessage(ctx, update.Message)
 		}
-	}
+	})
+
+	slog.Info("bot started and processing updates")
+	return g.Wait()
 }
 
 // Stop halts bot operation
@@ -162,40 +169,28 @@ func (t *Telegram) GetFirstName() string {
 }
 
 // handleMessage processes an incoming message
-func (t *Telegram) handleMessage(ctx context.Context, message *tgbotapi.Message) {
+func (t *Telegram) handleMessage(ctx context.Context, message *tgbotapi.Message) error {
 	if err := t.validateMessage(message); err != nil {
 		slog.Error("invalid message", "error", err)
-		return
+		return nil // Non-critical error
 	}
 
 	if message.IsCommand() {
 		if err := t.handleCommand(ctx, message); err != nil {
-			if t.isCriticalError(err) {
-				slog.Error("critical command error",
-					"error", err,
-					"command", message.Command())
-			} else {
-				slog.Error("command error",
-					"error", err,
-					"command", message.Command())
-			}
+			slog.Error("command error", "error", err)
+			return err
 		}
-		return
+		return nil
 	}
 
 	if message.Chat.IsGroup() || message.Chat.IsSuperGroup() {
 		if err := t.handleGroupMessage(ctx, message); err != nil {
-			if t.isCriticalError(err) {
-				slog.Error("critical error in group message",
-					"error", err,
-					"chat_id", message.Chat.ID)
-				return
-			}
-			slog.Error("group message error",
-				"error", err,
-				"chat_id", message.Chat.ID)
+			slog.Error("group message error", "error", err)
+			return err
 		}
 	}
+
+	return nil
 }
 
 // validateMessage performs message validation
@@ -217,15 +212,6 @@ func (t *Telegram) validateMessage(msg *tgbotapi.Message) error {
 	}
 
 	return nil
-}
-
-// isCriticalError determines if an error is critical
-func (t *Telegram) isCriticalError(err error) bool {
-	if err == nil {
-		return false
-	}
-	return strings.Contains(err.Error(), "database connection") ||
-		strings.Contains(err.Error(), "token revoked")
 }
 
 // handleCommand processes bot commands
@@ -301,30 +287,42 @@ func (t *Telegram) handleAnalyzeCommand(ctx context.Context, message *tgbotapi.M
 		userMessages[msg.UserID] = append(userMessages[msg.UserID], msg)
 	}
 
-	// Update profiles
+	// Update profiles using errgroup for concurrency
+	g, gctx := errgroup.WithContext(ctx)
 	var messageIDs []uint
+
 	for userID, msgs := range userMessages {
-		profile, err := t.config.AI.GenerateProfile(ctx, userID, msgs)
-		if err != nil {
-			slog.Error("failed to generate profile",
-				"error", err,
-				"user_id", userID)
-			continue
-		}
+		msgs := msgs // Capture for goroutine
+		userID := userID
+		g.Go(func() error {
+			profile, err := t.config.AI.GenerateProfile(gctx, userID, msgs)
+			if err != nil {
+				slog.Error("failed to generate profile",
+					"error", err,
+					"user_id", userID)
+				return nil // Non-critical error
+			}
 
-		if existingProfile, ok := existingProfiles[userID]; ok {
-			t.mergeProfiles(profile, existingProfile)
-		}
+			if existingProfile, ok := existingProfiles[userID]; ok {
+				t.mergeProfiles(profile, existingProfile)
+			}
 
-		for _, msg := range msgs {
-			messageIDs = append(messageIDs, msg.ID)
-		}
+			for _, msg := range msgs {
+				messageIDs = append(messageIDs, msg.ID)
+			}
 
-		if err := t.config.DB.SaveProfile(ctx, profile); err != nil {
-			slog.Error("failed to save profile",
-				"error", err,
-				"user_id", userID)
-		}
+			if err := t.config.DB.SaveProfile(gctx, profile); err != nil {
+				slog.Error("failed to save profile",
+					"error", err,
+					"user_id", userID)
+				return err
+			}
+			return nil
+		})
+	}
+
+	if err := g.Wait(); err != nil {
+		slog.Error("error processing profiles", "error", err)
 	}
 
 	if len(messageIDs) > 0 {
