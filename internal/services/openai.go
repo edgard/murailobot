@@ -119,9 +119,14 @@ func (o *OpenAI) createSystemPrompt(userProfiles map[int64]*models.UserProfile, 
 		for _, id := range userIDs {
 			profile := userProfiles[id]
 			if id == botInfo.ID {
-				botDisplayNames := getBotDisplayNames(botInfo)
+				// Inline the display name formatting logic
+				botDisplayName := botInfo.UserName
+				if botInfo.FirstName != "" && botInfo.FirstName != botInfo.UserName {
+					botDisplayName = fmt.Sprintf("%s, %s", botInfo.FirstName, botInfo.UserName)
+				}
+
 				profileInfo.WriteString(fmt.Sprintf("UID %d (%s) | Internet | Internet | N/A | Group Chat Bot\n",
-					id, botDisplayNames))
+					id, botDisplayName))
 				continue
 			}
 			profileInfo.WriteString(fmt.Sprintf("UID %d (%s) | %s | %s | %s | %s\n",
@@ -211,9 +216,15 @@ func (o *OpenAI) GenerateProfile(ctx context.Context, userID int64, messages []*
 	}
 
 	if userID == botInfo.ID {
+		// Inline the display name formatting logic
+		displayNames := botInfo.UserName
+		if botInfo.FirstName != "" && botInfo.FirstName != botInfo.UserName {
+			displayNames = fmt.Sprintf("%s, %s", botInfo.FirstName, botInfo.UserName)
+		}
+
 		return &models.UserProfile{
 			UserID:          botInfo.ID,
-			DisplayNames:    getBotDisplayNames(botInfo),
+			DisplayNames:    displayNames,
 			OriginLocation:  "Internet",
 			CurrentLocation: "Internet",
 			AgeRange:        "N/A",
@@ -326,12 +337,4 @@ Return ONLY a JSON object with this structure:
 	profile.LastUpdated = time.Now().UTC()
 
 	return &profile, nil
-}
-
-// getBotDisplayNames returns the bot's display names
-func getBotDisplayNames(botInfo models.BotInfo) string {
-	if botInfo.FirstName != "" && botInfo.FirstName != botInfo.UserName {
-		return fmt.Sprintf("%s, %s", botInfo.FirstName, botInfo.UserName)
-	}
-	return botInfo.UserName
 }
