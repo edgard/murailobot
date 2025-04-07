@@ -1,30 +1,9 @@
-// Package db provides database models and operations for MurailoBot,
-// handling message storage, user profile management, and data persistence.
-package db
+package models
 
 import (
 	"fmt"
 	"time"
 )
-
-// Message represents a message sent in a Telegram group chat.
-// It stores the message content, sender information, and processing status
-// for use in conversation context and user profile analysis.
-type Message struct {
-	ID        uint       `gorm:"primarykey" json:"id"`
-	CreatedAt time.Time  `json:"created_at"`
-	UpdatedAt time.Time  `json:"updated_at"`
-	DeletedAt *time.Time `gorm:"index"      json:"deleted_at,omitempty"`
-
-	GroupID   int64  `gorm:"not null;index" json:"group_id"`
-	GroupName string `gorm:"type:text"      json:"group_name"`
-
-	UserID    int64     `gorm:"not null;index"     json:"user_id"`
-	Content   string    `gorm:"not null;type:text" json:"content"`
-	Timestamp time.Time `gorm:"not null;index"     json:"timestamp"`
-
-	ProcessedAt *time.Time `gorm:"index" json:"processed_at"`
-}
 
 // UserProfile represents a user's accumulated profile information
 // derived from their message history. It stores demographic information,
@@ -43,12 +22,13 @@ type UserProfile struct {
 	AgeRange        string    `gorm:"type:text"            json:"age_range"`
 	Traits          string    `gorm:"type:text"            json:"traits"`
 	LastUpdated     time.Time `gorm:"not null"             json:"last_updated"`
+	IsBot           bool      `gorm:"not null;default:false" json:"is_bot"`
+	Username        string    `gorm:"type:text"            json:"username,omitempty"`
 }
 
 // FormatPipeDelimited formats the user profile as a pipe-delimited string
 // for display purposes. The format follows:
 // "UID [user_id] ([display_names]) | [origin_location] | [current_location] | [age_range] | [traits]"
-//
 // Empty fields are replaced with "Unknown" for consistent formatting.
 func (p *UserProfile) FormatPipeDelimited() string {
 	if p == nil {

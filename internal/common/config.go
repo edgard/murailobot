@@ -1,11 +1,10 @@
-// Package config provides configuration loading, validation, and management
-// for the MurailoBot application. It handles reading from YAML files,
-// setting default values, and validating configuration parameters.
-package config
+package common
 
 import (
+	"fmt"
 	"log/slog"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/go-playground/validator/v10"
@@ -14,15 +13,18 @@ import (
 	"github.com/knadh/koanf/v2"
 )
 
-// Config defines the application configuration parameters for all components
-// of the MurailoBot system, including logging, bot settings, AI integration,
+// Config defines the application configuration parameters.
+// It includes settings for logging, bot operation, AI integration,
 // and database configuration.
 type Config struct {
+	// Log level configuration
 	LogLevel string `koanf:"log_level" validate:"oneof=debug info warn error"`
 
+	// Bot configuration
 	BotToken   string `koanf:"bot_token"    validate:"required"`
 	BotAdminID int64  `koanf:"bot_admin_id" validate:"required,gt=0"`
 
+	// Bot message templates
 	BotMsgWelcome        string `koanf:"bot_msg_welcome"`
 	BotMsgNotAuthorized  string `koanf:"bot_msg_not_authorized"`
 	BotMsgProvideMessage string `koanf:"bot_msg_provide_message"`
@@ -32,35 +34,35 @@ type Config struct {
 	BotMsgNoProfiles     string `koanf:"bot_msg_no_profiles"`
 	BotMsgProfilesHeader string `koanf:"bot_msg_profiles_header"`
 
+	// Bot command descriptions
 	BotCmdStart    string `koanf:"bot_cmd_start"`
 	BotCmdReset    string `koanf:"bot_cmd_reset"`
 	BotCmdAnalyze  string `koanf:"bot_cmd_analyze"`
 	BotCmdProfiles string `koanf:"bot_cmd_profiles"`
 	BotCmdEditUser string `koanf:"bot_cmd_edit_user"`
 
+	// AI service configuration
 	AIToken              string        `koanf:"ai_token"               validate:"required"`
 	AIBaseURL            string        `koanf:"ai_base_url"            validate:"url"`
-	AIModel              string        `koanf:"ai_model"`
+	AIModel              string        `koanf:"ai_model"               validate:"required"`
 	AITemperature        float32       `koanf:"ai_temperature"         validate:"min=0,max=2"`
 	AIInstruction        string        `koanf:"ai_instruction"         validate:"required"`
 	AIProfileInstruction string        `koanf:"ai_profile_instruction" validate:"required"`
 	AITimeout            time.Duration `koanf:"ai_timeout"             validate:"min=1s,max=10m"`
 	AIMaxContextTokens   int           `koanf:"ai_max_context_tokens"  validate:"min=1000,max=1000000"`
 
-	DBPath string `koanf:"db_path"`
+	// Database configuration
+	DBPath string `koanf:"db_path" validate:"required"`
 }
 
-// Load reads configuration from config.yaml, sets default values for
-// optional fields, and validates the configuration. If the config file
-// doesn't exist, it uses default values for all optional fields.
+// LoadConfig loads configuration from config.yaml, sets default values,
+// and validates the configuration. If the config file doesn't exist,
+// it uses default values for optional fields.
 //
 // Returns the validated configuration or an error if loading or validation fails.
-func Load() (*Config, error) {
-	slog.Debug("loading configuration")
-
+// The error will include details about any validation failures.
+func LoadConfig() (*Config, error) {
 	config := &Config{}
-
-	// Set default values and load configuration from file
 	setDefaults(config)
 
 	configPath := "config.yaml"
@@ -68,43 +70,55 @@ func Load() (*Config, error) {
 	k := koanf.New(".")
 	if err := k.Load(file.Provider(configPath), yaml.Parser()); err != nil {
 		if !os.IsNotExist(err) {
-			return nil, err
+			return nil, fmt.Errorf("failed to read config file: %w", err)
 		}
-
-		slog.Debug("using default configuration (no config file found)")
 	} else {
-		// Only log parsing errors, don't log normal parsing operations
 		if err := k.Unmarshal("", config); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("failed to parse config file: %w", err)
 		}
 	}
 
 	// Validate configuration
 	if err := validator.New().Struct(config); err != nil {
-		return nil, err
+		var validationErrors []string
+		if errs, ok := err.(validator.ValidationErrors); ok {
+			for _, e := range errs {
+				validationErrors = append(validationErrors,
+					fmt.Sprintf("%s: failed %s validation", e.Field(), e.Tag()))
+			}
+			return nil, fmt.Errorf("configuration validation failed:\n- %s",
+				strings.Join(validationErrors, "\n- "))
+		}
+		return nil, fmt.Errorf("configuration validation failed: %w", err)
 	}
 
-	// Log only the most important settings at Info level with consolidated information
+	// Log configuration summary
 	slog.Info("configuration loaded",
 		"log_level", config.LogLevel,
 		"ai_model", config.AIModel,
-		"db_path", config.DBPath,
-		"max_tokens", config.AIMaxContextTokens)
+		"ai_max_tokens", config.AIMaxContextTokens,
+		"ai_temperature", config.AITemperature,
+		"db_path", config.DBPath)
 
 	return config, nil
 }
 
+// setDefaults initializes configuration with sensible default values
 func setDefaults(config *Config) {
+	// Logging defaults
 	config.LogLevel = "info"
 
+	// AI service defaults
 	config.AIBaseURL = "https://api.openai.com/v1"
-	config.AIModel = "gpt-4o"
-	config.AITemperature = 1.7
-	config.AIMaxContextTokens = 16000
+	config.AIModel = "gpt-3.5-turbo" // Default to GPT-3.5 for cost efficiency
+	config.AITemperature = 0.7       // Default temperature for balanced creativity
+	config.AIMaxContextTokens = 4000 // Default context window size
 	config.AITimeout = 2 * time.Minute
 
+	// Database defaults
 	config.DBPath = "storage.db"
 
+	// Bot message template defaults
 	config.BotMsgWelcome = "I'm ready to assist you. Mention me in your group message to start a conversation."
 	config.BotMsgNotAuthorized = "You are not authorized to use this command."
 	config.BotMsgProvideMessage = "Please provide a message."
@@ -114,9 +128,25 @@ func setDefaults(config *Config) {
 	config.BotMsgNoProfiles = "No user profiles found."
 	config.BotMsgProfilesHeader = "User Profiles:\n\n"
 
+	// Bot command description defaults
 	config.BotCmdStart = "Start conversation with the bot"
 	config.BotCmdReset = "Reset chat history (admin only)"
 	config.BotCmdAnalyze = "Analyze messages and update profiles (admin only)"
 	config.BotCmdProfiles = "Show user profiles (admin only)"
 	config.BotCmdEditUser = "Edit user profile data (admin only)"
+
+	// Default instructions
+	config.AIInstruction = `You are a helpful and engaging group chat bot. ` +
+		`Your responses should be concise, relevant, and natural. ` +
+		`Feel free to use appropriate emoji occasionally. ` +
+		`When users share personal information, remember it for future context.`
+
+	config.AIProfileInstruction = `Analyze the user's messages to identify: ` +
+		`- Display names and nicknames they use ` +
+		`- Location information (current and origin) ` +
+		`- Approximate age range based on context ` +
+		`- Notable personality traits and interests ` +
+		`Focus on clear patterns and explicitly stated information. ` +
+		`Avoid speculative assumptions. ` +
+		`If certain information is not available, leave those fields empty.`
 }
