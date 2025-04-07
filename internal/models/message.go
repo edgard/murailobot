@@ -24,24 +24,3 @@ type Message struct {
 	// ProcessedAt marks when the message was analyzed for user profiling
 	ProcessedAt *time.Time `gorm:"index" json:"processed_at,omitempty"`
 }
-
-// NewMessage creates a new message with proper defaults
-func NewMessage(userID, groupID int64, content string, isFromBot bool) *Message {
-	now := time.Now().UTC()
-	return &Message{
-		UserID:    userID,
-		GroupID:   groupID,
-		Content:   content,
-		IsFromBot: isFromBot,
-		CreatedAt: now,
-		UpdatedAt: now,
-	}
-}
-
-// MarkProcessed marks the message as processed for profile analysis
-func (m *Message) MarkProcessed() {
-	now := time.Now().UTC()
-	m.Processed = true
-	m.ProcessedAt = &now
-	m.UpdatedAt = now
-}

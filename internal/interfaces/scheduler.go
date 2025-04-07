@@ -18,12 +18,6 @@ type Scheduler interface {
 	// AddJob adds a new scheduled job
 	AddJob(name string, schedule string, job func()) error
 
-	// RemoveJob removes a scheduled job
-	RemoveJob(name string) error
-
-	// ListJobs returns information about all scheduled jobs
-	ListJobs() []JobInfo
-
 	// Start begins scheduler operation
 	Start(ctx context.Context) error
 

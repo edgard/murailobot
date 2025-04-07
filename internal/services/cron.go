@@ -5,7 +5,6 @@ import (
 	"encoding/hex"
 	"fmt"
 	"log/slog"
-	"sort"
 	"sync"
 	"time"
 
@@ -156,57 +155,6 @@ func (c *Cron) AddJob(name, cronExpr string, job func()) error {
 	slog.Info("job scheduled", logAttrs...)
 
 	return nil
-}
-
-// RemoveJob removes a scheduled job
-func (c *Cron) RemoveJob(name string) error {
-	c.jobsMu.Lock()
-	defer c.jobsMu.Unlock()
-
-	job, exists := c.jobs[name]
-	if !exists {
-		return fmt.Errorf("%w: %s", common.ErrJobNotFound, name)
-	}
-
-	if err := c.scheduler.RemoveJob(job.ID()); err != nil {
-		return fmt.Errorf("%w: %s", common.ErrJobRemove, err)
-	}
-
-	delete(c.jobs, name)
-	slog.Info("job removed",
-		"job_name", name,
-		"job_id", uuidToString(job.ID()))
-
-	return nil
-}
-
-// ListJobs returns information about all scheduled jobs
-func (c *Cron) ListJobs() []interfaces.JobInfo {
-	c.jobsMu.RLock()
-	defer c.jobsMu.RUnlock()
-
-	jobs := make([]interfaces.JobInfo, 0, len(c.jobs))
-	for name, job := range c.jobs {
-		info := interfaces.JobInfo{
-			Name:  name,
-			JobID: uuidToString(job.ID()),
-		}
-
-		if nextRun, err := job.NextRun(); err == nil {
-			info.NextRun = nextRun
-		} else {
-			info.LastError = err.Error()
-		}
-
-		jobs = append(jobs, info)
-	}
-
-	// Sort jobs by name for consistent ordering
-	sort.Slice(jobs, func(i, j int) bool {
-		return jobs[i].Name < jobs[j].Name
-	})
-
-	return jobs
 }
 
 // gocronLogAdapter adapts gocron logging to slog

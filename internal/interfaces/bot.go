@@ -2,8 +2,6 @@ package interfaces
 
 import (
 	"context"
-
-	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
 // Bot defines the interface for bot operations
@@ -14,8 +12,14 @@ type Bot interface {
 	// Stop halts bot operation
 	Stop() error
 
-	// GetInfo returns the bot's identification information
-	GetInfo() *tgbotapi.User
+	// GetID returns the bot's unique identifier
+	GetID() int64
+
+	// GetUserName returns the bot's username
+	GetUserName() string
+
+	// GetFirstName returns the bot's first name
+	GetFirstName() string
 
 	// SendMessage sends a message to a chat
 	SendMessage(chatID int64, text string) error

@@ -21,4 +21,7 @@ type DB interface {
 	BatchSaveProfiles(ctx context.Context, profiles []*models.UserProfile) error
 	GetProfile(ctx context.Context, userID int64) (*models.UserProfile, error)
 	GetAllProfiles(ctx context.Context) (map[int64]*models.UserProfile, error)
+
+	// Stop closes the database connection and releases any resources
+	Stop() error
 }

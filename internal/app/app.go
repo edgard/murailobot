@@ -115,7 +115,9 @@ func New(cfg Config) (*Application, error) {
 	}
 
 	// Set bot info in OpenAI config
-	cfg.OpenAI.BotUser = bot.GetInfo()
+	cfg.OpenAI.BotID = bot.GetID()
+	cfg.OpenAI.BotUserName = bot.GetUserName()
+	cfg.OpenAI.BotFirstName = bot.GetFirstName()
 
 	// Initialize AI service
 	ai, err := services.NewOpenAI(cfg.OpenAI)
@@ -157,29 +159,38 @@ func (a *Application) Start(errCh chan<- error) error {
 	return nil
 }
 
-// Stop gracefully shuts down all components
+// Stop gracefully shuts down all components in the correct order:
+// 1. AI service (stop first to prevent new message processing)
+// 2. Bot service (stop next to prevent new messages)
+// 3. Scheduler (stop next to prevent scheduled tasks)
+// 4. Database (stop last as other services might need it during shutdown)
 func (a *Application) Stop(ctx context.Context) error {
 	slog.Info("shutting down application")
 
-	// Create error channel for parallel shutdown
-	errCh := make(chan error, 3)
+	// Create error channel for shutdown errors
+	errCh := make(chan error, 4) // Buffer size matches number of services
 	done := make(chan struct{})
 
-	// Shutdown components in parallel
+	// Shutdown components in the correct order
 	go func() {
+		// 1. Stop AI service first
+		if err := a.ai.Stop(); err != nil {
+			errCh <- fmt.Errorf("AI shutdown failed: %w", err)
+		}
+
+		// 2. Stop bot service next
 		if err := a.bot.Stop(); err != nil {
-			errCh <- fmt.Errorf("%w: bot shutdown failed", common.ErrServiceStop)
+			errCh <- fmt.Errorf("bot shutdown failed: %w", err)
 		}
 
+		// 3. Stop scheduler
 		if err := a.scheduler.Stop(); err != nil {
-			errCh <- fmt.Errorf("%w: scheduler shutdown failed", common.ErrServiceStop)
+			errCh <- fmt.Errorf("scheduler shutdown failed: %w", err)
 		}
 
-		// Close database last
-		if db, ok := a.db.(*services.SQL); ok {
-			if err := db.Close(); err != nil {
-				errCh <- fmt.Errorf("%w: database shutdown failed", common.ErrServiceStop)
-			}
+		// 4. Stop database last
+		if err := a.db.Stop(); err != nil {
+			errCh <- fmt.Errorf("database shutdown failed: %w", err)
 		}
 
 		close(done)
@@ -189,7 +200,7 @@ func (a *Application) Stop(ctx context.Context) error {
 	select {
 	case <-done:
 	case <-ctx.Done():
-		return common.ErrShutdownTimeout
+		return fmt.Errorf("%w: shutdown timeout", common.ErrShutdownTimeout)
 	}
 
 	// Collect any errors that occurred during shutdown
@@ -203,6 +214,7 @@ func (a *Application) Stop(ctx context.Context) error {
 		return fmt.Errorf("%w: %v", common.ErrServiceStop, errs)
 	}
 
+	slog.Info("application shutdown completed")
 	return nil
 }
 

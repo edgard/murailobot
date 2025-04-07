@@ -24,7 +24,9 @@ type TelegramConfig struct {
 	Commands       map[string]string // Command -> Description
 	Templates      map[string]string // Template name -> Message template
 	MaxContextSize int               // Maximum number of messages for context
-	BotUser        *tgbotapi.User
+	botID          int64
+	botUserName    string
+	botFirstName   string
 }
 
 // Telegram implements the Bot interface for Telegram
@@ -34,16 +36,6 @@ type Telegram struct {
 	ctx      context.Context
 	running  chan struct{}
 	handlers map[string]func(*tgbotapi.Message) error
-}
-
-// messageProcessor encapsulates context for message processing
-type messageProcessor struct {
-	chatID   int64
-	userID   int64
-	text     string
-	isBot    bool
-	profiles map[int64]*models.UserProfile
-	messages []*models.Message
 }
 
 // NewTelegram creates a new Telegram bot instance
@@ -66,11 +58,9 @@ func NewTelegram(config TelegramConfig) (interfaces.Bot, error) {
 		return nil, fmt.Errorf("%w: failed to get bot info", common.ErrInitialization)
 	}
 
-	config.BotUser = &tgbotapi.User{
-		ID:        botUser.ID,
-		UserName:  botUser.UserName,
-		FirstName: botUser.FirstName,
-	}
+	config.botID = botUser.ID
+	config.botUserName = botUser.UserName
+	config.botFirstName = botUser.FirstName
 
 	t := &Telegram{
 		api:     bot,
@@ -144,11 +134,6 @@ func (t *Telegram) Stop() error {
 	return nil
 }
 
-// GetInfo returns the bot's identification information
-func (t *Telegram) GetInfo() *tgbotapi.User {
-	return t.config.BotUser
-}
-
 // SendMessage sends a message to a chat
 func (t *Telegram) SendMessage(chatID int64, text string) error {
 	msg := tgbotapi.NewMessage(chatID, text)
@@ -157,6 +142,21 @@ func (t *Telegram) SendMessage(chatID int64, text string) error {
 		return fmt.Errorf("%w: failed to send message", common.ErrNoResponse)
 	}
 	return nil
+}
+
+// GetID returns the bot's unique identifier
+func (t *Telegram) GetID() int64 {
+	return t.config.botID
+}
+
+// GetUserName returns the bot's username
+func (t *Telegram) GetUserName() string {
+	return t.config.botUserName
+}
+
+// GetFirstName returns the bot's first name
+func (t *Telegram) GetFirstName() string {
+	return t.config.botFirstName
 }
 
 // handleMessage processes an incoming message
@@ -171,8 +171,7 @@ func (t *Telegram) handleMessage(ctx context.Context, message *tgbotapi.Message)
 			if t.isCriticalError(err) {
 				slog.Error("critical command error",
 					"error", err,
-					"command", message.Command(),
-					"chat_id", message.Chat.ID)
+					"command", message.Command())
 			} else {
 				slog.Error("command error",
 					"error", err,
@@ -227,145 +226,6 @@ func (t *Telegram) isCriticalError(err error) bool {
 		strings.Contains(err.Error(), "token revoked")
 }
 
-// checkAuthorization verifies admin access
-func (t *Telegram) checkAuthorization(message *tgbotapi.Message) error {
-	if message.From.ID != t.config.AdminID {
-		if err := t.SendMessage(message.Chat.ID, t.config.Templates["unauthorized"]); err != nil {
-			slog.Error("failed to send unauthorized message", "error", err)
-		}
-		return common.ErrUnauthorized
-	}
-	return nil
-}
-
-// startTyping sends typing indicator until stopped
-func (t *Telegram) startTyping(chatID int64) chan struct{} {
-	stopTyping := make(chan struct{})
-
-	action := tgbotapi.NewChatAction(chatID, tgbotapi.ChatTyping)
-	_, _ = t.api.Request(action)
-
-	ctx, cancel := context.WithCancel(t.ctx)
-
-	go func() {
-		defer cancel()
-
-		ticker := time.NewTicker(4 * time.Second)
-		defer ticker.Stop()
-
-		for {
-			select {
-			case <-stopTyping:
-				return
-			case <-t.running:
-				return
-			case <-ticker.C:
-				select {
-				case <-ctx.Done():
-					return
-				default:
-					_, _ = t.api.Request(action)
-				}
-			}
-		}
-	}()
-
-	return stopTyping
-}
-
-// handleGroupMessage processes a message from a group chat
-func (t *Telegram) handleGroupMessage(ctx context.Context, message *tgbotapi.Message) error {
-	// Check for bot mention
-	botMention := "@" + t.config.BotUser.UserName
-	if !strings.Contains(message.Text, botMention) {
-		// For non-mention messages, just save and return
-		msg := &models.Message{
-			UserID:    message.From.ID,
-			GroupID:   message.Chat.ID,
-			Content:   message.Text,
-			CreatedAt: time.Now().UTC(),
-			IsFromBot: false,
-		}
-
-		if err := t.config.DB.SaveMessage(ctx, msg); err != nil {
-			if strings.Contains(err.Error(), "database connection") {
-				return fmt.Errorf("%w: %v", common.ErrDatabaseConnection, err)
-			}
-			return fmt.Errorf("%w: %v", common.ErrMessageSave, err)
-		}
-
-		return nil
-	}
-
-	// Start typing indicator
-	stopTyping := t.startTyping(message.Chat.ID)
-	defer close(stopTyping)
-
-	// Initialize message processor
-	proc := &messageProcessor{
-		chatID: message.Chat.ID,
-		userID: message.From.ID,
-		text:   message.Text,
-	}
-
-	// Get user profiles for context
-	profiles, err := t.config.DB.GetAllProfiles(ctx)
-	if err != nil {
-		slog.Warn("proceeding with empty user profiles",
-			"error", err,
-			"chat_id", message.Chat.ID)
-		profiles = make(map[int64]*models.UserProfile)
-	}
-	proc.profiles = profiles
-
-	// Get conversation history with fixed size limit
-	messages, err := t.config.DB.GetMessages(ctx, message.Chat.ID, t.config.MaxContextSize, time.Now())
-	if err != nil {
-		return fmt.Errorf("%w: %v", common.ErrMessageFetch, err)
-	}
-	proc.messages = messages
-
-	// Generate AI response
-	response, err := t.config.AI.GenerateResponse(ctx, proc.messages)
-	if err != nil {
-		return fmt.Errorf("%w: %v", common.ErrNoResponse, err)
-	}
-
-	// Save both messages
-	now := time.Now().UTC()
-	messages = []*models.Message{
-		{
-			UserID:    message.From.ID,
-			GroupID:   message.Chat.ID,
-			Content:   message.Text,
-			CreatedAt: now,
-			IsFromBot: false,
-		},
-		{
-			UserID:    t.config.BotUser.ID,
-			GroupID:   message.Chat.ID,
-			Content:   response,
-			CreatedAt: now,
-			IsFromBot: true,
-		},
-	}
-
-	for _, msg := range messages {
-		if err := t.config.DB.SaveMessage(ctx, msg); err != nil {
-			slog.Error("failed to save message",
-				"error", err,
-				"is_bot", msg.IsFromBot)
-		}
-	}
-
-	// Send the response
-	if err := t.SendMessage(message.Chat.ID, response); err != nil {
-		return fmt.Errorf("%w: %v", common.ErrNoResponse, err)
-	}
-
-	return nil
-}
-
 // handleCommand processes bot commands
 func (t *Telegram) handleCommand(ctx context.Context, message *tgbotapi.Message) error {
 	cmd := message.Command()
@@ -395,8 +255,8 @@ func (t *Telegram) handleStartCommand(message *tgbotapi.Message) error {
 
 // handleResetCommand resets chat history
 func (t *Telegram) handleResetCommand(message *tgbotapi.Message) error {
-	if err := t.checkAuthorization(message); err != nil {
-		return err
+	if message.From.ID != t.config.AdminID {
+		return t.SendMessage(message.Chat.ID, t.config.Templates["unauthorized"])
 	}
 
 	if err := t.config.DB.DeleteMessages(t.ctx, message.Chat.ID); err != nil {
@@ -408,16 +268,13 @@ func (t *Telegram) handleResetCommand(message *tgbotapi.Message) error {
 
 // handleAnalyzeCommand analyzes messages and updates profiles
 func (t *Telegram) handleAnalyzeCommand(message *tgbotapi.Message) error {
-	if err := t.checkAuthorization(message); err != nil {
-		return err
+	if message.From.ID != t.config.AdminID {
+		return t.SendMessage(message.Chat.ID, t.config.Templates["unauthorized"])
 	}
 
 	if err := t.SendMessage(message.Chat.ID, t.config.Templates["analyzing"]); err != nil {
 		return err
 	}
-
-	stopTyping := t.startTyping(message.Chat.ID)
-	defer close(stopTyping)
 
 	// Get unprocessed messages
 	messages, err := t.config.DB.GetUnprocessedMessages(t.ctx)
@@ -445,7 +302,6 @@ func (t *Telegram) handleAnalyzeCommand(message *tgbotapi.Message) error {
 	// Update profiles
 	var messageIDs []uint
 	for userID, msgs := range userMessages {
-		// Generate new profile
 		profile, err := t.config.AI.GenerateProfile(t.ctx, userID, msgs)
 		if err != nil {
 			slog.Error("failed to generate profile",
@@ -454,28 +310,10 @@ func (t *Telegram) handleAnalyzeCommand(message *tgbotapi.Message) error {
 			continue
 		}
 
-		// Merge with existing profile if available
 		if existingProfile, ok := existingProfiles[userID]; ok {
-			if profile.DisplayNames == "" {
-				profile.DisplayNames = existingProfile.DisplayNames
-			}
-			if profile.OriginLocation == "" {
-				profile.OriginLocation = existingProfile.OriginLocation
-			}
-			if profile.CurrentLocation == "" {
-				profile.CurrentLocation = existingProfile.CurrentLocation
-			}
-			if profile.AgeRange == "" {
-				profile.AgeRange = existingProfile.AgeRange
-			}
-			if profile.Traits == "" {
-				profile.Traits = existingProfile.Traits
-			}
-			profile.CreatedAt = existingProfile.CreatedAt
-			profile.ID = existingProfile.ID
+			t.mergeProfiles(profile, existingProfile)
 		}
 
-		// Collect message IDs for marking as processed
 		for _, msg := range msgs {
 			messageIDs = append(messageIDs, msg.ID)
 		}
@@ -484,7 +322,6 @@ func (t *Telegram) handleAnalyzeCommand(message *tgbotapi.Message) error {
 			slog.Error("failed to save profile",
 				"error", err,
 				"user_id", userID)
-			continue
 		}
 	}
 
@@ -498,10 +335,31 @@ func (t *Telegram) handleAnalyzeCommand(message *tgbotapi.Message) error {
 	return t.handleProfilesCommand(message)
 }
 
+// mergeProfiles merges an existing profile into a new one
+func (t *Telegram) mergeProfiles(new, existing *models.UserProfile) {
+	if new.DisplayNames == "" {
+		new.DisplayNames = existing.DisplayNames
+	}
+	if new.OriginLocation == "" {
+		new.OriginLocation = existing.OriginLocation
+	}
+	if new.CurrentLocation == "" {
+		new.CurrentLocation = existing.CurrentLocation
+	}
+	if new.AgeRange == "" {
+		new.AgeRange = existing.AgeRange
+	}
+	if new.Traits == "" {
+		new.Traits = existing.Traits
+	}
+	new.CreatedAt = existing.CreatedAt
+	new.ID = existing.ID
+}
+
 // handleProfilesCommand shows user profiles
 func (t *Telegram) handleProfilesCommand(message *tgbotapi.Message) error {
-	if err := t.checkAuthorization(message); err != nil {
-		return err
+	if message.From.ID != t.config.AdminID {
+		return t.SendMessage(message.Chat.ID, t.config.Templates["unauthorized"])
 	}
 
 	profiles, err := t.config.DB.GetAllProfiles(t.ctx)
@@ -538,8 +396,8 @@ func (t *Telegram) handleProfilesCommand(message *tgbotapi.Message) error {
 
 // handleEditCommand edits user profile data
 func (t *Telegram) handleEditCommand(message *tgbotapi.Message) error {
-	if err := t.checkAuthorization(message); err != nil {
-		return err
+	if message.From.ID != t.config.AdminID {
+		return t.SendMessage(message.Chat.ID, t.config.Templates["unauthorized"])
 	}
 
 	args := strings.Fields(message.CommandArguments())
@@ -583,4 +441,74 @@ func (t *Telegram) handleEditCommand(message *tgbotapi.Message) error {
 	}
 
 	return t.SendMessage(message.Chat.ID, fmt.Sprintf("Updated profile for user ID %d", userID))
+}
+
+// handleGroupMessage processes a message from a group chat
+func (t *Telegram) handleGroupMessage(ctx context.Context, message *tgbotapi.Message) error {
+	// Check for bot mention
+	if !strings.Contains(message.Text, "@"+t.config.botUserName) {
+		// For non-mention messages, just save and return
+		msg := &models.Message{
+			UserID:    message.From.ID,
+			GroupID:   message.Chat.ID,
+			Content:   message.Text,
+			CreatedAt: time.Now().UTC(),
+			IsFromBot: false,
+		}
+
+		if err := t.config.DB.SaveMessage(ctx, msg); err != nil {
+			if strings.Contains(err.Error(), "database connection") {
+				return fmt.Errorf("%w: %v", common.ErrDatabaseConnection, err)
+			}
+			return fmt.Errorf("%w: %v", common.ErrMessageSave, err)
+		}
+
+		return nil
+	}
+
+	// Get conversation history with fixed size limit
+	messages, err := t.config.DB.GetMessages(ctx, message.Chat.ID, t.config.MaxContextSize, time.Now())
+	if err != nil {
+		return fmt.Errorf("%w: %v", common.ErrMessageFetch, err)
+	}
+
+	// Generate AI response
+	response, err := t.config.AI.GenerateResponse(ctx, messages)
+	if err != nil {
+		return fmt.Errorf("%w: %v", common.ErrNoResponse, err)
+	}
+
+	// Save both messages
+	now := time.Now().UTC()
+	messages = []*models.Message{
+		{
+			UserID:    message.From.ID,
+			GroupID:   message.Chat.ID,
+			Content:   message.Text,
+			CreatedAt: now,
+			IsFromBot: false,
+		},
+		{
+			UserID:    t.config.botID,
+			GroupID:   message.Chat.ID,
+			Content:   response,
+			CreatedAt: now,
+			IsFromBot: true,
+		},
+	}
+
+	for _, msg := range messages {
+		if err := t.config.DB.SaveMessage(ctx, msg); err != nil {
+			slog.Error("failed to save message",
+				"error", err,
+				"is_bot", msg.IsFromBot)
+		}
+	}
+
+	// Send the response
+	if err := t.SendMessage(message.Chat.ID, response); err != nil {
+		return fmt.Errorf("%w: %v", common.ErrNoResponse, err)
+	}
+
+	return nil
 }

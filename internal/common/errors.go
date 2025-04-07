@@ -57,10 +57,8 @@ var (
 	// Job scheduling errors
 	ErrEmptyJobName        = errors.New("empty job name")
 	ErrEmptyCronExpression = errors.New("empty cron expression")
-	ErrJobNotFound         = errors.New("job not found")
 	ErrDuplicateJob        = errors.New("job already exists")
 	ErrJobSchedule         = errors.New("failed to schedule job")
-	ErrJobRemove           = errors.New("failed to remove job")
 
 	// Service lifecycle errors
 	ErrInitialization  = errors.New("initialization failed")

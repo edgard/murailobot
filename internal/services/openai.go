@@ -12,7 +12,6 @@ import (
 	"github.com/edgard/murailobot/internal/common"
 	"github.com/edgard/murailobot/internal/interfaces"
 	"github.com/edgard/murailobot/internal/models"
-	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/sashabaranov/go-openai"
 )
 
@@ -26,7 +25,9 @@ type OpenAIConfig struct {
 	Timeout            time.Duration
 	Instruction        string
 	ProfileInstruction string
-	BotUser            *tgbotapi.User
+	BotID              int64
+	BotUserName        string
+	BotFirstName       string
 }
 
 // OpenAI implements the AI interface using OpenAI's API
@@ -73,11 +74,17 @@ func NewOpenAI(config OpenAIConfig) (interfaces.AI, error) {
 	}, nil
 }
 
+// Stop gracefully shuts down the OpenAI service
+func (o *OpenAI) Stop() error {
+	slog.Info("stopping OpenAI service")
+	return nil
+}
+
 // createSystemPrompt generates the system prompt for the AI model
 func (o *OpenAI) createSystemPrompt(userProfiles map[int64]*models.UserProfile) string {
-	displayName := o.config.BotUser.UserName
-	if o.config.BotUser.FirstName != "" {
-		displayName = o.config.BotUser.FirstName
+	displayName := o.config.BotUserName
+	if o.config.BotFirstName != "" {
+		displayName = o.config.BotFirstName
 	}
 
 	botIdentityHeader := fmt.Sprintf(
@@ -86,7 +93,7 @@ func (o *OpenAI) createSystemPrompt(userProfiles map[int64]*models.UserProfile) 
 			"this is normal and expected. Always respond directly to the content of the message. "+
 			"Even if the message doesn't contain a clear question, assume it's directed at you "+
 			"and respond appropriately.\n\n",
-		displayName, o.config.BotUser.UserName, o.config.BotUser.UserName)
+		displayName, o.config.BotUserName, o.config.BotUserName)
 
 	systemPrompt := botIdentityHeader + o.config.Instruction
 
@@ -105,10 +112,10 @@ func (o *OpenAI) createSystemPrompt(userProfiles map[int64]*models.UserProfile) 
 
 		for _, id := range userIDs {
 			profile := userProfiles[id]
-			if id == o.config.BotUser.ID {
-				botDisplayNames := o.config.BotUser.UserName
-				if o.config.BotUser.FirstName != "" && o.config.BotUser.FirstName != o.config.BotUser.UserName {
-					botDisplayNames = fmt.Sprintf("%s, %s", o.config.BotUser.FirstName, o.config.BotUser.UserName)
+			if id == o.config.BotID {
+				botDisplayNames := o.config.BotUserName
+				if o.config.BotFirstName != "" && o.config.BotFirstName != o.config.BotUserName {
+					botDisplayNames = fmt.Sprintf("%s, %s", o.config.BotFirstName, o.config.BotUserName)
 				}
 				profileInfo.WriteString(fmt.Sprintf("UID %d (%s) | Internet | Internet | N/A | Group Chat Bot\n",
 					id, botDisplayNames))
@@ -234,7 +241,7 @@ Return ONLY a JSON object with this structure:
     "traits": "Comma-separated list of personality traits and characteristics"
 }
 
-%s`, o.config.BotUser.ID, o.config.BotUser.UserName, o.config.BotUser.FirstName, o.config.ProfileInstruction)
+%s`, o.config.BotID, o.config.BotUserName, o.config.BotFirstName, o.config.ProfileInstruction)
 
 	// Calculate available tokens after instruction
 	systemTokens, err := common.CountTokens(instruction)
@@ -319,10 +326,10 @@ Return ONLY a JSON object with this structure:
 	profile.LastUpdated = time.Now().UTC()
 
 	// Special handling for bot's own profile
-	if userID == o.config.BotUser.ID {
-		botDisplayNames := o.config.BotUser.UserName
-		if o.config.BotUser.FirstName != "" && o.config.BotUser.FirstName != o.config.BotUser.UserName {
-			botDisplayNames = fmt.Sprintf("%s, %s", o.config.BotUser.FirstName, o.config.BotUser.UserName)
+	if userID == o.config.BotID {
+		botDisplayNames := o.config.BotUserName
+		if o.config.BotFirstName != "" && o.config.BotFirstName != o.config.BotUserName {
+			botDisplayNames = fmt.Sprintf("%s, %s", o.config.BotFirstName, o.config.BotUserName)
 		}
 		profile = models.UserProfile{
 			UserID:          userID,
@@ -333,7 +340,7 @@ Return ONLY a JSON object with this structure:
 			Traits:          "Group Chat Bot",
 			LastUpdated:     time.Now().UTC(),
 			IsBot:           true,
-			Username:        o.config.BotUser.UserName,
+			Username:        o.config.BotUserName,
 		}
 	}
 

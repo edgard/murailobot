@@ -172,8 +172,8 @@ func (s *SQL) BatchSaveProfiles(ctx context.Context, profiles []*models.UserProf
 	})
 }
 
-// Close closes the database connection
-func (s *SQL) Close() error {
+// Stop closes the database connection and releases any resources
+func (s *SQL) Stop() error {
 	sqlDB, err := s.db.DB()
 	if err != nil {
 		return fmt.Errorf("%w: %v", common.ErrDatabaseOp, err)
