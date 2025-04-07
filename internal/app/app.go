@@ -143,15 +143,15 @@ func New(cfg Config) (*Application, error) {
 }
 
 // Start begins the application and listens for errors
-func (a *Application) Start(errCh chan<- error) error {
-	// Start scheduler
-	if err := a.scheduler.Start(context.Background()); err != nil {
+func (a *Application) Start(ctx context.Context, errCh chan<- error) error {
+	// Start scheduler with parent context
+	if err := a.scheduler.Start(ctx); err != nil {
 		return fmt.Errorf("%w: scheduler failed to start", common.ErrServiceStart)
 	}
 
-	// Start bot with error monitoring
+	// Start bot with error monitoring and parent context
 	go func() {
-		if err := a.bot.Start(context.Background()); err != nil {
+		if err := a.bot.Start(ctx); err != nil {
 			errCh <- fmt.Errorf("%w: %v", common.ErrServiceStart, err)
 		}
 	}()

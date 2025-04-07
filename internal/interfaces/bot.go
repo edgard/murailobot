@@ -22,5 +22,5 @@ type Bot interface {
 	GetFirstName() string
 
 	// SendMessage sends a message to a chat
-	SendMessage(chatID int64, text string) error
+	SendMessage(ctx context.Context, chatID int64, text string) error
 }

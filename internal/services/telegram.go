@@ -33,9 +33,8 @@ type TelegramConfig struct {
 type Telegram struct {
 	api      *tgbotapi.BotAPI
 	config   TelegramConfig
-	ctx      context.Context
 	running  chan struct{}
-	handlers map[string]func(*tgbotapi.Message) error
+	handlers map[string]func(context.Context, *tgbotapi.Message) error
 }
 
 // NewTelegram creates a new Telegram bot instance
@@ -69,7 +68,7 @@ func NewTelegram(config TelegramConfig) (interfaces.Bot, error) {
 	}
 
 	// Initialize command handlers
-	t.handlers = map[string]func(*tgbotapi.Message) error{
+	t.handlers = map[string]func(context.Context, *tgbotapi.Message) error{
 		"start":    t.handleStartCommand,
 		"reset":    t.handleResetCommand,
 		"analyze":  t.handleAnalyzeCommand,
@@ -82,8 +81,6 @@ func NewTelegram(config TelegramConfig) (interfaces.Bot, error) {
 
 // Start begins bot operation
 func (t *Telegram) Start(ctx context.Context) error {
-	t.ctx = ctx
-
 	// Set up bot commands
 	commands := make([]tgbotapi.BotCommand, 0, len(t.config.Commands))
 	for cmd, desc := range t.config.Commands {
@@ -135,13 +132,18 @@ func (t *Telegram) Stop() error {
 }
 
 // SendMessage sends a message to a chat
-func (t *Telegram) SendMessage(chatID int64, text string) error {
-	msg := tgbotapi.NewMessage(chatID, text)
-	_, err := t.api.Send(msg)
-	if err != nil {
-		return fmt.Errorf("%w: failed to send message", common.ErrNoResponse)
+func (t *Telegram) SendMessage(ctx context.Context, chatID int64, text string) error {
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+		msg := tgbotapi.NewMessage(chatID, text)
+		_, err := t.api.Send(msg)
+		if err != nil {
+			return fmt.Errorf("%w: failed to send message", common.ErrNoResponse)
+		}
+		return nil
 	}
-	return nil
 }
 
 // GetID returns the bot's unique identifier
@@ -235,7 +237,7 @@ func (t *Telegram) handleCommand(ctx context.Context, message *tgbotapi.Message)
 		return nil
 	}
 
-	if err := handler(message); err != nil {
+	if err := handler(ctx, message); err != nil {
 		if err == common.ErrUnauthorized {
 			slog.Warn("unauthorized command attempt",
 				"command", cmd,
@@ -249,45 +251,45 @@ func (t *Telegram) handleCommand(ctx context.Context, message *tgbotapi.Message)
 }
 
 // handleStartCommand processes the start command
-func (t *Telegram) handleStartCommand(message *tgbotapi.Message) error {
-	return t.SendMessage(message.Chat.ID, t.config.Templates["welcome"])
+func (t *Telegram) handleStartCommand(ctx context.Context, message *tgbotapi.Message) error {
+	return t.SendMessage(ctx, message.Chat.ID, t.config.Templates["welcome"])
 }
 
 // handleResetCommand resets chat history
-func (t *Telegram) handleResetCommand(message *tgbotapi.Message) error {
+func (t *Telegram) handleResetCommand(ctx context.Context, message *tgbotapi.Message) error {
 	if message.From.ID != t.config.AdminID {
-		return t.SendMessage(message.Chat.ID, t.config.Templates["unauthorized"])
+		return t.SendMessage(ctx, message.Chat.ID, t.config.Templates["unauthorized"])
 	}
 
-	if err := t.config.DB.DeleteMessages(t.ctx, message.Chat.ID); err != nil {
+	if err := t.config.DB.DeleteMessages(ctx, message.Chat.ID); err != nil {
 		return fmt.Errorf("%w: %v", common.ErrMessageDelete, err)
 	}
 
-	return t.SendMessage(message.Chat.ID, t.config.Templates["reset"])
+	return t.SendMessage(ctx, message.Chat.ID, t.config.Templates["reset"])
 }
 
 // handleAnalyzeCommand analyzes messages and updates profiles
-func (t *Telegram) handleAnalyzeCommand(message *tgbotapi.Message) error {
+func (t *Telegram) handleAnalyzeCommand(ctx context.Context, message *tgbotapi.Message) error {
 	if message.From.ID != t.config.AdminID {
-		return t.SendMessage(message.Chat.ID, t.config.Templates["unauthorized"])
+		return t.SendMessage(ctx, message.Chat.ID, t.config.Templates["unauthorized"])
 	}
 
-	if err := t.SendMessage(message.Chat.ID, t.config.Templates["analyzing"]); err != nil {
+	if err := t.SendMessage(ctx, message.Chat.ID, t.config.Templates["analyzing"]); err != nil {
 		return err
 	}
 
 	// Get unprocessed messages
-	messages, err := t.config.DB.GetUnprocessedMessages(t.ctx)
+	messages, err := t.config.DB.GetUnprocessedMessages(ctx)
 	if err != nil {
 		return fmt.Errorf("%w: %v", common.ErrMessageFetch, err)
 	}
 
 	if len(messages) == 0 {
-		return t.SendMessage(message.Chat.ID, t.config.Templates["no_profiles"])
+		return t.SendMessage(ctx, message.Chat.ID, t.config.Templates["no_profiles"])
 	}
 
 	// Get existing profiles for context and merging
-	existingProfiles, err := t.config.DB.GetAllProfiles(t.ctx)
+	existingProfiles, err := t.config.DB.GetAllProfiles(ctx)
 	if err != nil {
 		slog.Warn("proceeding with empty profiles", "error", err)
 		existingProfiles = make(map[int64]*models.UserProfile)
@@ -302,7 +304,7 @@ func (t *Telegram) handleAnalyzeCommand(message *tgbotapi.Message) error {
 	// Update profiles
 	var messageIDs []uint
 	for userID, msgs := range userMessages {
-		profile, err := t.config.AI.GenerateProfile(t.ctx, userID, msgs)
+		profile, err := t.config.AI.GenerateProfile(ctx, userID, msgs)
 		if err != nil {
 			slog.Error("failed to generate profile",
 				"error", err,
@@ -318,7 +320,7 @@ func (t *Telegram) handleAnalyzeCommand(message *tgbotapi.Message) error {
 			messageIDs = append(messageIDs, msg.ID)
 		}
 
-		if err := t.config.DB.SaveProfile(t.ctx, profile); err != nil {
+		if err := t.config.DB.SaveProfile(ctx, profile); err != nil {
 			slog.Error("failed to save profile",
 				"error", err,
 				"user_id", userID)
@@ -326,13 +328,13 @@ func (t *Telegram) handleAnalyzeCommand(message *tgbotapi.Message) error {
 	}
 
 	if len(messageIDs) > 0 {
-		if err := t.config.DB.MarkMessagesAsProcessed(t.ctx, messageIDs); err != nil {
+		if err := t.config.DB.MarkMessagesAsProcessed(ctx, messageIDs); err != nil {
 			slog.Error("failed to mark messages as processed", "error", err)
 		}
 	}
 
 	// Show updated profiles
-	return t.handleProfilesCommand(message)
+	return t.handleProfilesCommand(ctx, message)
 }
 
 // mergeProfiles merges an existing profile into a new one
@@ -357,18 +359,18 @@ func (t *Telegram) mergeProfiles(new, existing *models.UserProfile) {
 }
 
 // handleProfilesCommand shows user profiles
-func (t *Telegram) handleProfilesCommand(message *tgbotapi.Message) error {
+func (t *Telegram) handleProfilesCommand(ctx context.Context, message *tgbotapi.Message) error {
 	if message.From.ID != t.config.AdminID {
-		return t.SendMessage(message.Chat.ID, t.config.Templates["unauthorized"])
+		return t.SendMessage(ctx, message.Chat.ID, t.config.Templates["unauthorized"])
 	}
 
-	profiles, err := t.config.DB.GetAllProfiles(t.ctx)
+	profiles, err := t.config.DB.GetAllProfiles(ctx)
 	if err != nil {
 		return fmt.Errorf("%w: %v", common.ErrProfileFetch, err)
 	}
 
 	if len(profiles) == 0 {
-		return t.SendMessage(message.Chat.ID, t.config.Templates["no_profiles"])
+		return t.SendMessage(ctx, message.Chat.ID, t.config.Templates["no_profiles"])
 	}
 
 	var b strings.Builder
@@ -391,34 +393,34 @@ func (t *Telegram) handleProfilesCommand(message *tgbotapi.Message) error {
 		fmt.Fprintf(&b, "Traits: %s\n\n", p.Traits)
 	}
 
-	return t.SendMessage(message.Chat.ID, b.String())
+	return t.SendMessage(ctx, message.Chat.ID, b.String())
 }
 
 // handleEditCommand edits user profile data
-func (t *Telegram) handleEditCommand(message *tgbotapi.Message) error {
+func (t *Telegram) handleEditCommand(ctx context.Context, message *tgbotapi.Message) error {
 	if message.From.ID != t.config.AdminID {
-		return t.SendMessage(message.Chat.ID, t.config.Templates["unauthorized"])
+		return t.SendMessage(ctx, message.Chat.ID, t.config.Templates["unauthorized"])
 	}
 
 	args := strings.Fields(message.CommandArguments())
 	if len(args) < 3 {
-		return t.SendMessage(message.Chat.ID, "Usage: /edit <user_id> <field> <value>")
+		return t.SendMessage(ctx, message.Chat.ID, "Usage: /edit <user_id> <field> <value>")
 	}
 
 	var userID int64
 	if _, err := fmt.Sscanf(args[0], "%d", &userID); err != nil {
-		return t.SendMessage(message.Chat.ID, "Invalid user ID")
+		return t.SendMessage(ctx, message.Chat.ID, "Invalid user ID")
 	}
 
 	field := args[1]
 	value := strings.Join(args[2:], " ")
 
-	profile, err := t.config.DB.GetProfile(t.ctx, userID)
+	profile, err := t.config.DB.GetProfile(ctx, userID)
 	if err != nil {
 		return fmt.Errorf("%w: %v", common.ErrProfileFetch, err)
 	}
 	if profile == nil {
-		return t.SendMessage(message.Chat.ID, fmt.Sprintf("No profile found for user ID %d", userID))
+		return t.SendMessage(ctx, message.Chat.ID, fmt.Sprintf("No profile found for user ID %d", userID))
 	}
 
 	switch strings.ToLower(field) {
@@ -433,14 +435,14 @@ func (t *Telegram) handleEditCommand(message *tgbotapi.Message) error {
 	case "traits":
 		profile.Traits = value
 	default:
-		return t.SendMessage(message.Chat.ID, "Invalid field name")
+		return t.SendMessage(ctx, message.Chat.ID, "Invalid field name")
 	}
 
-	if err := t.config.DB.SaveProfile(t.ctx, profile); err != nil {
+	if err := t.config.DB.SaveProfile(ctx, profile); err != nil {
 		return fmt.Errorf("%w: %v", common.ErrProfileUpdate, err)
 	}
 
-	return t.SendMessage(message.Chat.ID, fmt.Sprintf("Updated profile for user ID %d", userID))
+	return t.SendMessage(ctx, message.Chat.ID, fmt.Sprintf("Updated profile for user ID %d", userID))
 }
 
 // handleGroupMessage processes a message from a group chat
@@ -506,7 +508,7 @@ func (t *Telegram) handleGroupMessage(ctx context.Context, message *tgbotapi.Mes
 	}
 
 	// Send the response
-	if err := t.SendMessage(message.Chat.ID, response); err != nil {
+	if err := t.SendMessage(ctx, message.Chat.ID, response); err != nil {
 		return fmt.Errorf("%w: %v", common.ErrNoResponse, err)
 	}
 

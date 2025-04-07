@@ -24,8 +24,7 @@ type Cron struct {
 	config    CronConfig
 	jobs      map[string]gocron.Job
 	jobsMu    sync.RWMutex
-	ctx       context.Context
-	cancel    context.CancelFunc
+	stopCh    chan struct{}
 }
 
 // Convert UUID bytes to hex string
@@ -56,21 +55,32 @@ func NewCron(config CronConfig) (interfaces.Scheduler, error) {
 		scheduler: scheduler,
 		config:    config,
 		jobs:      make(map[string]gocron.Job),
+		stopCh:    make(chan struct{}),
 	}, nil
 }
 
 // Start begins scheduler operation
 func (c *Cron) Start(ctx context.Context) error {
-	c.ctx, c.cancel = context.WithCancel(ctx)
 	c.scheduler.Start()
 	slog.Info("scheduler started", "timezone", c.config.TimeZone)
+
+	// Monitor context for cancellation
+	go func() {
+		select {
+		case <-ctx.Done():
+			c.stopCh <- struct{}{}
+		case <-c.stopCh:
+		}
+	}()
+
 	return nil
 }
 
 // Stop gracefully shuts down the scheduler
 func (c *Cron) Stop() error {
-	if c.cancel != nil {
-		c.cancel()
+	select {
+	case c.stopCh <- struct{}{}:
+	default:
 	}
 
 	if err := c.scheduler.Shutdown(); err != nil {
@@ -103,11 +113,11 @@ func (c *Cron) AddJob(name, cronExpr string, job func()) error {
 		return fmt.Errorf("%w: %s", common.ErrDuplicateJob, name)
 	}
 
-	// Create a wrapper that handles context and panic recovery
+	// Create a wrapper that handles panic recovery
 	wrappedJob := func() {
-		// Check context before executing
+		// Check if scheduler is stopping
 		select {
-		case <-c.ctx.Done():
+		case <-c.stopCh:
 			return
 		default:
 			// Continue with execution

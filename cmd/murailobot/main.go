@@ -21,6 +21,10 @@ func main() {
 
 	slog.Info("starting MurailoBot")
 
+	// Create root context
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	// Load configuration
 	config, err := common.LoadConfig()
 	if err != nil {
@@ -38,9 +42,9 @@ func main() {
 	// Create error channel for runtime errors
 	errCh := make(chan error, 1)
 
-	// Start application
+	// Start application with root context
 	go func() {
-		if err := application.Start(errCh); err != nil {
+		if err := application.Start(ctx, errCh); err != nil {
 			errCh <- err
 		}
 	}()
@@ -51,11 +55,14 @@ func main() {
 	case sig := <-quit:
 		slog.Info("received shutdown signal", "signal", sig)
 
-		// Create context with timeout for graceful shutdown
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
+		// Cancel root context
+		cancel()
 
-		if err := application.Stop(ctx); err != nil {
+		// Create context with timeout for graceful shutdown
+		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer shutdownCancel()
+
+		if err := application.Stop(shutdownCtx); err != nil {
 			slog.Error("shutdown error", "error", err)
 			exitCode = 1
 		}
@@ -63,11 +70,14 @@ func main() {
 	case err := <-errCh:
 		slog.Error("application error", "error", err)
 
-		// Create context with shorter timeout for error shutdown
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
+		// Cancel root context
+		cancel()
 
-		if err := application.Stop(ctx); err != nil {
+		// Create context with shorter timeout for error shutdown
+		emergencyCtx, emergencyCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer emergencyCancel()
+
+		if err := application.Stop(emergencyCtx); err != nil {
 			slog.Error("emergency shutdown error", "error", err)
 		}
 		exitCode = 1
