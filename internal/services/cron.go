@@ -12,33 +12,31 @@ import (
 	"github.com/go-co-op/gocron/v2"
 )
 
-// CronConfig holds configuration for the scheduler
-type CronConfig struct {
-	TimeZone string // Time zone for scheduling (defaults to "UTC")
-}
-
 // Cron implements the Scheduler interface using gocron
 type Cron struct {
 	scheduler gocron.Scheduler
-	config    CronConfig
 	jobs      map[string]gocron.Job
 	stopCh    chan struct{}
-}
-
-// Convert UUID bytes to hex string
-func uuidToString(uuid [16]byte) string {
-	return hex.EncodeToString(uuid[:])
+	timezone  string
 }
 
 // NewCron creates a new cron scheduler instance
-func NewCron(config CronConfig) (interfaces.Scheduler, error) {
-	if config.TimeZone == "" {
-		config.TimeZone = "UTC"
+func NewCron() (interfaces.Scheduler, error) {
+	return &Cron{
+		jobs:   make(map[string]gocron.Job),
+		stopCh: make(chan struct{}),
+	}, nil
+}
+
+// Configure sets up scheduler with given timezone
+func (c *Cron) Configure(timezone string) error {
+	if timezone == "" {
+		timezone = "UTC"
 	}
 
-	loc, err := time.LoadLocation(config.TimeZone)
+	loc, err := time.LoadLocation(timezone)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %s", common.ErrInvalidTimeZone, config.TimeZone)
+		return fmt.Errorf("%w: %s", common.ErrInvalidTimeZone, timezone)
 	}
 
 	scheduler, err := gocron.NewScheduler(
@@ -46,50 +44,15 @@ func NewCron(config CronConfig) (interfaces.Scheduler, error) {
 		gocron.WithLogger(&gocronLogAdapter{}),
 	)
 	if err != nil {
-		return nil, fmt.Errorf("%w: failed to create scheduler", common.ErrInitialization)
+		return fmt.Errorf("%w: failed to create scheduler", common.ErrInitialization)
 	}
 
-	return &Cron{
-		scheduler: scheduler,
-		config:    config,
-		jobs:      make(map[string]gocron.Job),
-		stopCh:    make(chan struct{}),
-	}, nil
-}
-
-// Start begins scheduler operation
-func (c *Cron) Start(ctx context.Context) error {
-	c.scheduler.Start()
-	slog.Info("scheduler started", "timezone", c.config.TimeZone)
-
-	// Monitor context for cancellation
-	go func() {
-		select {
-		case <-ctx.Done():
-			c.stopCh <- struct{}{}
-		case <-c.stopCh:
-		}
-	}()
-
+	c.scheduler = scheduler
+	c.timezone = timezone
 	return nil
 }
 
-// Stop gracefully shuts down the scheduler
-func (c *Cron) Stop() error {
-	select {
-	case c.stopCh <- struct{}{}:
-	default:
-	}
-
-	if err := c.scheduler.Shutdown(); err != nil {
-		return fmt.Errorf("%w: failed to shutdown scheduler", common.ErrServiceStop)
-	}
-
-	slog.Info("scheduler stopped")
-	return nil
-}
-
-// AddJob adds a new job to the scheduler
+// AddJob adds a new scheduled job
 func (c *Cron) AddJob(name, cronExpr string, job func()) error {
 	if name == "" {
 		return common.ErrEmptyJobName
@@ -160,6 +123,43 @@ func (c *Cron) AddJob(name, cronExpr string, job func()) error {
 	slog.Info("job scheduled", logAttrs...)
 
 	return nil
+}
+
+// Start begins scheduler operation
+func (c *Cron) Start(ctx context.Context) error {
+	c.scheduler.Start()
+	slog.Info("scheduler started", "timezone", c.timezone)
+
+	// Monitor context for cancellation
+	go func() {
+		select {
+		case <-ctx.Done():
+			c.stopCh <- struct{}{}
+		case <-c.stopCh:
+		}
+	}()
+
+	return nil
+}
+
+// Stop gracefully shuts down the scheduler
+func (c *Cron) Stop() error {
+	select {
+	case c.stopCh <- struct{}{}:
+	default:
+	}
+
+	if err := c.scheduler.Shutdown(); err != nil {
+		return fmt.Errorf("%w: failed to shutdown scheduler", common.ErrServiceStop)
+	}
+
+	slog.Info("scheduler stopped")
+	return nil
+}
+
+// Convert UUID bytes to hex string
+func uuidToString(uuid [16]byte) string {
+	return hex.EncodeToString(uuid[:])
 }
 
 // gocronLogAdapter adapts gocron logging to slog

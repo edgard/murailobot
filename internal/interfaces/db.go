@@ -9,6 +9,9 @@ import (
 
 // DB defines the interface for data operations
 type DB interface {
+	// Configure sets the database path
+	Configure(path string) error
+
 	// Message operations
 	SaveMessage(ctx context.Context, msg *models.Message) error
 	GetMessages(ctx context.Context, groupID int64, limit int, before time.Time) ([]*models.Message, error)

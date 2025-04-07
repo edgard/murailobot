@@ -15,63 +15,69 @@ import (
 	"github.com/sashabaranov/go-openai"
 )
 
-// OpenAIConfig holds configuration for OpenAI service
-type OpenAIConfig struct {
-	Token              string
-	BaseURL            string
-	Model              string
-	MaxTokens          int
-	Temperature        float32
-	Timeout            time.Duration
-	Instruction        string
-	ProfileInstruction string
-	BotID              int64
-	BotUserName        string
-	BotFirstName       string
-}
-
 // OpenAI implements the AI interface using OpenAI's API
 type OpenAI struct {
 	client    *openai.Client
-	config    OpenAIConfig
 	maxTokens int
+	config    struct {
+		token              string
+		baseURL            string
+		model              string
+		maxTokens          int
+		temperature        float32
+		timeout            time.Duration
+		instruction        string
+		profileInstruction string
+	}
 }
 
 // NewOpenAI creates a new OpenAI service instance
-func NewOpenAI(config OpenAIConfig) (interfaces.AI, error) {
-	if config.Token == "" {
-		return nil, common.ErrMissingToken
+func NewOpenAI() (interfaces.AI, error) {
+	return &OpenAI{}, nil
+}
+
+// Configure sets up the AI service with basic configuration
+func (o *OpenAI) Configure(token, baseURL, model string, maxTokens int, temperature float32,
+	timeout time.Duration, instruction, profileInstruction string,
+) error {
+	if token == "" {
+		return common.ErrMissingToken
 	}
 
-	if config.Model == "" {
-		config.Model = openai.GPT3Dot5Turbo
+	if model == "" {
+		model = openai.GPT3Dot5Turbo
 	}
 
-	if config.Temperature == 0 {
-		config.Temperature = 0.7
+	if temperature == 0 {
+		temperature = 0.7
 	}
 
-	if config.Timeout == 0 {
-		config.Timeout = 30 * time.Second
+	if timeout == 0 {
+		timeout = 30 * time.Second
 	}
 
-	if config.MaxTokens == 0 {
-		config.MaxTokens = 4000
+	if maxTokens == 0 {
+		maxTokens = 4000
 	}
 
-	aiConfig := openai.DefaultConfig(config.Token)
-	if config.BaseURL != "" {
-		aiConfig.BaseURL = config.BaseURL
+	aiConfig := openai.DefaultConfig(token)
+	if baseURL != "" {
+		aiConfig.BaseURL = baseURL
 	}
 
-	slog.Info("initializing OpenAI service",
-		"model", config.Model)
+	o.client = openai.NewClientWithConfig(aiConfig)
+	o.maxTokens = maxTokens
+	o.config.token = token
+	o.config.baseURL = baseURL
+	o.config.model = model
+	o.config.maxTokens = maxTokens
+	o.config.temperature = temperature
+	o.config.timeout = timeout
+	o.config.instruction = instruction
+	o.config.profileInstruction = profileInstruction
 
-	return &OpenAI{
-		client:    openai.NewClientWithConfig(aiConfig),
-		config:    config,
-		maxTokens: config.MaxTokens,
-	}, nil
+	slog.Info("initializing OpenAI service", "model", model)
+	return nil
 }
 
 // Stop gracefully shuts down the OpenAI service
@@ -81,10 +87,10 @@ func (o *OpenAI) Stop() error {
 }
 
 // createSystemPrompt generates the system prompt for the AI model
-func (o *OpenAI) createSystemPrompt(userProfiles map[int64]*models.UserProfile) string {
-	displayName := o.config.BotUserName
-	if o.config.BotFirstName != "" {
-		displayName = o.config.BotFirstName
+func (o *OpenAI) createSystemPrompt(userProfiles map[int64]*models.UserProfile, botInfo models.BotInfo) string {
+	displayName := botInfo.FirstName
+	if displayName == "" {
+		displayName = botInfo.UserName
 	}
 
 	botIdentityHeader := fmt.Sprintf(
@@ -93,9 +99,9 @@ func (o *OpenAI) createSystemPrompt(userProfiles map[int64]*models.UserProfile) 
 			"this is normal and expected. Always respond directly to the content of the message. "+
 			"Even if the message doesn't contain a clear question, assume it's directed at you "+
 			"and respond appropriately.\n\n",
-		displayName, o.config.BotUserName, o.config.BotUserName)
+		displayName, botInfo.UserName, botInfo.UserName)
 
-	systemPrompt := botIdentityHeader + o.config.Instruction
+	systemPrompt := botIdentityHeader + o.config.instruction
 
 	if len(userProfiles) > 0 {
 		var profileInfo strings.Builder
@@ -112,11 +118,8 @@ func (o *OpenAI) createSystemPrompt(userProfiles map[int64]*models.UserProfile) 
 
 		for _, id := range userIDs {
 			profile := userProfiles[id]
-			if id == o.config.BotID {
-				botDisplayNames := o.config.BotUserName
-				if o.config.BotFirstName != "" && o.config.BotFirstName != o.config.BotUserName {
-					botDisplayNames = fmt.Sprintf("%s, %s", o.config.BotFirstName, o.config.BotUserName)
-				}
+			if id == botInfo.ID {
+				botDisplayNames := getBotDisplayNames(botInfo)
 				profileInfo.WriteString(fmt.Sprintf("UID %d (%s) | Internet | Internet | N/A | Group Chat Bot\n",
 					id, botDisplayNames))
 				continue
@@ -133,23 +136,19 @@ func (o *OpenAI) createSystemPrompt(userProfiles map[int64]*models.UserProfile) 
 }
 
 // GenerateResponse generates an AI response for messages
-func (o *OpenAI) GenerateResponse(ctx context.Context, messages []*models.Message) (string, error) {
+func (o *OpenAI) GenerateResponse(ctx context.Context, messages []*models.Message, botInfo models.BotInfo) (string, error) {
 	if len(messages) == 0 {
 		return "", common.ErrEmptyInput
 	}
 
-	// Get system prompt and count its tokens
-	userProfiles := make(map[int64]*models.UserProfile)
-	systemPrompt := o.createSystemPrompt(userProfiles)
+	systemPrompt := o.createSystemPrompt(nil, botInfo)
 	systemTokens, err := common.CountTokens(systemPrompt)
 	if err != nil {
 		return "", fmt.Errorf("%w: %v", common.ErrTokenCount, err)
 	}
 
-	// Calculate available tokens for messages
 	availableTokens := o.maxTokens - systemTokens
 
-	// Format messages for filtering
 	formattedMsgs := make([]string, len(messages))
 	for i, msg := range messages {
 		formattedMsgs[i] = fmt.Sprintf("[%s] UID %d: %s",
@@ -158,19 +157,16 @@ func (o *OpenAI) GenerateResponse(ctx context.Context, messages []*models.Messag
 			msg.Content)
 	}
 
-	// Filter messages to fit within available tokens
-	filteredMsgs, err := common.FilterContent(formattedMsgs, availableTokens, true) // true for newest first
+	filteredMsgs, err := common.FilterContent(formattedMsgs, availableTokens, true)
 	if err != nil {
 		return "", fmt.Errorf("%w: %v", common.ErrTokenCount, err)
 	}
 
-	// Create chat messages
 	chatMessages := []openai.ChatCompletionMessage{{
 		Role:    openai.ChatMessageRoleSystem,
 		Content: systemPrompt,
 	}}
 
-	// Add filtered messages
 	for i, content := range filteredMsgs {
 		role := openai.ChatMessageRoleUser
 		if messages[len(messages)-len(filteredMsgs)+i].IsFromBot {
@@ -183,15 +179,15 @@ func (o *OpenAI) GenerateResponse(ctx context.Context, messages []*models.Messag
 		})
 	}
 
-	timeoutCtx, cancel := context.WithTimeout(ctx, o.config.Timeout)
+	timeoutCtx, cancel := context.WithTimeout(ctx, o.config.timeout)
 	defer cancel()
 
 	resp, err := o.client.CreateChatCompletion(
 		timeoutCtx,
 		openai.ChatCompletionRequest{
-			Model:       o.config.Model,
+			Model:       o.config.model,
 			Messages:    chatMessages,
-			Temperature: o.config.Temperature,
+			Temperature: o.config.temperature,
 		},
 	)
 	if err != nil {
@@ -209,16 +205,25 @@ func (o *OpenAI) GenerateResponse(ctx context.Context, messages []*models.Messag
 }
 
 // GenerateProfile generates a user profile from messages
-func (o *OpenAI) GenerateProfile(ctx context.Context, userID int64, messages []*models.Message) (*models.UserProfile, error) {
+func (o *OpenAI) GenerateProfile(ctx context.Context, userID int64, messages []*models.Message, botInfo models.BotInfo) (*models.UserProfile, error) {
 	if len(messages) == 0 {
 		return nil, common.ErrEmptyInput
 	}
 
-	if userID <= 0 {
-		return nil, common.ErrInvalidUserID
+	if userID == botInfo.ID {
+		return &models.UserProfile{
+			UserID:          botInfo.ID,
+			DisplayNames:    getBotDisplayNames(botInfo),
+			OriginLocation:  "Internet",
+			CurrentLocation: "Internet",
+			AgeRange:        "N/A",
+			Traits:          "Group Chat Bot",
+			LastUpdated:     time.Now().UTC(),
+			IsBot:           true,
+			Username:        botInfo.UserName,
+		}, nil
 	}
 
-	// Create instruction
 	instruction := fmt.Sprintf(`
 ## BOT IDENTIFICATION [IMPORTANT]
 Bot UID: %d
@@ -241,16 +246,14 @@ Return ONLY a JSON object with this structure:
     "traits": "Comma-separated list of personality traits and characteristics"
 }
 
-%s`, o.config.BotID, o.config.BotUserName, o.config.BotFirstName, o.config.ProfileInstruction)
+%s`, botInfo.ID, botInfo.UserName, botInfo.FirstName, o.config.profileInstruction)
 
-	// Calculate available tokens after instruction
 	systemTokens, err := common.CountTokens(instruction)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", common.ErrTokenCount, err)
 	}
-	availableTokens := o.maxTokens - systemTokens
 
-	// Format user's messages
+	availableTokens := o.maxTokens - systemTokens
 	formattedMsgs := make([]string, 0, len(messages))
 	for _, msg := range messages {
 		if msg.UserID == userID {
@@ -261,13 +264,11 @@ Return ONLY a JSON object with this structure:
 		}
 	}
 
-	// Filter messages to fit within available tokens
-	filteredMsgs, err := common.FilterContent(formattedMsgs, availableTokens, true) // true for newest first
+	filteredMsgs, err := common.FilterContent(formattedMsgs, availableTokens, true)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", common.ErrTokenCount, err)
 	}
 
-	// Create message content
 	var messageContent strings.Builder
 	messageContent.WriteString(fmt.Sprintf("Analyzing messages from User %d:\n\n", userID))
 	for _, content := range filteredMsgs {
@@ -285,15 +286,15 @@ Return ONLY a JSON object with this structure:
 		},
 	}
 
-	timeoutCtx, cancel := context.WithTimeout(ctx, o.config.Timeout)
+	timeoutCtx, cancel := context.WithTimeout(ctx, o.config.timeout)
 	defer cancel()
 
 	resp, err := o.client.CreateChatCompletion(
 		timeoutCtx,
 		openai.ChatCompletionRequest{
-			Model:       o.config.Model,
+			Model:       o.config.model,
 			Messages:    chatMessages,
-			Temperature: o.config.Temperature,
+			Temperature: o.config.temperature,
 		},
 	)
 	if err != nil {
@@ -312,37 +313,25 @@ Return ONLY a JSON object with this structure:
 	// Extract JSON content
 	jsonStart := strings.Index(response, "{")
 	jsonEnd := strings.LastIndex(response, "}")
-	if jsonStart == -1 || jsonEnd == -1 || jsonEnd <= jsonStart {
+	if jsonStart == -1 || jsonEnd <= jsonStart {
 		return nil, common.ErrInvalidJSON
 	}
 
-	jsonContent := response[jsonStart : jsonEnd+1]
 	var profile models.UserProfile
-	if err := json.Unmarshal([]byte(jsonContent), &profile); err != nil {
+	if err := json.Unmarshal([]byte(response[jsonStart:jsonEnd+1]), &profile); err != nil {
 		return nil, fmt.Errorf("%w: %v", common.ErrInvalidJSON, err)
 	}
 
 	profile.UserID = userID
 	profile.LastUpdated = time.Now().UTC()
 
-	// Special handling for bot's own profile
-	if userID == o.config.BotID {
-		botDisplayNames := o.config.BotUserName
-		if o.config.BotFirstName != "" && o.config.BotFirstName != o.config.BotUserName {
-			botDisplayNames = fmt.Sprintf("%s, %s", o.config.BotFirstName, o.config.BotUserName)
-		}
-		profile = models.UserProfile{
-			UserID:          userID,
-			DisplayNames:    botDisplayNames,
-			OriginLocation:  "Internet",
-			CurrentLocation: "Internet",
-			AgeRange:        "N/A",
-			Traits:          "Group Chat Bot",
-			LastUpdated:     time.Now().UTC(),
-			IsBot:           true,
-			Username:        o.config.BotUserName,
-		}
-	}
-
 	return &profile, nil
+}
+
+// getBotDisplayNames returns the bot's display names
+func getBotDisplayNames(botInfo models.BotInfo) string {
+	if botInfo.FirstName != "" && botInfo.FirstName != botInfo.UserName {
+		return fmt.Sprintf("%s, %s", botInfo.FirstName, botInfo.UserName)
+	}
+	return botInfo.UserName
 }

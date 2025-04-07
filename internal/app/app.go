@@ -8,72 +8,7 @@ import (
 
 	"github.com/edgard/murailobot/internal/common"
 	"github.com/edgard/murailobot/internal/interfaces"
-	"github.com/edgard/murailobot/internal/services"
 )
-
-// Config holds application configuration
-type Config struct {
-	LogLevel string
-
-	// Service configurations
-	DB        services.SQLConfig
-	OpenAI    services.OpenAIConfig
-	Cron      services.CronConfig
-	Telegram  services.TelegramConfig
-	Commands  map[string]string
-	Templates map[string]string
-}
-
-// LoadFromConfig creates a new Config from the given common.Config
-func LoadFromConfig(cfg *common.Config) Config {
-	// Build command map
-	commands := map[string]string{
-		"start":    cfg.BotCmdStart,
-		"reset":    cfg.BotCmdReset,
-		"analyze":  cfg.BotCmdAnalyze,
-		"profiles": cfg.BotCmdProfiles,
-		"edit":     cfg.BotCmdEditUser,
-	}
-
-	// Build template map
-	templates := map[string]string{
-		"welcome":         cfg.BotMsgWelcome,
-		"unauthorized":    cfg.BotMsgNotAuthorized,
-		"empty":           cfg.BotMsgProvideMessage,
-		"error":           cfg.BotMsgGeneralError,
-		"reset":           cfg.BotMsgHistoryReset,
-		"analyzing":       cfg.BotMsgAnalyzing,
-		"no_profiles":     cfg.BotMsgNoProfiles,
-		"profiles_header": cfg.BotMsgProfilesHeader,
-	}
-
-	return Config{
-		LogLevel: cfg.LogLevel,
-		DB: services.SQLConfig{
-			Path: cfg.DBPath,
-		},
-		OpenAI: services.OpenAIConfig{
-			Token:              cfg.AIToken,
-			BaseURL:            cfg.AIBaseURL,
-			Model:              cfg.AIModel,
-			MaxTokens:          cfg.AIMaxContextTokens,
-			Temperature:        cfg.AITemperature,
-			Timeout:            cfg.AITimeout,
-			Instruction:        cfg.AIInstruction,
-			ProfileInstruction: cfg.AIProfileInstruction,
-		},
-		Cron: services.CronConfig{
-			TimeZone: "UTC", // Default to UTC
-		},
-		Telegram: services.TelegramConfig{
-			Token:          cfg.BotToken,
-			AdminID:        cfg.BotAdminID,
-			MaxContextSize: cfg.AIMaxContextTokens / 2, // Use half of AI context for history
-		},
-		Commands:  commands,
-		Templates: templates,
-	}
-}
 
 // Application represents the main application instance
 type Application struct {
@@ -81,75 +16,70 @@ type Application struct {
 	ai        interfaces.AI
 	bot       interfaces.Bot
 	scheduler interfaces.Scheduler
+	config    *common.Config
 }
 
-// New creates a new application instance
-func New(cfg Config) (*Application, error) {
-	// Configure logging
+// New creates a new application instance using the provided interfaces
+func New(cfg *common.Config, db interfaces.DB, ai interfaces.AI, bot interfaces.Bot, scheduler interfaces.Scheduler) (*Application, error) {
 	if err := configureLogging(cfg.LogLevel); err != nil {
 		return nil, fmt.Errorf("%w: %v", common.ErrInitialization, err)
 	}
 
-	// Initialize database
-	db, err := services.NewSQL(cfg.DB)
-	if err != nil {
-		return nil, fmt.Errorf("%w: database initialization failed", common.ErrInitialization)
-	}
-
-	// Initialize scheduler
-	scheduler, err := services.NewCron(cfg.Cron)
-	if err != nil {
-		return nil, fmt.Errorf("%w: scheduler initialization failed", common.ErrInitialization)
-	}
-
-	// Initialize bot configuration with database and scheduler
-	cfg.Telegram.DB = db
-	cfg.Telegram.Scheduler = scheduler
-	cfg.Telegram.Commands = cfg.Commands
-	cfg.Telegram.Templates = cfg.Templates
-
-	// Initialize bot first to get bot info
-	bot, err := services.NewTelegram(cfg.Telegram)
-	if err != nil {
-		return nil, fmt.Errorf("%w: bot initialization failed", common.ErrInitialization)
-	}
-
-	// Set bot info in OpenAI config
-	cfg.OpenAI.BotID = bot.GetID()
-	cfg.OpenAI.BotUserName = bot.GetUserName()
-	cfg.OpenAI.BotFirstName = bot.GetFirstName()
-
-	// Initialize AI service
-	ai, err := services.NewOpenAI(cfg.OpenAI)
-	if err != nil {
-		return nil, fmt.Errorf("%w: AI service initialization failed", common.ErrInitialization)
-	}
-
-	// Update bot configuration with AI service
-	cfg.Telegram.AI = ai
-
-	// Re-initialize Telegram service with complete configuration
-	bot, err = services.NewTelegram(cfg.Telegram)
-	if err != nil {
-		return nil, fmt.Errorf("%w: bot re-initialization failed", common.ErrInitialization)
-	}
-
-	return &Application{
+	app := &Application{
 		db:        db,
 		ai:        ai,
 		bot:       bot,
 		scheduler: scheduler,
-	}, nil
+		config:    cfg,
+	}
+
+	if err := app.configureServices(); err != nil {
+		return nil, fmt.Errorf("%w: %v", common.ErrInitialization, err)
+	}
+
+	return app, nil
+}
+
+// configureServices initializes and configures all services
+func (a *Application) configureServices() error {
+	// Set dependencies
+	if err := a.bot.SetServices(a.ai, a.db, a.scheduler); err != nil {
+		return fmt.Errorf("failed to set bot dependencies: %w", err)
+	}
+
+	// Configure bot commands and templates
+	if err := a.bot.SetCommands(map[string]string{
+		"start":    a.config.BotCmdStart,
+		"reset":    a.config.BotCmdReset,
+		"analyze":  a.config.BotCmdAnalyze,
+		"profiles": a.config.BotCmdProfiles,
+		"edit":     a.config.BotCmdEditUser,
+	}); err != nil {
+		return fmt.Errorf("failed to set bot commands: %w", err)
+	}
+
+	if err := a.bot.SetTemplates(map[string]string{
+		"welcome":         a.config.BotMsgWelcome,
+		"unauthorized":    a.config.BotMsgNotAuthorized,
+		"empty":           a.config.BotMsgProvideMessage,
+		"error":           a.config.BotMsgGeneralError,
+		"reset":           a.config.BotMsgHistoryReset,
+		"analyzing":       a.config.BotMsgAnalyzing,
+		"no_profiles":     a.config.BotMsgNoProfiles,
+		"profiles_header": a.config.BotMsgProfilesHeader,
+	}); err != nil {
+		return fmt.Errorf("failed to set bot templates: %w", err)
+	}
+
+	return nil
 }
 
 // Start begins the application and listens for errors
 func (a *Application) Start(ctx context.Context, errCh chan<- error) error {
-	// Start scheduler with parent context
 	if err := a.scheduler.Start(ctx); err != nil {
 		return fmt.Errorf("%w: scheduler failed to start", common.ErrServiceStart)
 	}
 
-	// Start bot with error monitoring and parent context
 	go func() {
 		if err := a.bot.Start(ctx); err != nil {
 			errCh <- fmt.Errorf("%w: %v", common.ErrServiceStart, err)
@@ -159,20 +89,27 @@ func (a *Application) Start(ctx context.Context, errCh chan<- error) error {
 	return nil
 }
 
-// Stop gracefully shuts down all components in the correct order:
-// 1. AI service (stop first to prevent new message processing)
-// 2. Bot service (stop next to prevent new messages)
-// 3. Scheduler (stop next to prevent scheduled tasks)
-// 4. Database (stop last as other services might need it during shutdown)
+// Stop gracefully shuts down all components in the correct order
 func (a *Application) Stop(ctx context.Context) error {
 	slog.Info("shutting down application")
+	errs := a.stopServices(ctx)
 
-	// Create error channel for shutdown errors
-	errCh := make(chan error, 4) // Buffer size matches number of services
+	if len(errs) > 0 {
+		return fmt.Errorf("%w: %v", common.ErrServiceStop, errs)
+	}
+
+	slog.Info("application shutdown completed")
+	return nil
+}
+
+// stopServices stops all services in the correct order
+func (a *Application) stopServices(ctx context.Context) []error {
 	done := make(chan struct{})
+	errCh := make(chan error, 4)
 
-	// Shutdown components in the correct order
 	go func() {
+		defer close(done)
+
 		// 1. Stop AI service first
 		if err := a.ai.Stop(); err != nil {
 			errCh <- fmt.Errorf("AI shutdown failed: %w", err)
@@ -192,34 +129,26 @@ func (a *Application) Stop(ctx context.Context) error {
 		if err := a.db.Stop(); err != nil {
 			errCh <- fmt.Errorf("database shutdown failed: %w", err)
 		}
-
-		close(done)
 	}()
 
-	// Wait for shutdown with timeout
 	select {
 	case <-done:
 	case <-ctx.Done():
-		return fmt.Errorf("%w: shutdown timeout", common.ErrShutdownTimeout)
+		return []error{fmt.Errorf("%w: shutdown timeout", common.ErrShutdownTimeout)}
 	}
 
-	// Collect any errors that occurred during shutdown
 	close(errCh)
 	var errs []error
 	for err := range errCh {
 		errs = append(errs, err)
 	}
 
-	if len(errs) > 0 {
-		return fmt.Errorf("%w: %v", common.ErrServiceStop, errs)
-	}
-
-	slog.Info("application shutdown completed")
-	return nil
+	return errs
 }
 
+// configureLogging sets up structured JSON logging with the specified level
 func configureLogging(level string) error {
-	var logLevel slog.Level
+	logLevel := slog.LevelInfo // default level
 	switch level {
 	case "debug":
 		logLevel = slog.LevelDebug
@@ -228,16 +157,14 @@ func configureLogging(level string) error {
 	case "error":
 		logLevel = slog.LevelError
 	case "info", "":
-		logLevel = slog.LevelInfo
+		// use default
 	default:
 		return fmt.Errorf("%w: %s", common.ErrInvalidLogLevel, level)
 	}
 
-	handler := slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
 		Level: logLevel,
-	})
-
-	slog.SetDefault(slog.New(handler))
+	})))
 
 	return nil
 }

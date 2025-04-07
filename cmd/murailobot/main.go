@@ -10,6 +10,7 @@ import (
 
 	"github.com/edgard/murailobot/internal/app"
 	"github.com/edgard/murailobot/internal/common"
+	"github.com/edgard/murailobot/internal/services"
 )
 
 func main() {
@@ -32,8 +33,61 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Create application instance
-	application, err := app.New(app.LoadFromConfig(config))
+	// Create and configure database service
+	db, err := services.NewSQL()
+	if err != nil {
+		slog.Error("failed to create database service", "error", err)
+		os.Exit(1)
+	}
+	if err := db.Configure(config.DBPath); err != nil {
+		slog.Error("failed to configure database", "error", err)
+		os.Exit(1)
+	}
+
+	// Create and configure scheduler service
+	scheduler, err := services.NewCron()
+	if err != nil {
+		slog.Error("failed to create scheduler service", "error", err)
+		os.Exit(1)
+	}
+	if err := scheduler.Configure("UTC"); err != nil {
+		slog.Error("failed to configure scheduler", "error", err)
+		os.Exit(1)
+	}
+
+	// Create and configure Telegram bot service
+	bot, err := services.NewTelegram()
+	if err != nil {
+		slog.Error("failed to create bot service", "error", err)
+		os.Exit(1)
+	}
+	if err := bot.Configure(config.BotToken, config.BotAdminID, config.AIMaxContextTokens/2); err != nil {
+		slog.Error("failed to configure bot", "error", err)
+		os.Exit(1)
+	}
+
+	// Create and configure AI service
+	ai, err := services.NewOpenAI()
+	if err != nil {
+		slog.Error("failed to create AI service", "error", err)
+		os.Exit(1)
+	}
+	if err := ai.Configure(
+		config.AIToken,
+		config.AIBaseURL,
+		config.AIModel,
+		config.AIMaxContextTokens,
+		config.AITemperature,
+		config.AITimeout,
+		config.AIInstruction,
+		config.AIProfileInstruction,
+	); err != nil {
+		slog.Error("failed to configure AI service", "error", err)
+		os.Exit(1)
+	}
+
+	// Create and initialize application
+	application, err := app.New(config, db, ai, bot, scheduler)
 	if err != nil {
 		slog.Error("failed to initialize application", "error", err)
 		os.Exit(1)

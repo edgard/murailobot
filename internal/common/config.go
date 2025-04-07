@@ -24,7 +24,7 @@ type Config struct {
 	BotToken   string `koanf:"bot_token"    validate:"required"`
 	BotAdminID int64  `koanf:"bot_admin_id" validate:"required,gt=0"`
 
-	// Bot message templates
+	// Bot message templates (optional, defaults provided)
 	BotMsgWelcome        string `koanf:"bot_msg_welcome"`
 	BotMsgNotAuthorized  string `koanf:"bot_msg_not_authorized"`
 	BotMsgProvideMessage string `koanf:"bot_msg_provide_message"`
@@ -34,7 +34,7 @@ type Config struct {
 	BotMsgNoProfiles     string `koanf:"bot_msg_no_profiles"`
 	BotMsgProfilesHeader string `koanf:"bot_msg_profiles_header"`
 
-	// Bot command descriptions
+	// Bot command descriptions (optional, defaults provided)
 	BotCmdStart    string `koanf:"bot_cmd_start"`
 	BotCmdReset    string `koanf:"bot_cmd_reset"`
 	BotCmdAnalyze  string `koanf:"bot_cmd_analyze"`
@@ -43,13 +43,13 @@ type Config struct {
 
 	// AI service configuration
 	AIToken              string        `koanf:"ai_token"               validate:"required"`
-	AIBaseURL            string        `koanf:"ai_base_url"            validate:"url"`
+	AIBaseURL            string        `koanf:"ai_base_url"`
 	AIModel              string        `koanf:"ai_model"               validate:"required"`
-	AITemperature        float32       `koanf:"ai_temperature"         validate:"min=0,max=2"`
+	AITemperature        float32       `koanf:"ai_temperature"         validate:"gte=0,lte=1"`
 	AIInstruction        string        `koanf:"ai_instruction"         validate:"required"`
 	AIProfileInstruction string        `koanf:"ai_profile_instruction" validate:"required"`
-	AITimeout            time.Duration `koanf:"ai_timeout"             validate:"min=1s,max=10m"`
-	AIMaxContextTokens   int           `koanf:"ai_max_context_tokens"  validate:"min=1000,max=1000000"`
+	AITimeout            time.Duration `koanf:"ai_timeout"             validate:"required,min=1s"`
+	AIMaxContextTokens   int           `koanf:"ai_max_context_tokens"  validate:"min=1000"`
 
 	// Database configuration
 	DBPath string `koanf:"db_path" validate:"required"`
@@ -58,38 +58,24 @@ type Config struct {
 // LoadConfig loads configuration from config.yaml, sets default values,
 // and validates the configuration. If the config file doesn't exist,
 // it uses default values for optional fields.
-//
-// Returns the validated configuration or an error if loading or validation fails.
-// The error will include details about any validation failures.
 func LoadConfig() (*Config, error) {
 	config := &Config{}
 	setDefaults(config)
 
 	configPath := "config.yaml"
-
 	k := koanf.New(".")
-	if err := k.Load(file.Provider(configPath), yaml.Parser()); err != nil {
-		if !os.IsNotExist(err) {
-			return nil, fmt.Errorf("failed to read config file: %w", err)
-		}
-	} else {
-		if err := k.Unmarshal("", config); err != nil {
-			return nil, fmt.Errorf("failed to parse config file: %w", err)
-		}
+
+	if err := k.Load(file.Provider(configPath), yaml.Parser()); err != nil && !os.IsNotExist(err) {
+		return nil, fmt.Errorf("failed to read config file: %w", err)
+	}
+
+	if err := k.Unmarshal("", config); err != nil {
+		return nil, fmt.Errorf("failed to parse config file: %w", err)
 	}
 
 	// Validate configuration
-	if err := validator.New().Struct(config); err != nil {
-		var validationErrors []string
-		if errs, ok := err.(validator.ValidationErrors); ok {
-			for _, e := range errs {
-				validationErrors = append(validationErrors,
-					fmt.Sprintf("%s: failed %s validation", e.Field(), e.Tag()))
-			}
-			return nil, fmt.Errorf("configuration validation failed:\n- %s",
-				strings.Join(validationErrors, "\n- "))
-		}
-		return nil, fmt.Errorf("configuration validation failed: %w", err)
+	if err := validateConfig(config); err != nil {
+		return nil, err
 	}
 
 	// Log configuration summary
@@ -101,6 +87,23 @@ func LoadConfig() (*Config, error) {
 		"db_path", config.DBPath)
 
 	return config, nil
+}
+
+// validateConfig performs validation of the configuration
+func validateConfig(config *Config) error {
+	if err := validator.New().Struct(config); err != nil {
+		var validationErrors []string
+		if errs, ok := err.(validator.ValidationErrors); ok {
+			for _, e := range errs {
+				validationErrors = append(validationErrors,
+					fmt.Sprintf("%s: failed %s validation", e.Field(), e.Tag()))
+			}
+			return fmt.Errorf("configuration validation failed:\n- %s",
+				strings.Join(validationErrors, "\n- "))
+		}
+		return fmt.Errorf("configuration validation failed: %w", err)
+	}
+	return nil
 }
 
 // setDefaults initializes configuration with sensible default values

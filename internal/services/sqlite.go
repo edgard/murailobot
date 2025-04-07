@@ -8,30 +8,49 @@ import (
 	"time"
 
 	"github.com/edgard/murailobot/internal/common"
+	"github.com/edgard/murailobot/internal/interfaces"
 	"github.com/edgard/murailobot/internal/models"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 )
 
-// SQLConfig holds configuration for SQL service
-type SQLConfig struct {
-	Path string
-}
-
 // SQL implements the DB interface using SQLite
 type SQL struct {
-	db *gorm.DB
+	db     *gorm.DB
+	dbPath string
 }
 
 // NewSQL creates a new SQL service instance
-func NewSQL(config SQLConfig) (*SQL, error) {
-	db, err := initDatabase(config.Path)
+func NewSQL() (interfaces.DB, error) {
+	return &SQL{}, nil
+}
+
+// Configure sets up the database with the given path
+func (s *SQL) Configure(path string) error {
+	s.dbPath = path
+
+	// Configure custom logger for GORM
+	gormLogger := logger.New(
+		&gormLogger{writer: os.Stderr},
+		logger.Config{
+			LogLevel: logger.Error, // Only log errors
+		})
+
+	db, err := gorm.Open(sqlite.Open(path), &gorm.Config{
+		Logger: gormLogger,
+	})
 	if err != nil {
-		return nil, fmt.Errorf("%w: %v", common.ErrDatabaseInit, err)
+		return fmt.Errorf("%w: %v", common.ErrDatabaseInit, err)
 	}
 
-	return &SQL{db: db}, nil
+	// Run migrations
+	if err := db.AutoMigrate(&models.Message{}, &models.UserProfile{}); err != nil {
+		return fmt.Errorf("%w: %v", common.ErrDatabaseMigration, err)
+	}
+
+	s.db = db
+	return nil
 }
 
 // GetMessages retrieves messages for a group
@@ -193,27 +212,4 @@ type gormLogger struct {
 
 func (l *gormLogger) Printf(format string, args ...interface{}) {
 	fmt.Fprintf(l.writer, format+"\n", args...)
-}
-
-func initDatabase(path string) (*gorm.DB, error) {
-	// Configure custom logger for GORM
-	gormLogger := logger.New(
-		&gormLogger{writer: os.Stderr},
-		logger.Config{
-			LogLevel: logger.Error, // Only log errors
-		})
-
-	db, err := gorm.Open(sqlite.Open(path), &gorm.Config{
-		Logger: gormLogger,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("%w: %v", common.ErrDatabaseInit, err)
-	}
-
-	// Run migrations
-	if err := db.AutoMigrate(&models.Message{}, &models.UserProfile{}); err != nil {
-		return nil, fmt.Errorf("%w: %v", common.ErrDatabaseMigration, err)
-	}
-
-	return db, nil
 }
