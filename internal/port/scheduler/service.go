@@ -1,14 +1,11 @@
-// Package scheduler defines the interface for scheduling operations.
+// Package scheduler defines the port interface for scheduling functionality
 package scheduler
 
-// JobFunc is a function that will be executed by the scheduler.
-type JobFunc func()
-
-// Service defines the interface for scheduler operations.
+// Service defines the interface for scheduling recurring tasks and jobs
 type Service interface {
-	// AddJob adds a new job to the scheduler.
-	AddJob(name string, cronSpec string, job JobFunc) error
+	// AddJob schedules a new job with the given name and cron expression
+	AddJob(name, cronExpr string, job func()) error
 
-	// Stop gracefully shuts down the scheduler.
+	// Stop gracefully shuts down the scheduler
 	Stop() error
 }

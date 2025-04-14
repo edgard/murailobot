@@ -1,6 +1,6 @@
-// Package utils provides utility functions and components for MurailoBot,
-// including scheduling, text processing, and other shared functionality.
-package utils
+// Package util provides common utility functions for MurailoBot,
+// including text processing and other shared functionality.
+package util
 
 import (
 	"errors"

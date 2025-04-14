@@ -1,4 +1,5 @@
-// Package cron provides a cron-based implementation of the scheduler service port.
+// Package scheduler provides an implementation of the scheduler port interface
+// using the gocron library.
 package cron
 
 import (
@@ -7,17 +8,20 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/edgard/murailobot/internal/port/scheduler"
 	"github.com/go-co-op/gocron/v2"
 )
 
-// cronScheduler implements the scheduler.Service interface
-type cronScheduler struct {
+// Scheduler provides job scheduling functionality for recurring tasks
+// using the gocron library.
+type Scheduler struct {
 	scheduler gocron.Scheduler
 }
 
-// NewScheduler creates and starts a new scheduler instance
-func NewScheduler() (scheduler.Service, error) {
+// NewScheduler creates and starts a new scheduler instance configured
+// to use UTC timezone and structured logging.
+//
+// Returns an error if the scheduler creation fails.
+func NewScheduler() (*Scheduler, error) {
 	s, err := gocron.NewScheduler(
 		gocron.WithLocation(time.UTC),
 		gocron.WithLogger(&gocronLogAdapter{}),
@@ -30,11 +34,19 @@ func NewScheduler() (scheduler.Service, error) {
 	s.Start()
 	slog.Debug("scheduler started")
 
-	return &cronScheduler{scheduler: s}, nil
+	return &Scheduler{scheduler: s}, nil
 }
 
-// AddJob adds a new job to the scheduler using a cron expression
-func (s *cronScheduler) AddJob(name, cronExpr string, job scheduler.JobFunc) error {
+// AddJob adds a new job to the scheduler using a cron expression.
+// The job will be executed according to the schedule defined by the cron expression.
+//
+// Parameters:
+// - name: A unique identifier for the job
+// - cronExpr: A cron expression defining the schedule (e.g., "0 0 * * *" for daily at midnight)
+// - job: The function to execute when the job runs
+//
+// Returns an error if any parameters are invalid or if scheduling fails.
+func (s *Scheduler) AddJob(name, cronExpr string, job func()) error {
 	// Validate parameters
 	if name == "" {
 		return errors.New("empty job name")
@@ -95,8 +107,11 @@ func (s *cronScheduler) AddJob(name, cronExpr string, job scheduler.JobFunc) err
 	return nil
 }
 
-// Stop gracefully shuts down the scheduler
-func (s *cronScheduler) Stop() error {
+// Stop gracefully shuts down the scheduler and waits for all running jobs
+// to complete before returning.
+//
+// Returns an error if the shutdown process fails.
+func (s *Scheduler) Stop() error {
 	slog.Debug("stopping scheduler", "active_jobs", len(s.scheduler.Jobs()))
 
 	if err := s.scheduler.Shutdown(); err != nil {

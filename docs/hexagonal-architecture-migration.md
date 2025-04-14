@@ -89,13 +89,13 @@ The migration will follow these phases:
 │   │   └── service/        # Business logic services
 │   ├── port/               # Interface definitions
 │   │   ├── ai/             # AI service interfaces
-│   │   ├── bot/            # Bot interfaces
+│   │   ├── chat/           # Chat interfaces
 │   │   ├── scheduler/      # Scheduler interfaces
 │   │   └── store/          # Storage interfaces
 │   ├── adapter/            # Interface implementations
 │   │   ├── ai/
 │   │   │   └── openai/     # OpenAI implementation
-│   │   ├── bot/
+│   │   ├── chat/
 │   │   │   └── telegram/   # Telegram implementation
 │   │   ├── scheduler/
 │   │   │   └── cron/       # Cron-based scheduler
@@ -215,7 +215,7 @@ import (
 
     "github.com/edgard/murailobot/internal/adapter/store/sqlite"
     "github.com/edgard/murailobot/internal/domain/service"
-    "github.com/edgard/murailobot/internal/port/bot"
+    "github.com/edgard/murailobot/internal/port/chat"
     "github.com/edgard/murailobot/internal/port/store"
 )
 
@@ -286,16 +286,16 @@ var UserModule = fx.Module("user",
     }),
 )
 
-// BotModule shows cross-module dependencies
-var BotModule = fx.Module("bot",
+// ChatModule shows cross-module dependencies
+var ChatModule = fx.Module("chat",
     // Import dependencies from other modules
     fx.Provide(
         fx.Annotate(
-            func(p ServiceParams) bot.Service {
-                // Create bot service with injected dependencies
-                return telegram.NewBotService(p.Logger, p.UserStore)
+            func(p ServiceParams) chat.Service {
+                // Create chat service with injected dependencies
+                return telegram.NewChatService(p.Logger, p.UserStore)
             },
-            fx.As(new(bot.Service)),
+            fx.As(new(chat.Service)),
         ),
     ),
 )
@@ -318,7 +318,7 @@ import (
     "go.uber.org/zap"
 
     "github.com/edgard/murailobot/internal/common/config"
-    "github.com/edgard/murailobot/internal/port/bot"
+    "github.com/edgard/murailobot/internal/port/chat"
     appfx "github.com/edgard/murailobot/internal/fx"
 )
 
@@ -327,7 +327,7 @@ type Application struct {
     fx.In
 
     Logger  *zap.Logger
-    BotSvc  bot.Service
+    ChatSvc chat.Service
     // Other dependencies
 }
 
@@ -357,7 +357,7 @@ func main() {
 
         // Include all application modules
         appfx.UserModule,
-        appfx.BotModule,
+        appfx.ChatModule,
         appfx.AIModule,
         appfx.SchedulerModule,
 
@@ -391,11 +391,11 @@ func runApp(lc fx.Lifecycle, app Application) {
     lc.Append(fx.Hook{
         OnStart: func(ctx context.Context) error {
             app.Logger.Info("starting MurailoBot")
-            return app.BotSvc.Start(ctx)
+            return app.ChatSvc.Start(ctx)
         },
         OnStop: func(ctx context.Context) error {
             app.Logger.Info("stopping MurailoBot")
-            return app.BotSvc.Stop(ctx)
+            return app.ChatSvc.Stop(ctx)
         },
     })
 }
