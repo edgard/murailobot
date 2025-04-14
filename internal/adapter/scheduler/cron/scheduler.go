@@ -23,6 +23,7 @@ type Scheduler struct {
 //
 // Returns an error if the scheduler creation fails.
 func NewScheduler(logger *zap.Logger) (*Scheduler, error) {
+	// Create logger adapter with debug level checking
 	gocronLogger := &gocronLogAdapter{logger: logger}
 
 	s, err := gocron.NewScheduler(
@@ -71,7 +72,6 @@ func (s *Scheduler) AddJob(name, cronExpr string, job func()) error {
 		var startTime time.Time
 
 		const slowThreshold = 5 * time.Second
-
 		// Using a closure to conditionally time the execution
 		func() {
 			// Only measure timing for potential logging
@@ -133,17 +133,17 @@ type gocronLogAdapter struct {
 }
 
 func (l *gocronLogAdapter) Debug(msg string, args ...interface{}) {
-	l.logger.Sugar().Debugw(msg, args...)
+	l.logger.Debug(msg, zap.Any("args", args))
 }
 
 func (l *gocronLogAdapter) Info(msg string, args ...interface{}) {
-	l.logger.Sugar().Infow(msg, args...)
+	l.logger.Info(msg, zap.Any("args", args))
 }
 
 func (l *gocronLogAdapter) Warn(msg string, args ...interface{}) {
-	l.logger.Sugar().Warnw(msg, args...)
+	l.logger.Warn(msg, zap.Any("args", args))
 }
 
 func (l *gocronLogAdapter) Error(msg string, args ...interface{}) {
-	l.logger.Sugar().Errorw(msg, args...)
+	l.logger.Error(msg, zap.Any("args", args))
 }

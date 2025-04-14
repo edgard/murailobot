@@ -1,4 +1,3 @@
-// Package sqlite provides a SQLite implementation of the store port.
 package sqlite
 
 import (
@@ -73,58 +72,58 @@ func (l *gormLogAdapter) LogMode(level gormlogger.LogLevel) gormlogger.Interface
 	return &newLogger
 }
 
-// Info implements gormlogger.Interface
-func (l *gormLogAdapter) Info(ctx context.Context, msg string, data ...interface{}) {
+func (l *gormLogAdapter) Info(ctx context.Context, msg string, args ...interface{}) {
 	if l.config.LogLevel >= gormlogger.Info {
-		l.logger.Sugar().Infof(msg, data...)
+		l.logger.Info(msg, zap.Any("args", args))
 	}
 }
 
-// Warn implements gormlogger.Interface
-func (l *gormLogAdapter) Warn(ctx context.Context, msg string, data ...interface{}) {
+func (l *gormLogAdapter) Warn(ctx context.Context, msg string, args ...interface{}) {
 	if l.config.LogLevel >= gormlogger.Warn {
-		l.logger.Sugar().Warnf(msg, data...)
+		l.logger.Warn(msg, zap.Any("args", args))
 	}
 }
 
-// Error implements gormlogger.Interface
-func (l *gormLogAdapter) Error(ctx context.Context, msg string, data ...interface{}) {
+func (l *gormLogAdapter) Error(ctx context.Context, msg string, args ...interface{}) {
 	if l.config.LogLevel >= gormlogger.Error {
-		l.logger.Sugar().Errorf(msg, data...)
+		l.logger.Error(msg, zap.Any("args", args))
 	}
 }
 
-// Trace implements gormlogger.Interface
-func (l *gormLogAdapter) Trace(ctx context.Context, begin time.Time, fc func() (string, int64), err error) {
+func (l *gormLogAdapter) Trace(ctx context.Context, begin time.Time, fc func() (sql string, rowsAffected int64), err error) {
 	if l.config.LogLevel <= gormlogger.Silent {
 		return
 	}
 
 	elapsed := time.Since(begin)
+
+	// Extract SQL and rows information only if we're going to use them
+	var sql string
+	var rows int64
+
 	switch {
 	case err != nil && l.config.LogLevel >= gormlogger.Error:
-		sql, rows := fc()
-		l.logger.Error("gorm error",
+		sql, rows = fc()
+		l.logger.Error("gorm query error",
 			zap.Error(err),
 			zap.Duration("elapsed", elapsed),
 			zap.String("sql", sql),
-			zap.Int64("rows", rows),
-		)
+			zap.Int64("rows", rows))
+
 	case elapsed > l.config.SlowThreshold && l.config.SlowThreshold != 0 && l.config.LogLevel >= gormlogger.Warn:
-		sql, rows := fc()
+		sql, rows = fc()
 		l.logger.Warn("gorm slow query",
 			zap.Duration("elapsed", elapsed),
 			zap.String("sql", sql),
 			zap.Int64("rows", rows),
-			zap.Duration("threshold", l.config.SlowThreshold),
-		)
+			zap.Duration("threshold", l.config.SlowThreshold))
+
 	case l.config.LogLevel >= gormlogger.Info:
-		sql, rows := fc()
+		sql, rows = fc()
 		l.logger.Debug("gorm query",
 			zap.Duration("elapsed", elapsed),
 			zap.String("sql", sql),
-			zap.Int64("rows", rows),
-		)
+			zap.Int64("rows", rows))
 	}
 }
 
@@ -132,10 +131,25 @@ func (l *gormLogAdapter) Trace(ctx context.Context, begin time.Time, fc func() (
 func NewStore(cfg *config.Config, logger *zap.Logger) (store.Store, error) {
 	startTime := time.Now()
 
+	// Map config log level to GORM log level
+	var gormLogLevel gormlogger.LogLevel
+	switch cfg.LogLevel {
+	case "debug":
+		gormLogLevel = gormlogger.Info // GORM's Info level includes SQL queries
+	case "info":
+		gormLogLevel = gormlogger.Warn
+	case "warn":
+		gormLogLevel = gormlogger.Warn
+	case "error":
+		gormLogLevel = gormlogger.Error
+	default:
+		gormLogLevel = gormlogger.Warn
+	}
+
 	// Configure GORM logger
 	gormLoggerConfig := gormlogger.Config{
 		SlowThreshold:             200 * time.Millisecond,
-		LogLevel:                  gormlogger.Warn,
+		LogLevel:                  gormLogLevel,
 		IgnoreRecordNotFoundError: true,
 		Colorful:                  false,
 	}

@@ -3,13 +3,12 @@ package config
 
 import (
 	"fmt"
-	"log/slog"
-	"os"
 	"time"
 
 	"github.com/knadh/koanf/parsers/yaml"
 	"github.com/knadh/koanf/providers/file"
 	"github.com/knadh/koanf/v2"
+	"go.uber.org/zap"
 )
 
 // Config contains all the application configuration values.
@@ -51,7 +50,7 @@ type Config struct {
 }
 
 // Load reads configuration from a YAML file and validates it.
-func Load(filePath string) (*Config, error) {
+func Load(filePath string, logger *zap.Logger) (*Config, error) {
 	k := koanf.New(".")
 
 	// Load configuration
@@ -60,7 +59,7 @@ func Load(filePath string) (*Config, error) {
 	}
 
 	// Apply defaults for optional values
-	applyDefaults(k)
+	applyDefaults(k, logger)
 
 	// Unmarshal to struct
 	var cfg Config
@@ -68,143 +67,140 @@ func Load(filePath string) (*Config, error) {
 		return nil, fmt.Errorf("failed to unmarshal config: %w", err)
 	}
 
-	// Configure logging
-	configureLogging(&cfg)
-
-	slog.Info("configuration loaded successfully", "config_file", filePath)
+	logger.Info("configuration loaded successfully", zap.String("config_file", filePath))
 
 	return &cfg, nil
 }
 
-func applyDefaults(k *koanf.Koanf) {
+func applyDefaults(k *koanf.Koanf, logger *zap.Logger) {
 	// Bot default messages
 	if !k.Exists("bot_msg_welcome") {
 		if err := k.Set("bot_msg_welcome", "Hello! I'm MurailoBot. Mention me in a group message to chat!"); err != nil {
-			slog.Error("failed to set default config value", "key", "bot_msg_welcome", "error", err)
+			logger.Error("failed to set default config value", zap.String("key", "bot_msg_welcome"), zap.Error(err))
 		}
 	}
 
 	if !k.Exists("bot_msg_not_authorized") {
 		if err := k.Set("bot_msg_not_authorized", "You are not authorized to use this command."); err != nil {
-			slog.Error("failed to set default config value", "key", "bot_msg_not_authorized", "error", err)
+			logger.Error("failed to set default config value", zap.String("key", "bot_msg_not_authorized"), zap.Error(err))
 		}
 	}
 
 	if !k.Exists("bot_msg_provide_message") {
 		if err := k.Set("bot_msg_provide_message", "Please provide a message."); err != nil {
-			slog.Error("failed to set default config value", "key", "bot_msg_provide_message", "error", err)
+			logger.Error("failed to set default config value", zap.String("key", "bot_msg_provide_message"), zap.Error(err))
 		}
 	}
 
 	if !k.Exists("bot_msg_general_error") {
 		if err := k.Set("bot_msg_general_error", "An error occurred. Please try again later."); err != nil {
-			slog.Error("failed to set default config value", "key", "bot_msg_general_error", "error", err)
+			logger.Error("failed to set default config value", zap.String("key", "bot_msg_general_error"), zap.Error(err))
 		}
 	}
 
 	if !k.Exists("bot_msg_history_reset") {
 		if err := k.Set("bot_msg_history_reset", "Message history and user profiles have been reset."); err != nil {
-			slog.Error("failed to set default config value", "key", "bot_msg_history_reset", "error", err)
+			logger.Error("failed to set default config value", zap.String("key", "bot_msg_history_reset"), zap.Error(err))
 		}
 	}
 
 	if !k.Exists("bot_msg_analyzing") {
 		if err := k.Set("bot_msg_analyzing", "Analyzing messages and updating user profiles..."); err != nil {
-			slog.Error("failed to set default config value", "key", "bot_msg_analyzing", "error", err)
+			logger.Error("failed to set default config value", zap.String("key", "bot_msg_analyzing"), zap.Error(err))
 		}
 	}
 
 	if !k.Exists("bot_msg_no_profiles") {
 		if err := k.Set("bot_msg_no_profiles", "No user profiles found. Try analyzing more messages first."); err != nil {
-			slog.Error("failed to set default config value", "key", "bot_msg_no_profiles", "error", err)
+			logger.Error("failed to set default config value", zap.String("key", "bot_msg_no_profiles"), zap.Error(err))
 		}
 	}
 
 	if !k.Exists("bot_msg_profiles_header") {
 		if err := k.Set("bot_msg_profiles_header", "📊 User Profiles:\n\n"); err != nil {
-			slog.Error("failed to set default config value", "key", "bot_msg_profiles_header", "error", err)
+			logger.Error("failed to set default config value", zap.String("key", "bot_msg_profiles_header"), zap.Error(err))
 		}
 	}
 
 	// Bot command descriptions
 	if !k.Exists("bot_cmd_start") {
 		if err := k.Set("bot_cmd_start", "Start the bot and get a welcome message"); err != nil {
-			slog.Error("failed to set default config value", "key", "bot_cmd_start", "error", err)
+			logger.Error("failed to set default config value", zap.String("key", "bot_cmd_start"), zap.Error(err))
 		}
 	}
 
 	if !k.Exists("bot_cmd_reset") {
 		if err := k.Set("bot_cmd_reset", "Reset message history and profiles"); err != nil {
-			slog.Error("failed to set default config value", "key", "bot_cmd_reset", "error", err)
+			logger.Error("failed to set default config value", zap.String("key", "bot_cmd_reset"), zap.Error(err))
 		}
 	}
 
 	if !k.Exists("bot_cmd_analyze") {
 		if err := k.Set("bot_cmd_analyze", "Analyze messages and update profiles"); err != nil {
-			slog.Error("failed to set default config value", "key", "bot_cmd_analyze", "error", err)
+			logger.Error("failed to set default config value", zap.String("key", "bot_cmd_analyze"), zap.Error(err))
 		}
 	}
 
 	if !k.Exists("bot_cmd_profiles") {
 		if err := k.Set("bot_cmd_profiles", "Show user profiles"); err != nil {
-			slog.Error("failed to set default config value", "key", "bot_cmd_profiles", "error", err)
+			logger.Error("failed to set default config value", zap.String("key", "bot_cmd_profiles"), zap.Error(err))
 		}
 	}
 
 	if !k.Exists("bot_cmd_edit_user") {
 		if err := k.Set("bot_cmd_edit_user", "Edit a user profile field"); err != nil {
-			slog.Error("failed to set default config value", "key", "bot_cmd_edit_user", "error", err)
+			logger.Error("failed to set default config value", zap.String("key", "bot_cmd_edit_user"), zap.Error(err))
 		}
 	}
 
 	// AI configuration defaults
 	if !k.Exists("ai_base_url") {
 		if err := k.Set("ai_base_url", "https://api.openai.com/v1"); err != nil {
-			slog.Error("failed to set default config value", "key", "ai_base_url", "error", err)
+			logger.Error("failed to set default config value", zap.String("key", "ai_base_url"), zap.Error(err))
 		}
 	}
 
 	if !k.Exists("ai_model") {
 		if err := k.Set("ai_model", "gpt-3.5-turbo"); err != nil {
-			slog.Error("failed to set default config value", "key", "ai_model", "error", err)
+			logger.Error("failed to set default config value", zap.String("key", "ai_model"), zap.Error(err))
 		}
 	}
 
 	if !k.Exists("ai_temperature") {
 		if err := k.Set("ai_temperature", 0.8); err != nil {
-			slog.Error("failed to set default config value", "key", "ai_temperature", "error", err)
+			logger.Error("failed to set default config value", zap.String("key", "ai_temperature"), zap.Error(err))
 		}
 	}
 
 	if !k.Exists("ai_timeout") {
 		if err := k.Set("ai_timeout", 30*time.Second); err != nil {
-			slog.Error("failed to set default config value", "key", "ai_timeout", "error", err)
+			logger.Error("failed to set default config value", zap.String("key", "ai_timeout"), zap.Error(err))
 		}
 	}
 
 	if !k.Exists("ai_max_context_tokens") {
 		if err := k.Set("ai_max_context_tokens", 4000); err != nil {
-			slog.Error("failed to set default config value", "key", "ai_max_context_tokens", "error", err)
+			logger.Error("failed to set default config value", zap.String("key", "ai_max_context_tokens"), zap.Error(err))
 		}
 	}
 
 	// Database configuration defaults
 	if !k.Exists("db_path") {
 		if err := k.Set("db_path", "storage.db"); err != nil {
-			slog.Error("failed to set default config value", "key", "db_path", "error", err)
+			logger.Error("failed to set default config value", zap.String("key", "db_path"), zap.Error(err))
 		}
 	}
 
 	// Logging configuration defaults
 	if !k.Exists("log_format") {
 		if err := k.Set("log_format", "json"); err != nil {
-			slog.Error("failed to set default config value", "key", "log_format", "error", err)
+			logger.Error("failed to set default config value", zap.String("key", "log_format"), zap.Error(err))
 		}
 	}
 
 	if !k.Exists("log_level") {
 		if err := k.Set("log_level", "info"); err != nil {
-			slog.Error("failed to set default config value", "key", "log_level", "error", err)
+			logger.Error("failed to set default config value", zap.String("key", "log_level"), zap.Error(err))
 		}
 	}
 
@@ -217,7 +213,7 @@ When asked about technical topics, provide accurate information with examples wh
 For subjective questions, present multiple perspectives and avoid strong bias.
 Keep responses concise and to the point, use markdown formatting sparingly for readability.
 Be friendly and casual in tone while remaining respectful.`); err != nil {
-			slog.Error("failed to set default config value", "key", "ai_instruction", "error", err)
+			logger.Error("failed to set default config value", zap.String("key", "ai_instruction"), zap.Error(err))
 		}
 	}
 
@@ -235,40 +231,7 @@ Your task is to analyze chat messages and build concise, meaningful profiles of 
 
 Focus on what the text directly reveals. Make cautious, conservative inferences where evidence is limited.
 If information is missing, leave those fields empty rather than guessing.`); err != nil {
-			slog.Error("failed to set default config value", "key", "ai_profile_instruction", "error", err)
+			logger.Error("failed to set default config value", zap.String("key", "ai_profile_instruction"), zap.Error(err))
 		}
-	}
-}
-
-func configureLogging(cfg *Config) {
-	var handler slog.Handler
-
-	switch cfg.LogFormat {
-	case "text":
-		handler = slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
-			Level: getLogLevel(cfg.LogLevel),
-		})
-	default: // json
-		handler = slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{
-			Level: getLogLevel(cfg.LogLevel),
-		})
-	}
-
-	logger := slog.New(handler)
-	slog.SetDefault(logger)
-}
-
-func getLogLevel(level string) slog.Level {
-	switch level {
-	case "debug":
-		return slog.LevelDebug
-	case "info":
-		return slog.LevelInfo
-	case "warn":
-		return slog.LevelWarn
-	case "error":
-		return slog.LevelError
-	default:
-		return slog.LevelInfo
 	}
 }

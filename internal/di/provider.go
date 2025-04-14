@@ -16,8 +16,9 @@ import (
 )
 
 // ProvideConfig loads and provides the application configuration.
-func ProvideConfig() (*config.Config, error) {
-	return config.Load("config.yaml")
+func ProvideConfig(logger *zap.Logger) (*config.Config, error) {
+	configLogger := logger.Named("config")
+	return config.Load("config.yaml", configLogger)
 }
 
 // ProvideStore creates and provides the database store implementation.
