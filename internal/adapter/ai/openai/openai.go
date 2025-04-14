@@ -491,45 +491,92 @@ func (s *aiService) Sanitize(input string) (string, error) {
 		return "", errors.New("empty input string")
 	}
 
-	metadataFormatRegex := regexp.MustCompile(`^\s*\[\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})\]\s+[^:]*(?::[^:]*)*:\s*`)
-	multipleNewlinesRegex := regexp.MustCompile(`\n{3,}`)
+	// 1. Remove problematic characters first
+	// Remove UTF-8 BOM if present
+	sanitized := strings.TrimPrefix(input, "\uFEFF")
 
-	// Remove metadata prefix (timestamp and user identifier)
-	sanitized := metadataFormatRegex.ReplaceAllString(input, "")
+	// Remove null characters and C0/C1 control characters (except whitespace like \t, \n, \r, \f, \v)
+	// Also remove zero-width space (\u200B)
+	var builder strings.Builder
+	builder.Grow(len(sanitized)) // Pre-allocate for efficiency
+	for _, r := range sanitized {
+		if r == '\u0000' || r == '\u200B' || (unicode.IsControl(r) && !unicode.IsSpace(r)) {
+			continue // Skip null, zero-width space, and non-space control characters
+		}
+		builder.WriteRune(r)
+	}
+	sanitized = builder.String()
 
-	// Normalize line endings
+	// Return error early if removing problematic characters resulted in empty string
+	if sanitized == "" {
+		// Use a more specific error message here
+		return "", errors.New("input contains only problematic or whitespace characters")
+	}
+
+	// 2. Remove metadata prefix (timestamp and user identifier)
+	// Refined regex to match specific valid identifier patterns (UID, BOT, or multi-colon)
+	// Pattern breakdown:
+	// ^\s*                                      - Start anchor, optional leading whitespace
+	// \[\d{4}-...[+-]\d{2}:\d{2})\]\s+     - Timestamp pattern
+	// (?:                                       - Start non-capturing group for identifier alternatives
+	//    UID\s+\d+\s*(?:\([^)]*\))?         - Matches "UID <number> (optional display name)"
+	//    |                                       - OR
+	//    BOT                                     - Matches "BOT"
+	//    |                                       - OR
+	//    [^:\s]+(?:[:][^:\s]+)+                - Matches identifiers with at least one internal colon (e.g., System:Log:Info)
+	// )                                         - End non-capturing group
+	// :\s*                                      - Final colon and optional trailing whitespace
+	metadataFormatRegex := regexp.MustCompile(`^\s*\[\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})\]\s+(?:UID\s+\d+\s*(?:\([^)]*\))?|BOT|[^:\s]+(?:[:][^:\s]+)+):\s*`)
+	sanitized = metadataFormatRegex.ReplaceAllString(sanitized, "")
+
+	// 3. Normalize line endings (\r\n and \r to \n)
 	sanitized = strings.ReplaceAll(sanitized, "\r\n", "\n")
 	sanitized = strings.ReplaceAll(sanitized, "\r", "\n")
 
-	// Normalize whitespace within each line
+	// 4. Normalize whitespace within each line and trim lines
 	lines := strings.Split(sanitized, "\n")
+	var processedLines []string // Use a slice to collect non-empty lines
 	for i, line := range lines {
-		// Normalize whitespace in each line (collapse multiple spaces to single space)
-		var strBuilder strings.Builder
-		var space bool
+		var lineBuilder strings.Builder
+		lineBuilder.Grow(len(line)) // Pre-allocate
+		space := false
 		for _, r := range line {
-			if unicode.IsSpace(r) {
+			if unicode.IsSpace(r) { // Includes ' ', \t, \v, \f, \u00A0, etc.
 				if !space {
-					strBuilder.WriteRune(' ')
+					lineBuilder.WriteRune(' ') // Replace any space sequence with a single space
 					space = true
 				}
 			} else {
-				strBuilder.WriteRune(r)
+				lineBuilder.WriteRune(r)
 				space = false
 			}
 		}
-		lines[i] = strings.TrimSpace(strBuilder.String())
-	}
-	sanitized = strings.Join(lines, "\n")
+		trimmedLine := strings.TrimSpace(lineBuilder.String())
 
-	// Limit consecutive newlines to 2
+		// Decide whether to keep the line or represent it as a blank line for paragraph spacing
+		if trimmedLine != "" {
+			processedLines = append(processedLines, trimmedLine)
+		} else if i > 0 && len(processedLines) > 0 && processedLines[len(processedLines)-1] != "" {
+			// Add a blank line if the original line was blank (or only whitespace)
+			// and the previous processed line was not blank.
+			// This preserves paragraph breaks.
+			processedLines = append(processedLines, "")
+		}
+	}
+	sanitized = strings.Join(processedLines, "\n")
+
+	// 5. Limit consecutive newlines to a maximum of two (\n\n)
+	// This regex handles cases where Join added multiple empty strings
+	multipleNewlinesRegex := regexp.MustCompile(`\n{2,}`)
 	sanitized = multipleNewlinesRegex.ReplaceAllString(sanitized, "\n\n")
 
-	// Trim leading/trailing whitespace of the entire result
+	// 6. Trim leading/trailing whitespace/newlines from the final result
 	result := strings.TrimSpace(sanitized)
 
+	// 7. Final check for empty result after all sanitization
 	if result == "" {
 		s.logger.Warn("sanitization resulted in empty string", zap.String("original_input_length", fmt.Sprintf("%d", len(input))))
+		// Ensure error is returned here
 		return "", errors.New("sanitization resulted in empty string")
 	}
 

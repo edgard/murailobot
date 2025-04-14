@@ -44,7 +44,7 @@ func TestSanitize(t *testing.T) {
 		{"Basic Input", "zero-width space", "\u200B", "", true},
 		{"Basic Input", "null character", "\u0000", "", true},
 		{"Basic Input", "text with control characters", "Hello\u0001World", "HelloWorld", false},
-		{"Basic Input", "very long text", strings.Repeat("Lorem ipsum dolor sit amet. ", 100), strings.Repeat("Lorem ipsum dolor sit amet. ", 100), false},
+		{"Basic Input", "very long text", strings.Repeat("Lorem ipsum dolor sit amet. ", 100), strings.TrimSpace(strings.Repeat("Lorem ipsum dolor sit amet. ", 100)), false},
 		{"Basic Input", "only numbers", "12345", "12345", false},
 
 		// Metadata Removal
