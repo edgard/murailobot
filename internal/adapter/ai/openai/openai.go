@@ -183,12 +183,6 @@ func (s *aiService) GenerateResponse(ctx context.Context, request *ai.Request) (
 		Content: currentMsg,
 	})
 
-	// Get tokenizer for direct token counting
-	tokenizer, err := util.GetTokenizer()
-	if err != nil {
-		s.logger.Warn("failed to get tokenizer, skipping token counting", zap.Error(err))
-	}
-
 	// Create a timeout context to prevent hanging on API calls
 	timeoutCtx, cancel := context.WithTimeout(ctx, s.timeout)
 	defer cancel()
@@ -296,12 +290,6 @@ func (s *aiService) GenerateProfiles(ctx context.Context, messages []*model.Mess
 
 	messageContent := msgBuilder.String()
 
-	// Get tokenizer for direct token counting
-	tokenizer, err := util.GetTokenizer()
-	if err != nil {
-		s.logger.Warn("failed to get tokenizer for token counting", zap.Error(err))
-	}
-
 	// Add the user message to the chat messages
 	chatMessages = append(chatMessages, gopenai.ChatCompletionMessage{
 		Role:    "user",
@@ -344,8 +332,6 @@ func (s *aiService) GenerateProfiles(ctx context.Context, messages []*model.Mess
 }
 
 func (s *aiService) parseProfileResponse(response string, userMessages map[int64][]*model.Message, existingProfiles map[int64]*model.UserProfile, chatBotInfo *model.ChatBotInfo) (map[int64]*model.UserProfile, error) {
-	startTime := time.Now()
-
 	response = strings.TrimSpace(response)
 	if response == "" {
 		s.logger.Error("empty profile response received")

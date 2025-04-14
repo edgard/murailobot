@@ -274,7 +274,9 @@ func (b *telegramChat) processUpdates(updates tgbotapi.UpdatesChannel) error {
 					}
 				}
 			} else if chatType == "private" {
-				// Private messages are not supported - no action needed
+				b.logger.Info("received private message - not processed",
+					zap.Int64("user_id", msg.From.ID),
+					zap.String("username", msg.From.UserName))
 			}
 		}
 	}
@@ -449,8 +451,6 @@ func (b *telegramChat) handleMentionMessage(msg *tgbotapi.Message) error {
 	defer close(stopTyping)
 
 	// Collect context for AI response - consolidated logging
-	startTime := time.Now()
-
 	// Get user profiles - failure is non-critical
 	userProfiles, err := b.store.GetAllUserProfiles(b.ctx)
 	if err != nil {
