@@ -3,14 +3,14 @@ module github.com/edgard/murailobot
 go 1.24
 
 require (
-	github.com/go-co-op/gocron/v2 v2.16.0
-	github.com/go-playground/validator/v10 v10.25.0
+	github.com/go-co-op/gocron/v2 v2.16.1
+	github.com/go-playground/validator/v10 v10.26.0
 	github.com/go-telegram-bot-api/telegram-bot-api/v5 v5.5.1
 	github.com/knadh/koanf/parsers/yaml v0.1.0
 	github.com/knadh/koanf/providers/file v1.1.2
 	github.com/knadh/koanf/v2 v2.1.2
 	github.com/pkoukk/tiktoken-go v0.1.7
-	github.com/sashabaranov/go-openai v1.38.0
+	github.com/sashabaranov/go-openai v1.38.1
 	gorm.io/driver/sqlite v1.5.7
 	gorm.io/gorm v1.25.12
 )
