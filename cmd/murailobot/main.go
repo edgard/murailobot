@@ -2,7 +2,6 @@
 package main
 
 import (
-	"context"
 	"fmt"
 
 	"go.uber.org/fx"
@@ -50,6 +49,7 @@ func configureLogger(cfg *config.Config) error {
 func main() {
 	// Create initial logger with minimal config
 	logger := zap.NewExample()
+	defer logger.Sync() //nolint: errcheck
 
 	logger.Info("starting MurailoBot")
 
@@ -74,12 +74,6 @@ func main() {
 				zap.String("format", cfg.LogFormat),
 				zap.String("level", cfg.LogLevel))
 
-			// Ensure proper cleanup
-			lc.Append(fx.Hook{
-				OnStop: func(context.Context) error {
-					return logger.Sync()
-				},
-			})
 			return nil
 		}),
 	)
