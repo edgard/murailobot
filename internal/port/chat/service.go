@@ -8,7 +8,7 @@ import (
 // Service defines the interface for chat operations.
 type Service interface {
 	// Start begins processing incoming chat updates.
-	Start(errCh chan<- error) error
+	Start() error
 
 	// Stop gracefully shuts down the chat service.
 	Stop() error

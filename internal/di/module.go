@@ -89,15 +89,14 @@ var ChatModule = fx.Module("chat",
 		),
 	),
 	fx.Invoke(func(lc fx.Lifecycle, chatService chat.Service, logger *zap.Logger) {
-		errCh := make(chan error, 1)
-
 		lc.Append(fx.Hook{
 			OnStart: func(ctx context.Context) error {
 				logger.Info("starting chat service")
 				go func() {
-					if err := chatService.Start(errCh); err != nil {
+					if err := chatService.Start(); err != nil {
 						logger.Error("chat service error", zap.Error(err))
-						errCh <- err
+						// Consider using fx.Shutdown or similar if this error should
+						// terminate the application
 					}
 				}()
 				return nil
@@ -107,14 +106,6 @@ var ChatModule = fx.Module("chat",
 				return chatService.Stop()
 			},
 		})
-
-		// Monitor for errors from the chat service
-		go func() {
-			for err := range errCh {
-				logger.Error("chat service error", zap.Error(err))
-				// We might want to handle this more gracefully in the future
-			}
-		}()
 	}),
 )
 

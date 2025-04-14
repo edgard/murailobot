@@ -109,7 +109,7 @@ func NewChatService(
 }
 
 // Start begins processing incoming Telegram updates
-func (b *telegramChat) Start(errCh chan<- error) error {
+func (b *telegramChat) Start() error {
 	b.logger.Info("starting chat service")
 
 	b.logger.Debug("setting up bot commands")
@@ -134,7 +134,7 @@ func (b *telegramChat) Start(errCh chan<- error) error {
 
 	b.logger.Info("chat service started and processing updates")
 
-	return b.processUpdates(updates, errCh)
+	return b.processUpdates(updates)
 }
 
 // Stop gracefully shuts down the chat service
@@ -209,7 +209,7 @@ func (b *telegramChat) setupCommands() error {
 	return err
 }
 
-func (b *telegramChat) processUpdates(updates tgbotapi.UpdatesChannel, errCh chan<- error) error {
+func (b *telegramChat) processUpdates(updates tgbotapi.UpdatesChannel) error {
 	b.logger.Debug("starting to process message updates")
 
 	// Track received message count for periodic logging
@@ -261,13 +261,12 @@ func (b *telegramChat) processUpdates(updates tgbotapi.UpdatesChannel, errCh cha
 				}
 
 				if err := b.handleCommand(update); err != nil {
-					// Critical errors go to the error channel
+					// Log critical errors at Error level
 					if isCriticalError(err) {
 						b.logger.Error("critical command error",
 							zap.Error(err),
 							zap.String("command", command),
 							zap.Int64("chat_id", chatID))
-						errCh <- fmt.Errorf("critical command error: %w", err)
 					} else {
 						// Non-critical errors just get logged
 						b.logger.Error("command error",
@@ -292,7 +291,6 @@ func (b *telegramChat) processUpdates(updates tgbotapi.UpdatesChannel, errCh cha
 						b.logger.Error("critical group message error",
 							zap.Error(err),
 							zap.Int64("chat_id", chatID))
-						errCh <- fmt.Errorf("critical error in group %d: %w", chatID, err)
 					} else {
 						b.logger.Error("group message error",
 							zap.Error(err),
