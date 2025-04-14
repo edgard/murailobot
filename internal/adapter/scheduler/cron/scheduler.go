@@ -35,7 +35,6 @@ func NewScheduler(logger *zap.Logger) (*Scheduler, error) {
 
 	// Start the scheduler
 	s.Start()
-	logger.Debug("scheduler started")
 
 	return &Scheduler{
 		scheduler: s,
@@ -121,8 +120,6 @@ func (s *Scheduler) AddJob(name, cronExpr string, job func()) error {
 //
 // Returns an error if the shutdown process fails.
 func (s *Scheduler) Stop() error {
-	s.logger.Debug("stopping scheduler", zap.Int("active_jobs", len(s.scheduler.Jobs())))
-
 	if err := s.scheduler.Shutdown(); err != nil {
 		return fmt.Errorf("failed to shutdown scheduler: %w", err)
 	}

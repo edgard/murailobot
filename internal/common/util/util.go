@@ -128,12 +128,5 @@ func Sanitize(input string) (string, error) {
 		return "", errors.New("sanitization resulted in empty string")
 	}
 
-	// Only log if significant reduction happened (useful for debugging)
-	reduction := 1.0 - float64(len(result))/float64(len(input))
-	if reduction > 0.2 { // Only log if more than 20% reduction
-		slog.Debug("significant text reduction during sanitization",
-			"reduction_percent", int(reduction*100))
-	}
-
 	return result, nil
 }

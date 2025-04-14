@@ -132,8 +132,6 @@ func (l *gormLogAdapter) Trace(ctx context.Context, begin time.Time, fc func() (
 func NewStore(cfg *config.Config, logger *zap.Logger) (store.Store, error) {
 	startTime := time.Now()
 
-	logger.Debug("initializing database", zap.String("path", cfg.DBPath))
-
 	// Configure GORM logger
 	gormLoggerConfig := gormlogger.Config{
 		SlowThreshold:             200 * time.Millisecond,
@@ -172,10 +170,6 @@ func NewStore(cfg *config.Config, logger *zap.Logger) (store.Store, error) {
 	sqlDB.SetMaxOpenConns(1)                // Single connection for SQLite
 	sqlDB.SetMaxIdleConns(1)                // Keep connection idle in pool
 	sqlDB.SetConnMaxLifetime(1 * time.Hour) // Recycle after 1 hour
-
-	logger.Debug("database connection configured",
-		zap.String("path", cfg.DBPath),
-		zap.Int64("duration_ms", time.Since(dbOpenStart).Milliseconds()))
 
 	// Run migrations
 	migrationStart := time.Now()
@@ -342,15 +336,6 @@ func (s *dbStore) GetRecentMessages(ctx context.Context, groupID int64, limit in
 		return messages[i].ID < messages[j].ID
 	})
 
-	// Only log if an unusual number of messages is retrieved
-	if len(messages) == 0 || len(messages) == limit {
-		s.logger.Debug("messages retrieved",
-			zap.Int64("group_id", groupID),
-			zap.Int("count", len(messages)),
-			zap.Time("before_timestamp", beforeTimestamp),
-			zap.Uint("before_id", beforeID))
-	}
-
 	return messages, nil
 }
 
@@ -460,11 +445,9 @@ func (s *dbStore) SaveUserProfile(ctx context.Context, profile *model.UserProfil
 	profile.CreatedAt = dbProfile.CreatedAt
 	profile.UpdatedAt = dbProfile.UpdatedAt
 
-	// Only log at Info level for new profiles, Debug for updates
+	// Only log new profile creation at Info level
 	if isNew {
 		s.logger.Info("new user profile created", zap.Int64("user_id", profile.UserID))
-	} else {
-		s.logger.Debug("user profile updated", zap.Int64("user_id", profile.UserID))
 	}
 
 	return nil
@@ -518,8 +501,6 @@ func (s *dbStore) Close() error {
 	if err := sqlDB.Close(); err != nil {
 		return fmt.Errorf("failed to close database: %w", err)
 	}
-
-	s.logger.Debug("database connection closed")
 
 	return nil
 }

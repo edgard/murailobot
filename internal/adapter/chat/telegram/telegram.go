@@ -55,8 +55,6 @@ func NewChatService(
 		return nil, errors.New("nil scheduler")
 	}
 
-	logger.Debug("connecting to Telegram API")
-
 	api, err := tgbotapi.NewBotAPI(cfg.BotToken)
 	if err != nil {
 		logger.Error("failed to connect to Telegram API", zap.Error(err))
@@ -89,12 +87,6 @@ func NewChatService(
 		chatBotInfo: chatBotInfo,
 	}
 
-	logger.Debug("registered chat bot info",
-		zap.Int64("bot_id", chatBotInfo.UserID),
-		zap.String("username", chatBotInfo.Username))
-
-	logger.Debug("registering command handlers")
-
 	b.handlers = map[string]func(*tgbotapi.Message) error{
 		"start":         b.handleStartCommand,
 		"mrl_reset":     b.handleResetCommand,
@@ -112,20 +104,14 @@ func NewChatService(
 func (b *telegramChat) Start() error {
 	b.logger.Info("starting chat service")
 
-	b.logger.Debug("setting up bot commands")
-
 	if err := b.setupCommands(); err != nil {
 		b.logger.Error("failed to setup commands", zap.Error(err))
 		return err
 	}
 
-	b.logger.Debug("configuring update channel")
-
 	updateConfig := tgbotapi.NewUpdate(0)
 	updateConfig.Timeout = 60
 	updates := b.api.GetUpdatesChan(updateConfig)
-
-	b.logger.Debug("scheduling maintenance tasks")
 
 	if err := b.scheduleMaintenanceTasks(); err != nil {
 		b.logger.Error("failed to schedule maintenance tasks", zap.Error(err))
@@ -143,8 +129,6 @@ func (b *telegramChat) Stop() error {
 
 	b.api.StopReceivingUpdates()
 	close(b.running)
-
-	b.logger.Debug("chat service stopped successfully")
 
 	return nil
 }
@@ -210,8 +194,6 @@ func (b *telegramChat) setupCommands() error {
 }
 
 func (b *telegramChat) processUpdates(updates tgbotapi.UpdatesChannel) error {
-	b.logger.Debug("starting to process message updates")
-
 	// Track received message count for periodic logging
 	messageCount := 0
 	lastLogTime := time.Now()
@@ -253,12 +235,6 @@ func (b *telegramChat) processUpdates(updates tgbotapi.UpdatesChannel) error {
 
 			if msg.IsCommand() {
 				command := msg.Command()
-				// Only log unusual commands at Debug level
-				if command != "start" && command != "mrl_profiles" {
-					b.logger.Debug("processing command",
-						zap.String("command", command),
-						zap.Int64("chat_id", chatID))
-				}
 
 				if err := b.handleCommand(update); err != nil {
 					// Log critical errors at Error level
@@ -276,12 +252,12 @@ func (b *telegramChat) processUpdates(updates tgbotapi.UpdatesChannel) error {
 					}
 				}
 			} else if chatType == "group" || chatType == "supergroup" {
-				// Handle group messages - only log bot mentions at Debug level
+				// Handle group messages
 				botMention := "@" + b.api.Self.UserName
 				isMention := strings.Contains(msg.Text, botMention)
 
 				if isMention {
-					b.logger.Debug("processing bot mention in group",
+					b.logger.Info("processing bot mention",
 						zap.Int64("chat_id", chatID),
 						zap.Int64("user_id", msg.From.ID))
 				}
@@ -298,10 +274,7 @@ func (b *telegramChat) processUpdates(updates tgbotapi.UpdatesChannel) error {
 					}
 				}
 			} else if chatType == "private" {
-				// Just log but take no action for direct messages - they're not supported
-				b.logger.Debug("ignored private message",
-					zap.Int64("chat_id", chatID),
-					zap.Int64("user_id", msg.From.ID))
+				// Private messages are not supported - no action needed
 			}
 		}
 	}
@@ -572,13 +545,6 @@ func (b *telegramChat) handleMentionMessage(msg *tgbotapi.Message) error {
 		}
 	}
 
-	b.logger.Debug("context collection completed",
-		zap.Int64("chat_id", msg.Chat.ID),
-		zap.Int("total_messages_retrieved", len(allMessages)),
-		zap.Int("profile_count", len(userProfiles)),
-		zap.Int("estimated_tokens", totalTokens),
-		zap.Int64("duration_ms", time.Since(startTime).Milliseconds()))
-
 	// Generate AI response
 	request := &ai.Request{
 		UserID:         msg.From.ID,
@@ -636,14 +602,10 @@ func (b *telegramChat) handleMentionMessage(msg *tgbotapi.Message) error {
 }
 
 func (b *telegramChat) scheduleMaintenanceTasks() error {
-	b.logger.Debug("scheduling daily profile update task", zap.String("cron", "0 0 * * *"))
-
 	err := b.scheduler.AddJob(
 		"daily-profile-update",
 		"0 0 * * *",
 		func() {
-			b.logger.Debug("starting scheduled daily profile update")
-
 			startTime := time.Now()
 
 			if err := b.processAndUpdateUserProfiles(); err != nil {
@@ -665,8 +627,6 @@ func (b *telegramChat) scheduleMaintenanceTasks() error {
 }
 
 func (b *telegramChat) processAndUpdateUserProfiles() error {
-	b.logger.Debug("starting user profile update process")
-
 	// Retrieve all messages that haven't been processed for user profile analysis yet
 	unprocessedMessages, err := b.store.GetUnprocessedMessages(b.ctx)
 	if err != nil {
@@ -675,11 +635,8 @@ func (b *telegramChat) processAndUpdateUserProfiles() error {
 
 	// If there are no unprocessed messages, there's nothing to do
 	if len(unprocessedMessages) == 0 {
-		b.logger.Debug("no unprocessed messages found, skipping profile update")
 		return nil
 	}
-
-	b.logger.Debug("retrieved unprocessed messages", zap.Int("count", len(unprocessedMessages)))
 
 	// Get existing user profiles to provide context for the AI analysis
 	existingProfiles, err := b.store.GetAllUserProfiles(b.ctx)
@@ -690,10 +647,6 @@ func (b *telegramChat) processAndUpdateUserProfiles() error {
 	}
 
 	// Use AI to analyze messages and generate updated user profiles
-	b.logger.Debug("generating user profiles with AI",
-		zap.Int("message_count", len(unprocessedMessages)),
-		zap.Int("existing_profiles", len(existingProfiles)))
-
 	updatedProfiles, err := b.ai.GenerateProfiles(b.ctx, unprocessedMessages, existingProfiles, b.chatBotInfo)
 	if err != nil {
 		return fmt.Errorf("failed to generate profiles with AI: %w", err)
@@ -793,14 +746,8 @@ func (b *telegramChat) StartTyping(chatID int64) chan struct{} {
 					return
 				default:
 					// Using blank identifier to explicitly ignore errors
-					// We just log occasionally if there are multiple failures
 					if _, err := b.api.Request(action); err != nil {
 						failureCount++
-						if failureCount%3 == 0 {
-							b.logger.Debug("multiple typing action failures",
-								zap.Int64("chat_id", chatID),
-								zap.Int("count", failureCount))
-						}
 					} else {
 						failureCount = 0
 					}
@@ -815,11 +762,6 @@ func (b *telegramChat) StartTyping(chatID int64) chan struct{} {
 func (b *telegramChat) SendMessage(msg tgbotapi.MessageConfig) error {
 	if b.api == nil {
 		return errors.New("nil telegram API client")
-	}
-
-	// Only log large messages
-	if len(msg.Text) > 500 {
-		b.logger.Debug("sending large message", zap.Int64("chat_id", msg.ChatID), zap.Int("length", len(msg.Text)))
 	}
 
 	_, err := b.api.Send(msg)

@@ -139,8 +139,6 @@ func (s *aiService) GenerateResponse(ctx context.Context, request *ai.Request) (
 		return "", errors.New("missing chat bot info in request")
 	}
 
-	s.logger.Debug("generating AI response", zap.Int64("user_id", request.UserID))
-
 	if request.UserID <= 0 {
 		return "", errors.New("invalid user ID")
 	}
@@ -189,18 +187,6 @@ func (s *aiService) GenerateResponse(ctx context.Context, request *ai.Request) (
 	tokenizer, err := util.GetTokenizer()
 	if err != nil {
 		s.logger.Warn("failed to get tokenizer, skipping token counting", zap.Error(err))
-	} else {
-		// Count tokens directly using the tokenizer
-		totalInputTokens := len(tokenizer.Encode(systemPrompt, nil, nil)) +
-			len(tokenizer.Encode(request.Message, nil, nil))
-
-		for _, msg := range request.RecentMessages {
-			totalInputTokens += len(tokenizer.Encode(msg.Content, nil, nil))
-		}
-
-		s.logger.Debug("sending AI request",
-			zap.Int("messages", len(messages)),
-			zap.Int("tokens", totalInputTokens))
 	}
 
 	// Create a timeout context to prevent hanging on API calls
@@ -219,10 +205,6 @@ func (s *aiService) GenerateResponse(ctx context.Context, request *ai.Request) (
 	if err != nil {
 		return "", fmt.Errorf("chat completion failed: %w", err)
 	}
-
-	s.logger.Debug("AI response received",
-		zap.Int64("api_duration_ms", apiDuration.Milliseconds()),
-		zap.Int("total_tokens", resp.Usage.TotalTokens))
 
 	if len(resp.Choices) == 0 {
 		return "", errors.New("no response choices returned")
@@ -248,10 +230,6 @@ func (s *aiService) GenerateResponse(ctx context.Context, request *ai.Request) (
 // GenerateProfiles analyzes user messages to create or update user profiles
 func (s *aiService) GenerateProfiles(ctx context.Context, messages []*model.Message, existingProfiles map[int64]*model.UserProfile, chatBotInfo *model.ChatBotInfo) (map[int64]*model.UserProfile, error) {
 	startTime := time.Now()
-
-	s.logger.Debug("starting profile generation",
-		zap.Int("messages", len(messages)),
-		zap.Int("profiles", len(existingProfiles)))
 
 	if len(messages) == 0 {
 		return nil, errors.New("no messages to analyze")
@@ -322,12 +300,6 @@ func (s *aiService) GenerateProfiles(ctx context.Context, messages []*model.Mess
 	tokenizer, err := util.GetTokenizer()
 	if err != nil {
 		s.logger.Warn("failed to get tokenizer for token counting", zap.Error(err))
-	} else {
-		// Count tokens directly
-		messageContentTokens := len(tokenizer.Encode(messageContent, nil, nil))
-		s.logger.Debug("message content prepared",
-			zap.Int("users", len(userMessages)),
-			zap.Int("tokens", messageContentTokens))
 	}
 
 	// Add the user message to the chat messages
@@ -374,12 +346,9 @@ func (s *aiService) GenerateProfiles(ctx context.Context, messages []*model.Mess
 func (s *aiService) parseProfileResponse(response string, userMessages map[int64][]*model.Message, existingProfiles map[int64]*model.UserProfile, chatBotInfo *model.ChatBotInfo) (map[int64]*model.UserProfile, error) {
 	startTime := time.Now()
 
-	s.logger.Debug("parsing profile response", zap.Int("response_length", len(response)))
-
 	response = strings.TrimSpace(response)
 	if response == "" {
 		s.logger.Error("empty profile response received")
-
 		return nil, errors.New("empty profile response")
 	}
 
@@ -392,12 +361,10 @@ func (s *aiService) parseProfileResponse(response string, userMessages map[int64
 		s.logger.Error("invalid JSON format in response",
 			zap.Int("json_start", jsonStart),
 			zap.Int("json_end", jsonEnd))
-
 		return nil, errors.New("invalid JSON format in response")
 	}
 
 	jsonContent := response[jsonStart : jsonEnd+1]
-	s.logger.Debug("extracted JSON content", zap.Int("json_length", len(jsonContent)))
 
 	// Define a struct that matches the expected JSON structure
 	var profileResponse struct {
@@ -411,25 +378,16 @@ func (s *aiService) parseProfileResponse(response string, userMessages map[int64
 	}
 
 	// Try to parse the JSON
-	unmarshalStartTime := time.Now()
 	err := json.Unmarshal([]byte(jsonContent), &profileResponse)
-	unmarshalDuration := time.Since(unmarshalStartTime)
-
 	if err != nil {
 		s.logger.Error("failed to parse JSON response",
-			zap.Error(err),
-			zap.Int64("unmarshal_duration_ms", unmarshalDuration.Milliseconds()))
-
+			zap.Error(err))
 		return nil, fmt.Errorf("failed to parse profile response: %w", err)
 	}
-
-	s.logger.Debug("JSON unmarshaled successfully",
-		zap.Int64("duration_ms", unmarshalDuration.Milliseconds()))
 
 	// Initialize an empty users map if none was provided in the response
 	if profileResponse.Users == nil {
 		s.logger.Warn("no users found in profile response, initializing empty map")
-
 		profileResponse.Users = make(map[string]struct {
 			DisplayNames    string `json:"display_names"`
 			OriginLocation  string `json:"origin_location"`
@@ -450,17 +408,13 @@ func (s *aiService) parseProfileResponse(response string, userMessages map[int64
 		var userID int64
 		if _, err := fmt.Sscanf(userIDStr, "%d", &userID); err != nil || userID == 0 {
 			s.logger.Warn("invalid user ID in profile response", zap.String("user_id", userIDStr))
-
 			skippedProfiles++
-
 			continue
 		}
 
 		// Special handling for the bot's own profile
 		// This ensures the bot always has a consistent profile
 		if userID == chatBotInfo.UserID {
-			s.logger.Debug("handling chat bot's own profile", zap.Int64("bot_id", chatBotInfo.UserID))
-
 			botDisplayNames := chatBotInfo.Username
 			if chatBotInfo.DisplayName != "" && chatBotInfo.DisplayName != chatBotInfo.Username {
 				botDisplayNames = fmt.Sprintf("%s, %s", chatBotInfo.DisplayName, chatBotInfo.Username)
@@ -483,11 +437,7 @@ func (s *aiService) parseProfileResponse(response string, userMessages map[int64
 		// This prevents creating profiles for users that weren't part of the analysis
 		if _, hasMessages := userMessages[userID]; !hasMessages {
 			if _, hasProfile := existingProfiles[userID]; !hasProfile {
-				s.logger.Debug("skipping user with no messages and no existing profile",
-					zap.Int64("user_id", userID))
-
 				skippedProfiles++
-
 				continue
 			}
 		}
@@ -511,28 +461,12 @@ func (s *aiService) parseProfileResponse(response string, userMessages map[int64
 		} else {
 			newProfiles++
 		}
-
-		s.logger.Debug("profile created",
-			zap.Int64("user_id", userID),
-			zap.Bool("is_update", isExisting),
-			zap.String("display_names", profile.DisplayNames))
 	}
-
-	// Only log parsing completion at DEBUG with minimal info
-	s.logger.Debug("profile parsing completed",
-		zap.Int("total_profiles", len(updatedProfiles)),
-		zap.Int64("duration_ms", time.Since(startTime).Milliseconds()))
 
 	return updatedProfiles, nil
 }
 
 func (s *aiService) getProfileInstruction(configInstruction string, chatBotInfo *model.ChatBotInfo) string {
-	s.logger.Debug("generating profile instruction",
-		zap.Int64("bot_id", chatBotInfo.UserID),
-		zap.String("bot_username", chatBotInfo.Username))
-
-	startTime := time.Now()
-
 	// Create the bot identification and fixed instruction part
 	botIdentificationAndFixedPart := fmt.Sprintf(`
 ## BOT IDENTIFICATION [IMPORTANT]
@@ -562,18 +496,6 @@ Return ONLY a JSON object, no additional text, with this structure:
 
 	// Combine the configured instruction with the fixed part
 	fullInstruction := fmt.Sprintf("%s\n\n%s", configInstruction, botIdentificationAndFixedPart)
-
-	// Log information about the generated instruction
-	instructionLength := len(fullInstruction)
-	configLength := len(configInstruction)
-	fixedPartLength := len(botIdentificationAndFixedPart)
-
-	duration := time.Since(startTime)
-	s.logger.Debug("profile instruction generated",
-		zap.Int("total_length", instructionLength),
-		zap.Int("config_length", configLength),
-		zap.Int("fixed_part_length", fixedPartLength),
-		zap.Int64("duration_ms", duration.Milliseconds()))
 
 	return fullInstruction
 }
