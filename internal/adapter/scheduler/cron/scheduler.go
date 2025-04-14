@@ -5,26 +5,29 @@ package cron
 import (
 	"errors"
 	"fmt"
-	"log/slog"
 	"time"
 
 	"github.com/go-co-op/gocron/v2"
+	"go.uber.org/zap"
 )
 
 // Scheduler provides job scheduling functionality for recurring tasks
 // using the gocron library.
 type Scheduler struct {
 	scheduler gocron.Scheduler
+	logger    *zap.Logger
 }
 
 // NewScheduler creates and starts a new scheduler instance configured
 // to use UTC timezone and structured logging.
 //
 // Returns an error if the scheduler creation fails.
-func NewScheduler() (*Scheduler, error) {
+func NewScheduler(logger *zap.Logger) (*Scheduler, error) {
+	gocronLogger := &gocronLogAdapter{logger: logger}
+
 	s, err := gocron.NewScheduler(
 		gocron.WithLocation(time.UTC),
-		gocron.WithLogger(&gocronLogAdapter{}),
+		gocron.WithLogger(gocronLogger),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create scheduler: %w", err)
@@ -32,9 +35,12 @@ func NewScheduler() (*Scheduler, error) {
 
 	// Start the scheduler
 	s.Start()
-	slog.Debug("scheduler started")
+	logger.Debug("scheduler started")
 
-	return &Scheduler{scheduler: s}, nil
+	return &Scheduler{
+		scheduler: s,
+		logger:    logger,
+	}, nil
 }
 
 // AddJob adds a new job to the scheduler using a cron expression.
@@ -79,9 +85,9 @@ func (s *Scheduler) AddJob(name, cronExpr string, job func()) error {
 		// Only log if the job was slow
 		duration := time.Since(startTime)
 		if duration > slowThreshold {
-			slog.Warn("slow scheduled job execution",
-				"job_name", name,
-				"duration_ms", duration.Milliseconds())
+			s.logger.Warn("slow scheduled job execution",
+				zap.String("job_name", name),
+				zap.Int64("duration_ms", duration.Milliseconds()))
 		}
 	}
 
@@ -95,14 +101,17 @@ func (s *Scheduler) AddJob(name, cronExpr string, job func()) error {
 		return fmt.Errorf("failed to schedule job %s: %w", name, err)
 	}
 
-	// Get the next run time and log in a single statement
-	logAttrs := []interface{}{"job_name", name, "cron", cronExpr}
-
-	if nextRun, err := scheduledJob.NextRun(); err == nil {
-		logAttrs = append(logAttrs, "next_run", nextRun.Format(time.RFC3339))
+	// Log the scheduled job
+	nextRunFields := []zap.Field{
+		zap.String("job_name", name),
+		zap.String("cron", cronExpr),
 	}
 
-	slog.Info("job scheduled", logAttrs...)
+	if nextRun, err := scheduledJob.NextRun(); err == nil {
+		nextRunFields = append(nextRunFields, zap.String("next_run", nextRun.Format(time.RFC3339)))
+	}
+
+	s.logger.Info("job scheduled", nextRunFields...)
 
 	return nil
 }
@@ -112,7 +121,7 @@ func (s *Scheduler) AddJob(name, cronExpr string, job func()) error {
 //
 // Returns an error if the shutdown process fails.
 func (s *Scheduler) Stop() error {
-	slog.Debug("stopping scheduler", "active_jobs", len(s.scheduler.Jobs()))
+	s.logger.Debug("stopping scheduler", zap.Int("active_jobs", len(s.scheduler.Jobs())))
 
 	if err := s.scheduler.Shutdown(); err != nil {
 		return fmt.Errorf("failed to shutdown scheduler: %w", err)
@@ -121,39 +130,23 @@ func (s *Scheduler) Stop() error {
 	return nil
 }
 
-type gocronLogAdapter struct{}
+// gocronLogAdapter is an adapter to use zap with gocron's logger interface
+type gocronLogAdapter struct {
+	logger *zap.Logger
+}
 
 func (l *gocronLogAdapter) Debug(msg string, args ...interface{}) {
-	slog.Debug(msg, toSlogArgs(args)...)
+	l.logger.Sugar().Debugw(msg, args...)
 }
 
 func (l *gocronLogAdapter) Info(msg string, args ...interface{}) {
-	slog.Info(msg, toSlogArgs(args)...)
+	l.logger.Sugar().Infow(msg, args...)
 }
 
 func (l *gocronLogAdapter) Warn(msg string, args ...interface{}) {
-	slog.Warn(msg, toSlogArgs(args)...)
+	l.logger.Sugar().Warnw(msg, args...)
 }
 
 func (l *gocronLogAdapter) Error(msg string, args ...interface{}) {
-	slog.Error(msg, toSlogArgs(args)...)
-}
-
-func toSlogArgs(args []interface{}) []interface{} {
-	slogArgs := make([]interface{}, 0, len(args))
-
-	for i := 0; i < len(args); i += 2 {
-		if i+1 < len(args) {
-			key, ok := args[i].(string)
-			if !ok {
-				key = fmt.Sprintf("%v", args[i])
-			}
-
-			slogArgs = append(slogArgs, key, args[i+1])
-		} else {
-			slogArgs = append(slogArgs, "value", args[i])
-		}
-	}
-
-	return slogArgs
+	l.logger.Sugar().Errorw(msg, args...)
 }

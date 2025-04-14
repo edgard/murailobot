@@ -6,12 +6,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log/slog"
 	"sort"
 	"strings"
 	"time"
 
 	gopenai "github.com/sashabaranov/go-openai"
+	"go.uber.org/zap"
 
 	"github.com/edgard/murailobot/internal/common/config"
 	"github.com/edgard/murailobot/internal/common/util"
@@ -30,10 +30,11 @@ type aiService struct {
 	timeout            time.Duration
 	store              store.Store
 	botInfo            ai.BotInfo
+	logger             *zap.Logger
 }
 
 // NewAIService creates a new AI service with the provided configuration and storage.
-func NewAIService(cfg *config.Config, store store.Store) (ai.Service, error) {
+func NewAIService(cfg *config.Config, store store.Store, logger *zap.Logger) (ai.Service, error) {
 	if store == nil {
 		return nil, errors.New("nil storage")
 	}
@@ -49,6 +50,7 @@ func NewAIService(cfg *config.Config, store store.Store) (ai.Service, error) {
 		profileInstruction: cfg.AIProfileInstruction,
 		timeout:            cfg.AITimeout,
 		store:              store,
+		logger:             logger,
 	}
 
 	return service, nil
@@ -148,7 +150,7 @@ func (s *aiService) GenerateResponse(ctx context.Context, request *ai.Request) (
 		return "", errors.New("nil request")
 	}
 
-	slog.Debug("generating AI response", "user_id", request.UserID)
+	s.logger.Debug("generating AI response", zap.Int64("user_id", request.UserID))
 
 	if request.UserID <= 0 {
 		return "", errors.New("invalid user ID")
@@ -194,17 +196,15 @@ func (s *aiService) GenerateResponse(ctx context.Context, request *ai.Request) (
 		Content: currentMsg,
 	})
 
-	if slog.Default().Enabled(ctx, slog.LevelDebug) {
-		// Estimate total tokens for logging purposes
-		totalInputTokens := util.EstimateTokens(systemPrompt) + util.EstimateTokens(request.Message)
-		for _, msg := range request.RecentMessages {
-			totalInputTokens += util.EstimateTokens(msg.Content)
-		}
-
-		slog.Debug("sending AI request",
-			"messages", len(messages),
-			"tokens", totalInputTokens)
+	// Estimate total tokens for logging purposes
+	totalInputTokens := util.EstimateTokens(systemPrompt) + util.EstimateTokens(request.Message)
+	for _, msg := range request.RecentMessages {
+		totalInputTokens += util.EstimateTokens(msg.Content)
 	}
+
+	s.logger.Debug("sending AI request",
+		zap.Int("messages", len(messages)),
+		zap.Int("tokens", totalInputTokens))
 
 	// Create a timeout context to prevent hanging on API calls
 	timeoutCtx, cancel := context.WithTimeout(ctx, s.timeout)
@@ -223,9 +223,9 @@ func (s *aiService) GenerateResponse(ctx context.Context, request *ai.Request) (
 		return "", fmt.Errorf("chat completion failed: %w", err)
 	}
 
-	slog.Debug("AI response received",
-		"api_duration_ms", apiDuration.Milliseconds(),
-		"total_tokens", resp.Usage.TotalTokens)
+	s.logger.Debug("AI response received",
+		zap.Int64("api_duration_ms", apiDuration.Milliseconds()),
+		zap.Int("total_tokens", resp.Usage.TotalTokens))
 
 	if len(resp.Choices) == 0 {
 		return "", errors.New("no response choices returned")
@@ -239,11 +239,11 @@ func (s *aiService) GenerateResponse(ctx context.Context, request *ai.Request) (
 	}
 
 	// Single comprehensive log with all relevant metrics
-	slog.Info("AI response generated",
-		"user_id", request.UserID,
-		"duration_ms", time.Since(startTime).Milliseconds(),
-		"api_ms", apiDuration.Milliseconds(),
-		"tokens", resp.Usage.TotalTokens)
+	s.logger.Info("AI response generated",
+		zap.Int64("user_id", request.UserID),
+		zap.Int64("duration_ms", time.Since(startTime).Milliseconds()),
+		zap.Int64("api_ms", apiDuration.Milliseconds()),
+		zap.Int("tokens", resp.Usage.TotalTokens))
 
 	return result, nil
 }
@@ -252,9 +252,9 @@ func (s *aiService) GenerateResponse(ctx context.Context, request *ai.Request) (
 func (s *aiService) GenerateProfiles(ctx context.Context, messages []*model.Message, existingProfiles map[int64]*model.UserProfile) (map[int64]*model.UserProfile, error) {
 	startTime := time.Now()
 
-	slog.Debug("starting profile generation",
-		"messages", len(messages),
-		"profiles", len(existingProfiles))
+	s.logger.Debug("starting profile generation",
+		zap.Int("messages", len(messages)),
+		zap.Int("profiles", len(existingProfiles)))
 
 	if len(messages) == 0 {
 		return nil, errors.New("no messages to analyze")
@@ -265,7 +265,7 @@ func (s *aiService) GenerateProfiles(ctx context.Context, messages []*model.Mess
 		userMessages[msg.UserID] = append(userMessages[msg.UserID], msg)
 	}
 
-	instruction := getProfileInstruction(s.profileInstruction, s.botInfo)
+	instruction := s.getProfileInstruction(s.profileInstruction, s.botInfo)
 
 	chatMessages := []gopenai.ChatCompletionMessage{
 		{
@@ -317,12 +317,10 @@ func (s *aiService) GenerateProfiles(ctx context.Context, messages []*model.Mess
 
 	messageContent := msgBuilder.String()
 
-	if slog.Default().Enabled(ctx, slog.LevelDebug) {
-		messageContentTokens := util.EstimateTokens(messageContent)
-		slog.Debug("message content prepared",
-			"users", len(userMessages),
-			"tokens", messageContentTokens)
-	}
+	messageContentTokens := util.EstimateTokens(messageContent)
+	s.logger.Debug("message content prepared",
+		zap.Int("users", len(userMessages)),
+		zap.Int("tokens", messageContentTokens))
 
 	// Add the user message to the chat messages
 	chatMessages = append(chatMessages, gopenai.ChatCompletionMessage{
@@ -350,29 +348,29 @@ func (s *aiService) GenerateProfiles(ctx context.Context, messages []*model.Mess
 		return nil, errors.New("no response choices returned")
 	}
 
-	profiles, err := parseProfileResponse(resp.Choices[0].Message.Content, userMessages, existingProfiles, s.botInfo)
+	profiles, err := s.parseProfileResponse(resp.Choices[0].Message.Content, userMessages, existingProfiles, s.botInfo)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse profiles: %w", err)
 	}
 
 	// Consolidated log with all metrics
-	slog.Info("profile generation completed",
-		"duration_ms", time.Since(startTime).Milliseconds(),
-		"api_ms", apiDuration.Milliseconds(),
-		"profile_count", len(profiles),
-		"tokens", resp.Usage.TotalTokens)
+	s.logger.Info("profile generation completed",
+		zap.Int64("duration_ms", time.Since(startTime).Milliseconds()),
+		zap.Int64("api_ms", apiDuration.Milliseconds()),
+		zap.Int("profile_count", len(profiles)),
+		zap.Int("tokens", resp.Usage.TotalTokens))
 
 	return profiles, nil
 }
 
-func parseProfileResponse(response string, userMessages map[int64][]*model.Message, existingProfiles map[int64]*model.UserProfile, botInfo ai.BotInfo) (map[int64]*model.UserProfile, error) {
+func (s *aiService) parseProfileResponse(response string, userMessages map[int64][]*model.Message, existingProfiles map[int64]*model.UserProfile, botInfo ai.BotInfo) (map[int64]*model.UserProfile, error) {
 	startTime := time.Now()
 
-	slog.Debug("parsing profile response", "response_length", len(response))
+	s.logger.Debug("parsing profile response", zap.Int("response_length", len(response)))
 
 	response = strings.TrimSpace(response)
 	if response == "" {
-		slog.Error("empty profile response received")
+		s.logger.Error("empty profile response received")
 
 		return nil, errors.New("empty profile response")
 	}
@@ -383,15 +381,15 @@ func parseProfileResponse(response string, userMessages map[int64][]*model.Messa
 	jsonEnd := strings.LastIndex(response, "}")
 
 	if jsonStart == -1 || jsonEnd == -1 || jsonEnd <= jsonStart {
-		slog.Error("invalid JSON format in response",
-			"json_start", jsonStart,
-			"json_end", jsonEnd)
+		s.logger.Error("invalid JSON format in response",
+			zap.Int("json_start", jsonStart),
+			zap.Int("json_end", jsonEnd))
 
 		return nil, errors.New("invalid JSON format in response")
 	}
 
 	jsonContent := response[jsonStart : jsonEnd+1]
-	slog.Debug("extracted JSON content", "json_length", len(jsonContent))
+	s.logger.Debug("extracted JSON content", zap.Int("json_length", len(jsonContent)))
 
 	// Define a struct that matches the expected JSON structure
 	var profileResponse struct {
@@ -410,19 +408,19 @@ func parseProfileResponse(response string, userMessages map[int64][]*model.Messa
 	unmarshalDuration := time.Since(unmarshalStartTime)
 
 	if err != nil {
-		slog.Error("failed to parse JSON response",
-			"error", err,
-			"unmarshal_duration_ms", unmarshalDuration.Milliseconds())
+		s.logger.Error("failed to parse JSON response",
+			zap.Error(err),
+			zap.Int64("unmarshal_duration_ms", unmarshalDuration.Milliseconds()))
 
 		return nil, fmt.Errorf("failed to parse profile response: %w", err)
 	}
 
-	slog.Debug("JSON unmarshaled successfully",
-		"duration_ms", unmarshalDuration.Milliseconds())
+	s.logger.Debug("JSON unmarshaled successfully",
+		zap.Int64("duration_ms", unmarshalDuration.Milliseconds()))
 
 	// Initialize an empty users map if none was provided in the response
 	if profileResponse.Users == nil {
-		slog.Warn("no users found in profile response, initializing empty map")
+		s.logger.Warn("no users found in profile response, initializing empty map")
 
 		profileResponse.Users = make(map[string]struct {
 			DisplayNames    string `json:"display_names"`
@@ -443,7 +441,7 @@ func parseProfileResponse(response string, userMessages map[int64][]*model.Messa
 		// Convert string user ID to int64
 		var userID int64
 		if _, err := fmt.Sscanf(userIDStr, "%d", &userID); err != nil || userID == 0 {
-			slog.Warn("invalid user ID in profile response", "user_id", userIDStr)
+			s.logger.Warn("invalid user ID in profile response", zap.String("user_id", userIDStr))
 
 			skippedProfiles++
 
@@ -453,7 +451,7 @@ func parseProfileResponse(response string, userMessages map[int64][]*model.Messa
 		// Special handling for the bot's own profile
 		// This ensures the bot always has a consistent profile
 		if userID == botInfo.UserID {
-			slog.Debug("handling bot's own profile", "bot_id", botInfo.UserID)
+			s.logger.Debug("handling bot's own profile", zap.Int64("bot_id", botInfo.UserID))
 
 			botDisplayNames := botInfo.Username
 			if botInfo.DisplayName != "" && botInfo.DisplayName != botInfo.Username {
@@ -477,8 +475,8 @@ func parseProfileResponse(response string, userMessages map[int64][]*model.Messa
 		// This prevents creating profiles for users that weren't part of the analysis
 		if _, hasMessages := userMessages[userID]; !hasMessages {
 			if _, hasProfile := existingProfiles[userID]; !hasProfile {
-				slog.Debug("skipping user with no messages and no existing profile",
-					"user_id", userID)
+				s.logger.Debug("skipping user with no messages and no existing profile",
+					zap.Int64("user_id", userID))
 
 				skippedProfiles++
 
@@ -506,24 +504,24 @@ func parseProfileResponse(response string, userMessages map[int64][]*model.Messa
 			newProfiles++
 		}
 
-		slog.Debug("profile created",
-			"user_id", userID,
-			"is_update", isExisting,
-			"display_names", profile.DisplayNames)
+		s.logger.Debug("profile created",
+			zap.Int64("user_id", userID),
+			zap.Bool("is_update", isExisting),
+			zap.String("display_names", profile.DisplayNames))
 	}
 
 	// Only log parsing completion at DEBUG with minimal info
-	slog.Debug("profile parsing completed",
-		"total_profiles", len(updatedProfiles),
-		"duration_ms", time.Since(startTime).Milliseconds())
+	s.logger.Debug("profile parsing completed",
+		zap.Int("total_profiles", len(updatedProfiles)),
+		zap.Int64("duration_ms", time.Since(startTime).Milliseconds()))
 
 	return updatedProfiles, nil
 }
 
-func getProfileInstruction(configInstruction string, botInfo ai.BotInfo) string {
-	slog.Debug("generating profile instruction",
-		"bot_id", botInfo.UserID,
-		"bot_username", botInfo.Username)
+func (s *aiService) getProfileInstruction(configInstruction string, botInfo ai.BotInfo) string {
+	s.logger.Debug("generating profile instruction",
+		zap.Int64("bot_id", botInfo.UserID),
+		zap.String("bot_username", botInfo.Username))
 
 	startTime := time.Now()
 
@@ -563,11 +561,11 @@ Return ONLY a JSON object, no additional text, with this structure:
 	fixedPartLength := len(botIdentificationAndFixedPart)
 
 	duration := time.Since(startTime)
-	slog.Debug("profile instruction generated",
-		"total_length", instructionLength,
-		"config_length", configLength,
-		"fixed_part_length", fixedPartLength,
-		"duration_ms", duration.Milliseconds())
+	s.logger.Debug("profile instruction generated",
+		zap.Int("total_length", instructionLength),
+		zap.Int("config_length", configLength),
+		zap.Int("fixed_part_length", fixedPartLength),
+		zap.Int64("duration_ms", duration.Milliseconds()))
 
 	return fullInstruction
 }

@@ -5,16 +5,17 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"sort"
 	"time"
+
+	"go.uber.org/zap"
+	"gorm.io/driver/sqlite"
+	"gorm.io/gorm"
+	gormlogger "gorm.io/gorm/logger"
 
 	"github.com/edgard/murailobot/internal/common/config"
 	"github.com/edgard/murailobot/internal/domain/model"
 	"github.com/edgard/murailobot/internal/port/store"
-	"gorm.io/driver/sqlite"
-	"gorm.io/gorm"
-	"gorm.io/gorm/logger"
 )
 
 // DB models for GORM
@@ -47,25 +48,101 @@ type UserProfile struct {
 
 // dbStore provides a SQLite implementation of the store.Store interface
 type dbStore struct {
-	db *gorm.DB
+	db     *gorm.DB
+	logger *zap.Logger
+}
+
+// gormLogAdapter is an adapter to use zap with gorm's logger interface
+type gormLogAdapter struct {
+	logger *zap.Logger
+	config gormlogger.Config
+}
+
+// newGormLogAdapter creates a new logger adapter for GORM
+func newGormLogAdapter(logger *zap.Logger, config gormlogger.Config) gormlogger.Interface {
+	return &gormLogAdapter{
+		logger: logger,
+		config: config,
+	}
+}
+
+// LogMode implements gormlogger.Interface
+func (l *gormLogAdapter) LogMode(level gormlogger.LogLevel) gormlogger.Interface {
+	newLogger := *l
+	newLogger.config.LogLevel = level
+	return &newLogger
+}
+
+// Info implements gormlogger.Interface
+func (l *gormLogAdapter) Info(ctx context.Context, msg string, data ...interface{}) {
+	if l.config.LogLevel >= gormlogger.Info {
+		l.logger.Sugar().Infof(msg, data...)
+	}
+}
+
+// Warn implements gormlogger.Interface
+func (l *gormLogAdapter) Warn(ctx context.Context, msg string, data ...interface{}) {
+	if l.config.LogLevel >= gormlogger.Warn {
+		l.logger.Sugar().Warnf(msg, data...)
+	}
+}
+
+// Error implements gormlogger.Interface
+func (l *gormLogAdapter) Error(ctx context.Context, msg string, data ...interface{}) {
+	if l.config.LogLevel >= gormlogger.Error {
+		l.logger.Sugar().Errorf(msg, data...)
+	}
+}
+
+// Trace implements gormlogger.Interface
+func (l *gormLogAdapter) Trace(ctx context.Context, begin time.Time, fc func() (string, int64), err error) {
+	if l.config.LogLevel <= gormlogger.Silent {
+		return
+	}
+
+	elapsed := time.Since(begin)
+	switch {
+	case err != nil && l.config.LogLevel >= gormlogger.Error:
+		sql, rows := fc()
+		l.logger.Error("gorm error",
+			zap.Error(err),
+			zap.Duration("elapsed", elapsed),
+			zap.String("sql", sql),
+			zap.Int64("rows", rows),
+		)
+	case elapsed > l.config.SlowThreshold && l.config.SlowThreshold != 0 && l.config.LogLevel >= gormlogger.Warn:
+		sql, rows := fc()
+		l.logger.Warn("gorm slow query",
+			zap.Duration("elapsed", elapsed),
+			zap.String("sql", sql),
+			zap.Int64("rows", rows),
+			zap.Duration("threshold", l.config.SlowThreshold),
+		)
+	case l.config.LogLevel >= gormlogger.Info:
+		sql, rows := fc()
+		l.logger.Debug("gorm query",
+			zap.Duration("elapsed", elapsed),
+			zap.String("sql", sql),
+			zap.Int64("rows", rows),
+		)
+	}
 }
 
 // NewStore creates a new SQLite store with the provided configuration.
-func NewStore(cfg *config.Config) (store.Store, error) {
+func NewStore(cfg *config.Config, logger *zap.Logger) (store.Store, error) {
 	startTime := time.Now()
 
-	slog.Debug("initializing database", "path", cfg.DBPath)
+	logger.Debug("initializing database", zap.String("path", cfg.DBPath))
 
 	// Configure GORM logger
-	gormLogger := logger.New(
-		&gormLogAdapter{},
-		logger.Config{
-			SlowThreshold:             200 * time.Millisecond,
-			LogLevel:                  logger.Warn,
-			IgnoreRecordNotFoundError: true,
-			Colorful:                  false,
-		},
-	)
+	gormLoggerConfig := gormlogger.Config{
+		SlowThreshold:             200 * time.Millisecond,
+		LogLevel:                  gormlogger.Warn,
+		IgnoreRecordNotFoundError: true,
+		Colorful:                  false,
+	}
+
+	gormLogger := newGormLogAdapter(logger.Named("gorm"), gormLoggerConfig)
 
 	gormConfig := &gorm.Config{
 		Logger: gormLogger,
@@ -75,10 +152,10 @@ func NewStore(cfg *config.Config) (store.Store, error) {
 	dbOpenStart := time.Now()
 	db, err := gorm.Open(sqlite.Open(cfg.DBPath), gormConfig)
 	if err != nil {
-		slog.Error("failed to open database",
-			"error", err,
-			"path", cfg.DBPath,
-			"duration_ms", time.Since(dbOpenStart).Milliseconds())
+		logger.Error("failed to open database",
+			zap.Error(err),
+			zap.String("path", cfg.DBPath),
+			zap.Int64("duration_ms", time.Since(dbOpenStart).Milliseconds()))
 
 		return nil, fmt.Errorf("failed to open database: %w", err)
 	}
@@ -86,7 +163,7 @@ func NewStore(cfg *config.Config) (store.Store, error) {
 	// Get SQL DB instance for connection pool configuration
 	sqlDB, err := db.DB()
 	if err != nil {
-		slog.Error("failed to get database instance", "error", err)
+		logger.Error("failed to get database instance", zap.Error(err))
 
 		return nil, fmt.Errorf("failed to get database instance: %w", err)
 	}
@@ -96,27 +173,28 @@ func NewStore(cfg *config.Config) (store.Store, error) {
 	sqlDB.SetMaxIdleConns(1)                // Keep connection idle in pool
 	sqlDB.SetConnMaxLifetime(1 * time.Hour) // Recycle after 1 hour
 
-	slog.Debug("database connection configured",
-		"path", cfg.DBPath,
-		"duration_ms", time.Since(dbOpenStart).Milliseconds())
+	logger.Debug("database connection configured",
+		zap.String("path", cfg.DBPath),
+		zap.Int64("duration_ms", time.Since(dbOpenStart).Milliseconds()))
 
 	// Run migrations
 	migrationStart := time.Now()
 	if err := db.AutoMigrate(&Message{}, &UserProfile{}); err != nil {
-		slog.Error("failed to run migrations",
-			"error", err,
-			"duration_ms", time.Since(migrationStart).Milliseconds())
+		logger.Error("failed to run migrations",
+			zap.Error(err),
+			zap.Int64("duration_ms", time.Since(migrationStart).Milliseconds()))
 
 		return nil, fmt.Errorf("failed to run migrations: %w", err)
 	}
 
 	totalDuration := time.Since(startTime)
-	slog.Info("database initialization complete",
-		"duration_ms", totalDuration.Milliseconds(),
-		"migration_ms", time.Since(migrationStart).Milliseconds())
+	logger.Info("database initialization complete",
+		zap.Int64("duration_ms", totalDuration.Milliseconds()),
+		zap.Int64("migration_ms", time.Since(migrationStart).Milliseconds()))
 
 	return &dbStore{
-		db: db,
+		db:     db,
+		logger: logger,
 	}, nil
 }
 
@@ -208,10 +286,10 @@ func (s *dbStore) SaveMessage(ctx context.Context, msg *model.Message) error {
 	duration := time.Since(startTime)
 
 	if duration > slowThreshold {
-		slog.Warn("slow database operation detected",
-			"operation", "save_message",
-			"group_id", msg.GroupID,
-			"duration_ms", duration.Milliseconds())
+		s.logger.Warn("slow database operation detected",
+			zap.String("operation", "save_message"),
+			zap.Int64("group_id", msg.GroupID),
+			zap.Int64("duration_ms", duration.Milliseconds()))
 	}
 
 	return nil
@@ -266,11 +344,11 @@ func (s *dbStore) GetRecentMessages(ctx context.Context, groupID int64, limit in
 
 	// Only log if an unusual number of messages is retrieved
 	if len(messages) == 0 || len(messages) == limit {
-		slog.Debug("messages retrieved",
-			"group_id", groupID,
-			"count", len(messages),
-			"before_timestamp", beforeTimestamp,
-			"before_id", beforeID)
+		s.logger.Debug("messages retrieved",
+			zap.Int64("group_id", groupID),
+			zap.Int("count", len(messages)),
+			zap.Time("before_timestamp", beforeTimestamp),
+			zap.Uint("before_id", beforeID))
 	}
 
 	return messages, nil
@@ -384,9 +462,9 @@ func (s *dbStore) SaveUserProfile(ctx context.Context, profile *model.UserProfil
 
 	// Only log at Info level for new profiles, Debug for updates
 	if isNew {
-		slog.Info("new user profile created", "user_id", profile.UserID)
+		s.logger.Info("new user profile created", zap.Int64("user_id", profile.UserID))
 	} else {
-		slog.Debug("user profile updated", "user_id", profile.UserID)
+		s.logger.Debug("user profile updated", zap.Int64("user_id", profile.UserID))
 	}
 
 	return nil
@@ -430,10 +508,10 @@ func (s *dbStore) Close() error {
 
 	// Only log warnings if there are issues with the connection pool
 	if stats.OpenConnections > 5 || float64(stats.InUse)/float64(stats.OpenConnections+1) > 0.8 {
-		slog.Warn("database connection pool pressure detected",
-			"open_connections", stats.OpenConnections,
-			"in_use", stats.InUse,
-			"utilization_percent", float64(stats.InUse)/float64(stats.OpenConnections+1)*100)
+		s.logger.Warn("database connection pool pressure detected",
+			zap.Int("open_connections", stats.OpenConnections),
+			zap.Int("in_use", stats.InUse),
+			zap.Float64("utilization_percent", float64(stats.InUse)/float64(stats.OpenConnections+1)*100))
 	}
 
 	// Close the connection
@@ -441,14 +519,7 @@ func (s *dbStore) Close() error {
 		return fmt.Errorf("failed to close database: %w", err)
 	}
 
-	slog.Debug("database connection closed")
+	s.logger.Debug("database connection closed")
 
 	return nil
-}
-
-type gormLogAdapter struct{}
-
-func (l *gormLogAdapter) Printf(format string, args ...interface{}) {
-	msg := fmt.Sprintf(format, args...)
-	slog.Debug("gorm", "message", msg)
 }

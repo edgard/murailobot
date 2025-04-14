@@ -3,10 +3,9 @@ package di
 
 import (
 	"context"
-	"log/slog"
 
 	"go.uber.org/fx"
-	"go.uber.org/fx/fxevent"
+	"go.uber.org/zap"
 
 	"github.com/edgard/murailobot/internal/common/config"
 	"github.com/edgard/murailobot/internal/port/ai"
@@ -25,6 +24,7 @@ type ServiceParams struct {
 	AI        ai.Service
 	Chat      chat.Service
 	Scheduler scheduler.Service
+	Logger    *zap.Logger
 }
 
 // ConfigModule provides application configuration
@@ -32,9 +32,6 @@ var ConfigModule = fx.Module("config",
 	fx.Provide(
 		ProvideConfig,
 	),
-	fx.WithLogger(func(cfg *config.Config) fxevent.Logger {
-		return &fxevent.ConsoleLogger{W: nil}
-	}),
 )
 
 // StoreModule provides the database store implementation
@@ -45,10 +42,10 @@ var StoreModule = fx.Module("store",
 			fx.As(new(store.Store)),
 		),
 	),
-	fx.Invoke(func(lc fx.Lifecycle, store store.Store) {
+	fx.Invoke(func(lc fx.Lifecycle, store store.Store, logger *zap.Logger) {
 		lc.Append(fx.Hook{
 			OnStop: func(ctx context.Context) error {
-				slog.Info("closing database connection")
+				logger.Info("closing database connection")
 				return store.Close()
 			},
 		})
@@ -73,10 +70,10 @@ var SchedulerModule = fx.Module("scheduler",
 			fx.As(new(scheduler.Service)),
 		),
 	),
-	fx.Invoke(func(lc fx.Lifecycle, scheduler scheduler.Service) {
+	fx.Invoke(func(lc fx.Lifecycle, scheduler scheduler.Service, logger *zap.Logger) {
 		lc.Append(fx.Hook{
 			OnStop: func(ctx context.Context) error {
-				slog.Info("stopping scheduler")
+				logger.Info("stopping scheduler")
 				return scheduler.Stop()
 			},
 		})
@@ -91,22 +88,22 @@ var ChatModule = fx.Module("chat",
 			fx.As(new(chat.Service)),
 		),
 	),
-	fx.Invoke(func(lc fx.Lifecycle, chatService chat.Service) {
+	fx.Invoke(func(lc fx.Lifecycle, chatService chat.Service, logger *zap.Logger) {
 		errCh := make(chan error, 1)
 
 		lc.Append(fx.Hook{
 			OnStart: func(ctx context.Context) error {
-				slog.Info("starting chat service")
+				logger.Info("starting chat service")
 				go func() {
 					if err := chatService.Start(errCh); err != nil {
-						slog.Error("chat service error", "error", err)
+						logger.Error("chat service error", zap.Error(err))
 						errCh <- err
 					}
 				}()
 				return nil
 			},
 			OnStop: func(ctx context.Context) error {
-				slog.Info("stopping chat service")
+				logger.Info("stopping chat service")
 				return chatService.Stop()
 			},
 		})
@@ -114,7 +111,7 @@ var ChatModule = fx.Module("chat",
 		// Monitor for errors from the chat service
 		go func() {
 			for err := range errCh {
-				slog.Error("chat service error", "error", err)
+				logger.Error("chat service error", zap.Error(err))
 				// We might want to handle this more gracefully in the future
 			}
 		}()
@@ -136,8 +133,4 @@ var RootModule = fx.Module("root",
 	SchedulerModule,
 	ChatModule,
 	ApplicationModule,
-	// Add logger configuration
-	fx.WithLogger(func(logger *fxevent.ConsoleLogger) fxevent.Logger {
-		return logger
-	}),
 )

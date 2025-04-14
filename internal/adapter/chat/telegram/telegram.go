@@ -5,12 +5,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"sort"
 	"strings"
 	"time"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+	"go.uber.org/zap"
 
 	"github.com/edgard/murailobot/internal/common/config"
 	"github.com/edgard/murailobot/internal/common/util"
@@ -31,6 +31,7 @@ type telegramChat struct {
 	running   chan struct{}
 	handlers  map[string]func(*tgbotapi.Message) error
 	ctx       context.Context
+	logger    *zap.Logger
 }
 
 // NewChatService creates a new Telegram chat service with the provided dependencies.
@@ -39,6 +40,7 @@ func NewChatService(
 	store store.Store,
 	aiService ai.Service,
 	scheduler scheduler.Service,
+	logger *zap.Logger,
 ) (chat.Service, error) {
 	if store == nil {
 		return nil, errors.New("nil store")
@@ -52,17 +54,17 @@ func NewChatService(
 		return nil, errors.New("nil scheduler")
 	}
 
-	slog.Debug("connecting to Telegram API")
+	logger.Debug("connecting to Telegram API")
 
 	api, err := tgbotapi.NewBotAPI(cfg.BotToken)
 	if err != nil {
-		slog.Error("failed to connect to Telegram API", "error", err)
+		logger.Error("failed to connect to Telegram API", zap.Error(err))
 		return nil, err
 	}
 
-	slog.Info("connected to Telegram API",
-		"bot_username", api.Self.UserName,
-		"bot_id", api.Self.ID)
+	logger.Info("connected to Telegram API",
+		zap.String("bot_username", api.Self.UserName),
+		zap.Int64("bot_id", api.Self.ID))
 
 	api.Debug = false
 	ctx := context.Background()
@@ -75,20 +77,21 @@ func NewChatService(
 		config:    cfg,
 		running:   make(chan struct{}),
 		ctx:       ctx,
+		logger:    logger,
 	}
 
-	slog.Debug("configuring bot info in AI service")
+	logger.Debug("configuring bot info in AI service")
 
 	if err := aiService.SetBotInfo(ai.BotInfo{
 		UserID:      api.Self.ID,
 		Username:    api.Self.UserName,
 		DisplayName: api.Self.FirstName,
 	}); err != nil {
-		slog.Error("failed to set bot info in AI service", "error", err)
+		logger.Error("failed to set bot info in AI service", zap.Error(err))
 		return nil, err
 	}
 
-	slog.Debug("registering command handlers")
+	logger.Debug("registering command handlers")
 
 	b.handlers = map[string]func(*tgbotapi.Message) error{
 		"start":         b.handleStartCommand,
@@ -98,48 +101,48 @@ func NewChatService(
 		"mrl_edit_user": b.handleEditUserCommand,
 	}
 
-	slog.Info("chat service initialization complete")
+	logger.Info("chat service initialization complete")
 
 	return b, nil
 }
 
 // Start begins processing incoming Telegram updates
 func (b *telegramChat) Start(errCh chan<- error) error {
-	slog.Info("starting chat service")
+	b.logger.Info("starting chat service")
 
-	slog.Debug("setting up bot commands")
+	b.logger.Debug("setting up bot commands")
 
 	if err := b.setupCommands(); err != nil {
-		slog.Error("failed to setup commands", "error", err)
+		b.logger.Error("failed to setup commands", zap.Error(err))
 		return err
 	}
 
-	slog.Debug("configuring update channel")
+	b.logger.Debug("configuring update channel")
 
 	updateConfig := tgbotapi.NewUpdate(0)
 	updateConfig.Timeout = 60
 	updates := b.api.GetUpdatesChan(updateConfig)
 
-	slog.Debug("scheduling maintenance tasks")
+	b.logger.Debug("scheduling maintenance tasks")
 
 	if err := b.scheduleMaintenanceTasks(); err != nil {
-		slog.Error("failed to schedule maintenance tasks", "error", err)
+		b.logger.Error("failed to schedule maintenance tasks", zap.Error(err))
 		return err
 	}
 
-	slog.Info("chat service started and processing updates")
+	b.logger.Info("chat service started and processing updates")
 
 	return b.processUpdates(updates, errCh)
 }
 
 // Stop gracefully shuts down the chat service
 func (b *telegramChat) Stop() error {
-	slog.Info("stopping chat service")
+	b.logger.Info("stopping chat service")
 
 	b.api.StopReceivingUpdates()
 	close(b.running)
 
-	slog.Debug("chat service stopped successfully")
+	b.logger.Debug("chat service stopped successfully")
 
 	return nil
 }
@@ -205,7 +208,7 @@ func (b *telegramChat) setupCommands() error {
 }
 
 func (b *telegramChat) processUpdates(updates tgbotapi.UpdatesChannel, errCh chan<- error) error {
-	slog.Debug("starting to process message updates")
+	b.logger.Debug("starting to process message updates")
 
 	// Track received message count for periodic logging
 	messageCount := 0
@@ -214,11 +217,11 @@ func (b *telegramChat) processUpdates(updates tgbotapi.UpdatesChannel, errCh cha
 	for {
 		select {
 		case <-b.running:
-			slog.Info("update processing stopped due to chat service shutdown")
+			b.logger.Info("update processing stopped due to chat service shutdown")
 			return nil
 		case update, ok := <-updates:
 			if !ok {
-				slog.Info("update channel closed")
+				b.logger.Info("update channel closed")
 				return nil
 			}
 
@@ -228,9 +231,9 @@ func (b *telegramChat) processUpdates(updates tgbotapi.UpdatesChannel, errCh cha
 
 			messageCount++
 			if time.Since(lastLogTime) > 5*time.Minute {
-				slog.Info("telegram message processing stats",
-					"messages_processed", messageCount,
-					"period_minutes", 5)
+				b.logger.Info("telegram message processing stats",
+					zap.Int("messages_processed", messageCount),
+					zap.Int("period_minutes", 5))
 
 				messageCount = 0
 				lastLogTime = time.Now()
@@ -250,25 +253,25 @@ func (b *telegramChat) processUpdates(updates tgbotapi.UpdatesChannel, errCh cha
 				command := msg.Command()
 				// Only log unusual commands at Debug level
 				if command != "start" && command != "mrl_profiles" {
-					slog.Debug("processing command",
-						"command", command,
-						"chat_id", chatID)
+					b.logger.Debug("processing command",
+						zap.String("command", command),
+						zap.Int64("chat_id", chatID))
 				}
 
 				if err := b.handleCommand(update); err != nil {
 					// Critical errors go to the error channel
 					if isCriticalError(err) {
-						slog.Error("critical command error",
-							"error", err,
-							"command", command,
-							"chat_id", chatID)
+						b.logger.Error("critical command error",
+							zap.Error(err),
+							zap.String("command", command),
+							zap.Int64("chat_id", chatID))
 						errCh <- fmt.Errorf("critical command error: %w", err)
 					} else {
 						// Non-critical errors just get logged
-						slog.Error("command error",
-							"error", err,
-							"command", command,
-							"chat_id", chatID)
+						b.logger.Error("command error",
+							zap.Error(err),
+							zap.String("command", command),
+							zap.Int64("chat_id", chatID))
 					}
 				}
 			} else if chatType == "group" || chatType == "supergroup" {
@@ -277,28 +280,28 @@ func (b *telegramChat) processUpdates(updates tgbotapi.UpdatesChannel, errCh cha
 				isMention := strings.Contains(msg.Text, botMention)
 
 				if isMention {
-					slog.Debug("processing bot mention in group",
-						"chat_id", chatID,
-						"user_id", msg.From.ID)
+					b.logger.Debug("processing bot mention in group",
+						zap.Int64("chat_id", chatID),
+						zap.Int64("user_id", msg.From.ID))
 				}
 
 				if err := b.handleGroupMessage(msg); err != nil {
 					if isCriticalError(err) {
-						slog.Error("critical group message error",
-							"error", err,
-							"chat_id", chatID)
+						b.logger.Error("critical group message error",
+							zap.Error(err),
+							zap.Int64("chat_id", chatID))
 						errCh <- fmt.Errorf("critical error in group %d: %w", chatID, err)
 					} else {
-						slog.Error("group message error",
-							"error", err,
-							"chat_id", chatID)
+						b.logger.Error("group message error",
+							zap.Error(err),
+							zap.Int64("chat_id", chatID))
 					}
 				}
 			} else if chatType == "private" {
 				// Just log but take no action for direct messages - they're not supported
-				slog.Debug("ignored private message",
-					"chat_id", chatID,
-					"user_id", msg.From.ID)
+				b.logger.Debug("ignored private message",
+					zap.Int64("chat_id", chatID),
+					zap.Int64("user_id", msg.From.ID))
 			}
 		}
 	}
@@ -319,11 +322,11 @@ func (b *telegramChat) handleCommand(update tgbotapi.Update) error {
 
 	if err != nil {
 		if strings.Contains(err.Error(), "unauthorized access") {
-			slog.Warn("unauthorized access",
-				"error", err,
-				"command", msg.Command(),
-				"user_id", msg.From.ID,
-				"chat_id", msg.Chat.ID)
+			b.logger.Warn("unauthorized access",
+				zap.Error(err),
+				zap.String("command", msg.Command()),
+				zap.Int64("user_id", msg.From.ID),
+				zap.Int64("chat_id", msg.Chat.ID))
 
 			return fmt.Errorf("unauthorized access for command '%s': %w", cmd, err)
 		}
@@ -444,9 +447,9 @@ func (b *telegramChat) handleGroupMessage(msg *tgbotapi.Message) error {
 
 	botMention := "@" + b.api.Self.UserName
 	if strings.Contains(msg.Text, botMention) {
-		slog.Info("processing bot mention",
-			"chat_id", msg.Chat.ID,
-			"user_id", msg.From.ID)
+		b.logger.Info("processing bot mention",
+			zap.Int64("chat_id", msg.Chat.ID),
+			zap.Int64("user_id", msg.From.ID))
 
 		return b.handleMentionMessage(msg)
 	}
@@ -478,9 +481,9 @@ func (b *telegramChat) handleMentionMessage(msg *tgbotapi.Message) error {
 	// Get user profiles - failure is non-critical
 	userProfiles, err := b.store.GetAllUserProfiles(b.ctx)
 	if err != nil {
-		slog.Warn("proceeding with empty user profiles",
-			"error", err,
-			"chat_id", msg.Chat.ID)
+		b.logger.Warn("proceeding with empty user profiles",
+			zap.Error(err),
+			zap.Int64("chat_id", msg.Chat.ID))
 
 		userProfiles = make(map[int64]*model.UserProfile)
 	}
@@ -558,12 +561,12 @@ func (b *telegramChat) handleMentionMessage(msg *tgbotapi.Message) error {
 		}
 	}
 
-	slog.Debug("context collection completed",
-		"chat_id", msg.Chat.ID,
-		"total_messages_retrieved", len(allMessages),
-		"profile_count", len(userProfiles),
-		"estimated_tokens", totalTokens,
-		"duration_ms", time.Since(startTime).Milliseconds())
+	b.logger.Debug("context collection completed",
+		zap.Int64("chat_id", msg.Chat.ID),
+		zap.Int("total_messages_retrieved", len(allMessages)),
+		zap.Int("profile_count", len(userProfiles)),
+		zap.Int("estimated_tokens", totalTokens),
+		zap.Int64("duration_ms", time.Since(startTime).Milliseconds()))
 
 	// Generate AI response
 	request := &ai.Request{
@@ -603,10 +606,10 @@ func (b *telegramChat) handleMentionMessage(msg *tgbotapi.Message) error {
 	// Store both messages
 	for i, message := range messages {
 		if err := b.store.SaveMessage(b.ctx, message); err != nil {
-			slog.Warn("failed to save message",
-				"error", err,
-				"chat_id", msg.Chat.ID,
-				"is_bot", i == 1)
+			b.logger.Warn("failed to save message",
+				zap.Error(err),
+				zap.Int64("chat_id", msg.Chat.ID),
+				zap.Bool("is_bot", i == 1))
 			// Continue since this is non-critical
 		}
 	}
@@ -621,36 +624,36 @@ func (b *telegramChat) handleMentionMessage(msg *tgbotapi.Message) error {
 }
 
 func (b *telegramChat) scheduleMaintenanceTasks() error {
-	slog.Debug("scheduling daily profile update task", "cron", "0 0 * * *")
+	b.logger.Debug("scheduling daily profile update task", zap.String("cron", "0 0 * * *"))
 
 	err := b.scheduler.AddJob(
 		"daily-profile-update",
 		"0 0 * * *",
 		func() {
-			slog.Debug("starting scheduled daily profile update")
+			b.logger.Debug("starting scheduled daily profile update")
 
 			startTime := time.Now()
 
 			if err := b.processAndUpdateUserProfiles(); err != nil {
-				slog.Error("daily profile update failed", "error", err)
+				b.logger.Error("daily profile update failed", zap.Error(err))
 			} else {
 				duration := time.Since(startTime)
-				slog.Info("daily profile update completed",
-					"duration_ms", duration.Milliseconds())
+				b.logger.Info("daily profile update completed",
+					zap.Int64("duration_ms", duration.Milliseconds()))
 			}
 		},
 	)
 	if err != nil {
-		slog.Error("failed to schedule daily profile update", "error", err)
+		b.logger.Error("failed to schedule daily profile update", zap.Error(err))
 		return err
 	}
 
-	slog.Info("maintenance tasks scheduled successfully")
+	b.logger.Info("maintenance tasks scheduled successfully")
 	return nil
 }
 
 func (b *telegramChat) processAndUpdateUserProfiles() error {
-	slog.Debug("starting user profile update process")
+	b.logger.Debug("starting user profile update process")
 
 	// Retrieve all messages that haven't been processed for user profile analysis yet
 	unprocessedMessages, err := b.store.GetUnprocessedMessages(b.ctx)
@@ -660,24 +663,24 @@ func (b *telegramChat) processAndUpdateUserProfiles() error {
 
 	// If there are no unprocessed messages, there's nothing to do
 	if len(unprocessedMessages) == 0 {
-		slog.Debug("no unprocessed messages found, skipping profile update")
+		b.logger.Debug("no unprocessed messages found, skipping profile update")
 		return nil
 	}
 
-	slog.Debug("retrieved unprocessed messages", "count", len(unprocessedMessages))
+	b.logger.Debug("retrieved unprocessed messages", zap.Int("count", len(unprocessedMessages)))
 
 	// Get existing user profiles to provide context for the AI analysis
 	existingProfiles, err := b.store.GetAllUserProfiles(b.ctx)
 	if err != nil {
 		// If we can't get existing profiles, start with an empty map
-		slog.Warn("failed to get existing profiles", "error", err)
+		b.logger.Warn("failed to get existing profiles", zap.Error(err))
 		existingProfiles = make(map[int64]*model.UserProfile)
 	}
 
 	// Use AI to analyze messages and generate updated user profiles
-	slog.Debug("generating user profiles with AI",
-		"message_count", len(unprocessedMessages),
-		"existing_profiles", len(existingProfiles))
+	b.logger.Debug("generating user profiles with AI",
+		zap.Int("message_count", len(unprocessedMessages)),
+		zap.Int("existing_profiles", len(existingProfiles)))
 
 	updatedProfiles, err := b.ai.GenerateProfiles(b.ctx, unprocessedMessages, existingProfiles)
 	if err != nil {
@@ -717,7 +720,7 @@ func (b *telegramChat) processAndUpdateUserProfiles() error {
 	// Save all updated profiles to the database
 	for userID, profile := range updatedProfiles {
 		if err := b.store.SaveUserProfile(b.ctx, profile); err != nil {
-			slog.Error("failed to save user profile", "error", err, "user_id", userID)
+			b.logger.Error("failed to save user profile", zap.Error(err), zap.Int64("user_id", userID))
 			return err
 		}
 	}
@@ -732,7 +735,7 @@ func (b *telegramChat) processAndUpdateUserProfiles() error {
 		return fmt.Errorf("failed to mark messages as processed: %w", err)
 	}
 
-	slog.Info("user profile update completed", "profiles_updated", len(updatedProfiles))
+	b.logger.Info("user profile update completed", zap.Int("profiles_updated", len(updatedProfiles)))
 
 	return nil
 }
@@ -782,9 +785,9 @@ func (b *telegramChat) StartTyping(chatID int64) chan struct{} {
 					if _, err := b.api.Request(action); err != nil {
 						failureCount++
 						if failureCount%3 == 0 {
-							slog.Debug("multiple typing action failures",
-								"chat_id", chatID,
-								"count", failureCount)
+							b.logger.Debug("multiple typing action failures",
+								zap.Int64("chat_id", chatID),
+								zap.Int("count", failureCount))
 						}
 					} else {
 						failureCount = 0
@@ -804,7 +807,7 @@ func (b *telegramChat) SendMessage(msg tgbotapi.MessageConfig) error {
 
 	// Only log large messages
 	if len(msg.Text) > 500 {
-		slog.Debug("sending large message", "chat_id", msg.ChatID, "length", len(msg.Text))
+		b.logger.Debug("sending large message", zap.Int64("chat_id", msg.ChatID), zap.Int("length", len(msg.Text)))
 	}
 
 	_, err := b.api.Send(msg)
@@ -818,7 +821,7 @@ func (b *telegramChat) SendMessage(msg tgbotapi.MessageConfig) error {
 func (b *telegramChat) sendErrorMessage(chatID int64) {
 	reply := tgbotapi.NewMessage(chatID, b.config.BotMsgGeneralError)
 	if err := b.SendMessage(reply); err != nil {
-		slog.Error("failed to send error message", "error", err)
+		b.logger.Error("failed to send error message", zap.Error(err))
 	}
 }
 
@@ -826,7 +829,7 @@ func (b *telegramChat) checkAuthorization(msg *tgbotapi.Message) error {
 	if !b.IsAuthorized(msg.From.ID) {
 		reply := tgbotapi.NewMessage(msg.Chat.ID, b.config.BotMsgNotAuthorized)
 		if err := b.SendMessage(reply); err != nil {
-			slog.Error("failed to send unauthorized message", "error", err)
+			b.logger.Error("failed to send unauthorized message", zap.Error(err))
 		}
 
 		return errors.New("unauthorized access attempt")

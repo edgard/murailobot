@@ -2,23 +2,33 @@
 package main
 
 import (
-	"log/slog"
-	"os"
-
 	"go.uber.org/fx"
+	"go.uber.org/fx/fxevent"
+	"go.uber.org/zap"
 
 	"github.com/edgard/murailobot/internal/di"
 )
 
 func main() {
-	// Set up a default logger for early initialization and startup errors
-	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo})))
+	// Create a base zap logger for startup
+	logger, err := zap.NewProduction()
+	if err != nil {
+		panic(err)
+	}
+	defer logger.Sync() //nolint:errcheck
 
-	slog.Info("starting MurailoBot")
+	logger.Info("starting MurailoBot")
 
 	// Create and run the application with fx
-	fx.New(
+	app := fx.New(
+		// Provide the base logger
+		fx.Supply(logger),
+		// Configure FX to use our zap logger
+		fx.WithLogger(func(logger *zap.Logger) fxevent.Logger {
+			return &fxevent.ZapLogger{Logger: logger}
+		}),
 		// Include all application modules from our di package
 		di.RootModule,
-	).Run()
+	)
+	app.Run()
 }

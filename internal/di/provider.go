@@ -2,6 +2,8 @@
 package di
 
 import (
+	"go.uber.org/zap"
+
 	"github.com/edgard/murailobot/internal/adapter/ai/openai"
 	"github.com/edgard/murailobot/internal/adapter/chat/telegram"
 	"github.com/edgard/murailobot/internal/adapter/scheduler/cron"
@@ -19,18 +21,21 @@ func ProvideConfig() (*config.Config, error) {
 }
 
 // ProvideStore creates and provides the database store implementation.
-func ProvideStore(cfg *config.Config) (store.Store, error) {
-	return sqlite.NewStore(cfg)
+func ProvideStore(cfg *config.Config, logger *zap.Logger) (store.Store, error) {
+	storeLogger := logger.Named("store")
+	return sqlite.NewStore(cfg, storeLogger)
 }
 
 // ProvideAIService creates and provides the AI service implementation.
-func ProvideAIService(cfg *config.Config, store store.Store) (ai.Service, error) {
-	return openai.NewAIService(cfg, store)
+func ProvideAIService(cfg *config.Config, store store.Store, logger *zap.Logger) (ai.Service, error) {
+	aiLogger := logger.Named("ai")
+	return openai.NewAIService(cfg, store, aiLogger)
 }
 
 // ProvideSchedulerService creates and provides the scheduler service implementation.
-func ProvideSchedulerService() (scheduler.Service, error) {
-	return cron.NewScheduler()
+func ProvideSchedulerService(logger *zap.Logger) (scheduler.Service, error) {
+	schedulerLogger := logger.Named("scheduler")
+	return cron.NewScheduler(schedulerLogger)
 }
 
 // ProvideChatService creates and provides the chat service implementation.
@@ -39,8 +44,10 @@ func ProvideChatService(
 	store store.Store,
 	aiService ai.Service,
 	scheduler scheduler.Service,
+	logger *zap.Logger,
 ) (chat.Service, error) {
-	return telegram.NewChatService(cfg, store, aiService, scheduler)
+	chatLogger := logger.Named("chat")
+	return telegram.NewChatService(cfg, store, aiService, scheduler, chatLogger)
 }
 
 // ProvideApp creates the main application container.
@@ -50,6 +57,7 @@ func ProvideApp(
 	aiService ai.Service,
 	chatService chat.Service,
 	schedulerService scheduler.Service,
+	logger *zap.Logger,
 ) *AppComponents {
 	return &AppComponents{
 		Config:      cfg,
@@ -57,6 +65,7 @@ func ProvideApp(
 		AIService:   aiService,
 		ChatService: chatService,
 		Scheduler:   schedulerService,
+		Logger:      logger,
 	}
 }
 
@@ -68,4 +77,5 @@ type AppComponents struct {
 	AIService   ai.Service
 	ChatService chat.Service
 	Scheduler   scheduler.Service
+	Logger      *zap.Logger
 }
