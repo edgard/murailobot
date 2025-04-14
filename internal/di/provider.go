@@ -1,15 +1,12 @@
-// Package fx provides dependency injection providers for MurailoBot.
-package fx
+// Package di provides dependency injection providers for MurailoBot.
+package di
 
 import (
-	"go.uber.org/fx"
-
 	"github.com/edgard/murailobot/internal/adapter/ai/openai"
 	"github.com/edgard/murailobot/internal/adapter/chat/telegram"
 	"github.com/edgard/murailobot/internal/adapter/scheduler/cron"
 	"github.com/edgard/murailobot/internal/adapter/store/sqlite"
 	"github.com/edgard/murailobot/internal/common/config"
-	"github.com/edgard/murailobot/internal/domain/service"
 	"github.com/edgard/murailobot/internal/port/ai"
 	"github.com/edgard/murailobot/internal/port/chat"
 	"github.com/edgard/murailobot/internal/port/scheduler"
@@ -46,35 +43,29 @@ func ProvideChatService(
 	return telegram.NewChatService(cfg, store, aiService, scheduler)
 }
 
-// ProvideDomainService creates the main domain service for the application.
-func ProvideDomainService(
+// ProvideApp creates the main application container.
+func ProvideApp(
 	cfg *config.Config,
 	store store.Store,
 	aiService ai.Service,
 	chatService chat.Service,
 	schedulerService scheduler.Service,
-) *service.ChatService {
-	return service.NewChatService(cfg, store, aiService, chatService, schedulerService)
+) *AppComponents {
+	return &AppComponents{
+		Config:      cfg,
+		Store:       store,
+		AIService:   aiService,
+		ChatService: chatService,
+		Scheduler:   schedulerService,
+	}
 }
 
-// DependencyProviders groups all the provider functions for cleaner module definitions.
-var DependencyProviders = fx.Provide(
-	ProvideConfig,
-	fx.Annotate(
-		ProvideStore,
-		fx.As(new(store.Store)),
-	),
-	fx.Annotate(
-		ProvideAIService,
-		fx.As(new(ai.Service)),
-	),
-	fx.Annotate(
-		ProvideSchedulerService,
-		fx.As(new(scheduler.Service)),
-	),
-	fx.Annotate(
-		ProvideChatService,
-		fx.As(new(chat.Service)),
-	),
-	ProvideDomainService,
-)
+// AppComponents holds references to all application components.
+// This is used to avoid circular dependency issues with the main package.
+type AppComponents struct {
+	Config      *config.Config
+	Store       store.Store
+	AIService   ai.Service
+	ChatService chat.Service
+	Scheduler   scheduler.Service
+}

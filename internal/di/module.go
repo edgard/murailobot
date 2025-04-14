@@ -1,5 +1,5 @@
-// Package fx provides dependency injection modules using Uber's fx.
-package fx
+// Package di provides dependency injection modules using Uber's fx.
+package di
 
 import (
 	"context"
@@ -91,12 +91,40 @@ var ChatModule = fx.Module("chat",
 			fx.As(new(chat.Service)),
 		),
 	),
+	fx.Invoke(func(lc fx.Lifecycle, chatService chat.Service) {
+		errCh := make(chan error, 1)
+
+		lc.Append(fx.Hook{
+			OnStart: func(ctx context.Context) error {
+				slog.Info("starting chat service")
+				go func() {
+					if err := chatService.Start(errCh); err != nil {
+						slog.Error("chat service error", "error", err)
+						errCh <- err
+					}
+				}()
+				return nil
+			},
+			OnStop: func(ctx context.Context) error {
+				slog.Info("stopping chat service")
+				return chatService.Stop()
+			},
+		})
+
+		// Monitor for errors from the chat service
+		go func() {
+			for err := range errCh {
+				slog.Error("chat service error", "error", err)
+				// We might want to handle this more gracefully in the future
+			}
+		}()
+	}),
 )
 
 // ApplicationModule provides the main application service
 var ApplicationModule = fx.Module("application",
 	fx.Provide(
-		ProvideDomainService,
+		ProvideApp,
 	),
 )
 
@@ -108,13 +136,8 @@ var RootModule = fx.Module("root",
 	SchedulerModule,
 	ChatModule,
 	ApplicationModule,
-)
-
-// SimpleRootModule is an alternative simplified root module that uses
-// the DependencyProviders directly, with less fine-grained lifecycle management
-var SimpleRootModule = fx.Module("root",
+	// Add logger configuration
 	fx.WithLogger(func(logger *fxevent.ConsoleLogger) fxevent.Logger {
 		return logger
 	}),
-	DependencyProviders,
 )
