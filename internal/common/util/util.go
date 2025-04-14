@@ -51,7 +51,9 @@ var (
 	tokenizerErr  error
 )
 
-func getTokenizer() (*tiktoken.Tiktoken, error) {
+// GetTokenizer returns the tiktoken tokenizer for direct token counting.
+// This provides access to the raw tokenizer without any safety margins or estimates.
+func GetTokenizer() (*tiktoken.Tiktoken, error) {
 	tokenizerOnce.Do(func() {
 		tokenizer, tokenizerErr = tiktoken.GetEncoding("cl100k_base")
 		if tokenizerErr != nil {
@@ -134,35 +136,4 @@ func Sanitize(input string) (string, error) {
 	}
 
 	return result, nil
-}
-
-// EstimateTokens estimates the number of tokens in a text string for
-// AI model token counting purposes. It uses the tiktoken library for
-// accurate token counting with GPT models, with a fallback to a simple
-// character-based approximation if the tokenizer fails.
-//
-// The estimate includes a 20% safety margin to account for potential
-// variations in tokenization.
-func EstimateTokens(text string) int {
-	// Add 20% overhead for safety margin
-	const tokenOverheadFactor = 1.2
-
-	tk, err := getTokenizer()
-	if err != nil {
-		// Fallback to character-based approximation if tokenizer fails
-		estimate := int(float64(len(text)/3+5) * tokenOverheadFactor)
-
-		// Only log at debug level since this warning could appear frequently
-		slog.Debug("using approximate token estimation",
-			"method", "character-based",
-			"estimate", estimate)
-
-		return estimate
-	}
-
-	tokens := tk.Encode(text, nil, nil)
-	estimate := int(float64(len(tokens))*tokenOverheadFactor + 0.5)
-
-	// No need to log routine token estimations
-	return estimate
 }

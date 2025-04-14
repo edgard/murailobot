@@ -23,15 +23,16 @@ import (
 
 // telegramChat implements the chat.Service interface using Telegram's API
 type telegramChat struct {
-	api       *tgbotapi.BotAPI
-	store     store.Store
-	ai        ai.Service
-	scheduler scheduler.Service
-	config    *config.Config
-	running   chan struct{}
-	handlers  map[string]func(*tgbotapi.Message) error
-	ctx       context.Context
-	logger    *zap.Logger
+	api         *tgbotapi.BotAPI
+	store       store.Store
+	ai          ai.Service
+	scheduler   scheduler.Service
+	config      *config.Config
+	running     chan struct{}
+	handlers    map[string]func(*tgbotapi.Message) error
+	ctx         context.Context
+	logger      *zap.Logger
+	chatBotInfo *model.ChatBotInfo
 }
 
 // NewChatService creates a new Telegram chat service with the provided dependencies.
@@ -69,27 +70,28 @@ func NewChatService(
 	api.Debug = false
 	ctx := context.Background()
 
-	b := &telegramChat{
-		api:       api,
-		store:     store,
-		ai:        aiService,
-		scheduler: scheduler,
-		config:    cfg,
-		running:   make(chan struct{}),
-		ctx:       ctx,
-		logger:    logger,
-	}
-
-	logger.Debug("configuring bot info in AI service")
-
-	if err := aiService.SetBotInfo(ai.BotInfo{
+	// Create ChatBotInfo from the Telegram Bot API's Self information
+	chatBotInfo := &model.ChatBotInfo{
 		UserID:      api.Self.ID,
 		Username:    api.Self.UserName,
 		DisplayName: api.Self.FirstName,
-	}); err != nil {
-		logger.Error("failed to set bot info in AI service", zap.Error(err))
-		return nil, err
 	}
+
+	b := &telegramChat{
+		api:         api,
+		store:       store,
+		ai:          aiService,
+		scheduler:   scheduler,
+		config:      cfg,
+		running:     make(chan struct{}),
+		ctx:         ctx,
+		logger:      logger,
+		chatBotInfo: chatBotInfo,
+	}
+
+	logger.Debug("registered chat bot info",
+		zap.Int64("bot_id", chatBotInfo.UserID),
+		zap.String("username", chatBotInfo.Username))
 
 	logger.Debug("registering command handlers")
 
@@ -488,12 +490,23 @@ func (b *telegramChat) handleMentionMessage(msg *tgbotapi.Message) error {
 		userProfiles = make(map[int64]*model.UserProfile)
 	}
 
-	// Calculate token budget available for message history
-	systemPrompt := b.ai.CreateSystemPrompt(userProfiles)
-	systemPromptTokens := util.EstimateTokens(systemPrompt)
+	// Get tokenizer
+	tokenizer, err := util.GetTokenizer()
+	if err != nil {
+		b.logger.Warn("failed to get tokenizer",
+			zap.Error(err),
+			zap.Int64("chat_id", msg.Chat.ID))
+		// Continue with an approximation
+		b.sendErrorMessage(msg.Chat.ID)
+		return fmt.Errorf("failed to get tokenizer: %w", err)
+	}
 
-	// Estimate current message token count
-	currentMessageTokens := util.EstimateTokens(msg.Text)
+	// Calculate token budget available for message history
+	systemPrompt := b.ai.CreateSystemPrompt(userProfiles, b.chatBotInfo)
+	systemPromptTokens := len(tokenizer.Encode(systemPrompt, nil, nil))
+
+	// Count current message tokens
+	currentMessageTokens := len(tokenizer.Encode(msg.Text, nil, nil))
 
 	// Calculate available tokens for history
 	availableTokens := b.config.AIMaxContextTokens - systemPromptTokens - currentMessageTokens
@@ -522,7 +535,7 @@ func (b *telegramChat) handleMentionMessage(msg *tgbotapi.Message) error {
 		batchTokens := 0
 		for _, message := range batchMessages {
 			// Add 15 tokens overhead per message for metadata
-			msgTokens := util.EstimateTokens(message.Content) + 15
+			msgTokens := len(tokenizer.Encode(message.Content, nil, nil)) + 15
 			batchTokens += msgTokens
 		}
 
@@ -531,7 +544,7 @@ func (b *telegramChat) handleMentionMessage(msg *tgbotapi.Message) error {
 			// We would exceed token limit, so don't add all messages from this batch
 			// Instead, add messages one by one until we reach the limit
 			for _, message := range batchMessages {
-				msgTokens := util.EstimateTokens(message.Content) + 15
+				msgTokens := len(tokenizer.Encode(message.Content, nil, nil)) + 15
 				if totalTokens+msgTokens <= availableTokens {
 					allMessages = append(allMessages, message)
 					totalTokens += msgTokens
@@ -574,6 +587,7 @@ func (b *telegramChat) handleMentionMessage(msg *tgbotapi.Message) error {
 		Message:        msg.Text,
 		RecentMessages: allMessages,
 		UserProfiles:   userProfiles,
+		ChatBotInfo:    b.chatBotInfo, // Pass the bot info in the request
 	}
 
 	response, err := b.ai.GenerateResponse(b.ctx, request)
@@ -682,7 +696,7 @@ func (b *telegramChat) processAndUpdateUserProfiles() error {
 		zap.Int("message_count", len(unprocessedMessages)),
 		zap.Int("existing_profiles", len(existingProfiles)))
 
-	updatedProfiles, err := b.ai.GenerateProfiles(b.ctx, unprocessedMessages, existingProfiles)
+	updatedProfiles, err := b.ai.GenerateProfiles(b.ctx, unprocessedMessages, existingProfiles, b.chatBotInfo)
 	if err != nil {
 		return fmt.Errorf("failed to generate profiles with AI: %w", err)
 	}

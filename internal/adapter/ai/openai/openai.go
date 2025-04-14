@@ -29,7 +29,6 @@ type aiService struct {
 	profileInstruction string
 	timeout            time.Duration
 	store              store.Store
-	botInfo            ai.BotInfo
 	logger             *zap.Logger
 }
 
@@ -56,21 +55,6 @@ func NewAIService(cfg *config.Config, store store.Store, logger *zap.Logger) (ai
 	return service, nil
 }
 
-// SetBotInfo configures the bot's identity information
-func (s *aiService) SetBotInfo(info ai.BotInfo) error {
-	if info.UserID <= 0 {
-		return errors.New("invalid bot user ID")
-	}
-
-	if info.Username == "" {
-		return errors.New("empty bot username")
-	}
-
-	s.botInfo = info
-
-	return nil
-}
-
 func formatMessage(msg *model.Message) string {
 	return fmt.Sprintf("[%s] UID %d: %s",
 		msg.Timestamp.Format(time.RFC3339),
@@ -79,11 +63,11 @@ func formatMessage(msg *model.Message) string {
 }
 
 // CreateSystemPrompt generates the system prompt for the AI model
-func (s *aiService) CreateSystemPrompt(userProfiles map[int64]*model.UserProfile) string {
+func (s *aiService) CreateSystemPrompt(userProfiles map[int64]*model.UserProfile, chatBotInfo *model.ChatBotInfo) string {
 	// Use the bot's display name if available, otherwise fall back to username
-	displayName := s.botInfo.Username
-	if s.botInfo.DisplayName != "" {
-		displayName = s.botInfo.DisplayName
+	displayName := chatBotInfo.Username
+	if chatBotInfo.DisplayName != "" {
+		displayName = chatBotInfo.DisplayName
 	}
 
 	// Create a personalized header that defines the bot's identity and expected behavior
@@ -93,7 +77,7 @@ func (s *aiService) CreateSystemPrompt(userProfiles map[int64]*model.UserProfile
 			"this is normal and expected. Always respond directly to the content of the message. "+
 			"Even if the message doesn't contain a clear question, assume it's directed at you "+
 			"and respond appropriately.\n\n",
-		displayName, s.botInfo.Username, s.botInfo.Username)
+		displayName, chatBotInfo.Username, chatBotInfo.Username)
 
 	// Combine the identity header with the configured instruction text
 	systemPrompt := botIdentityHeader + s.instruction
@@ -118,11 +102,11 @@ func (s *aiService) CreateSystemPrompt(userProfiles map[int64]*model.UserProfile
 
 		// Process each user profile, with special handling for the bot's own profile
 		for _, id := range userIDs {
-			if id == s.botInfo.UserID {
+			if id == chatBotInfo.UserID {
 				// For the bot's own profile, use a standardized format
-				botDisplayNames := s.botInfo.Username
-				if s.botInfo.DisplayName != "" && s.botInfo.DisplayName != s.botInfo.Username {
-					botDisplayNames = fmt.Sprintf("%s, %s", s.botInfo.DisplayName, s.botInfo.Username)
+				botDisplayNames := chatBotInfo.Username
+				if chatBotInfo.DisplayName != "" && chatBotInfo.DisplayName != chatBotInfo.Username {
+					botDisplayNames = fmt.Sprintf("%s, %s", chatBotInfo.DisplayName, chatBotInfo.Username)
 				}
 
 				profileInfo.WriteString(fmt.Sprintf("UID %d (%s) | Internet | Internet | N/A | Group Chat Bot\n", id, botDisplayNames))
@@ -150,6 +134,11 @@ func (s *aiService) GenerateResponse(ctx context.Context, request *ai.Request) (
 		return "", errors.New("nil request")
 	}
 
+	// Check if ChatBotInfo is provided
+	if request.ChatBotInfo == nil {
+		return "", errors.New("missing chat bot info in request")
+	}
+
 	s.logger.Debug("generating AI response", zap.Int64("user_id", request.UserID))
 
 	if request.UserID <= 0 {
@@ -161,7 +150,7 @@ func (s *aiService) GenerateResponse(ctx context.Context, request *ai.Request) (
 		return "", errors.New("empty user message")
 	}
 
-	systemPrompt := s.CreateSystemPrompt(request.UserProfiles)
+	systemPrompt := s.CreateSystemPrompt(request.UserProfiles, request.ChatBotInfo)
 
 	// Initialize the messages array with the system prompt
 	messages := []gopenai.ChatCompletionMessage{
@@ -175,7 +164,7 @@ func (s *aiService) GenerateResponse(ctx context.Context, request *ai.Request) (
 	// Properly identifying bot messages as "assistant" and user messages as "user"
 	for _, msg := range request.RecentMessages {
 		role := "user"
-		if msg.UserID == s.botInfo.UserID {
+		if msg.UserID == request.ChatBotInfo.UserID {
 			role = "assistant"
 		}
 
@@ -196,15 +185,23 @@ func (s *aiService) GenerateResponse(ctx context.Context, request *ai.Request) (
 		Content: currentMsg,
 	})
 
-	// Estimate total tokens for logging purposes
-	totalInputTokens := util.EstimateTokens(systemPrompt) + util.EstimateTokens(request.Message)
-	for _, msg := range request.RecentMessages {
-		totalInputTokens += util.EstimateTokens(msg.Content)
-	}
+	// Get tokenizer for direct token counting
+	tokenizer, err := util.GetTokenizer()
+	if err != nil {
+		s.logger.Warn("failed to get tokenizer, skipping token counting", zap.Error(err))
+	} else {
+		// Count tokens directly using the tokenizer
+		totalInputTokens := len(tokenizer.Encode(systemPrompt, nil, nil)) +
+			len(tokenizer.Encode(request.Message, nil, nil))
 
-	s.logger.Debug("sending AI request",
-		zap.Int("messages", len(messages)),
-		zap.Int("tokens", totalInputTokens))
+		for _, msg := range request.RecentMessages {
+			totalInputTokens += len(tokenizer.Encode(msg.Content, nil, nil))
+		}
+
+		s.logger.Debug("sending AI request",
+			zap.Int("messages", len(messages)),
+			zap.Int("tokens", totalInputTokens))
+	}
 
 	// Create a timeout context to prevent hanging on API calls
 	timeoutCtx, cancel := context.WithTimeout(ctx, s.timeout)
@@ -249,7 +246,7 @@ func (s *aiService) GenerateResponse(ctx context.Context, request *ai.Request) (
 }
 
 // GenerateProfiles analyzes user messages to create or update user profiles
-func (s *aiService) GenerateProfiles(ctx context.Context, messages []*model.Message, existingProfiles map[int64]*model.UserProfile) (map[int64]*model.UserProfile, error) {
+func (s *aiService) GenerateProfiles(ctx context.Context, messages []*model.Message, existingProfiles map[int64]*model.UserProfile, chatBotInfo *model.ChatBotInfo) (map[int64]*model.UserProfile, error) {
 	startTime := time.Now()
 
 	s.logger.Debug("starting profile generation",
@@ -260,12 +257,16 @@ func (s *aiService) GenerateProfiles(ctx context.Context, messages []*model.Mess
 		return nil, errors.New("no messages to analyze")
 	}
 
+	if chatBotInfo == nil {
+		return nil, errors.New("missing chat bot info")
+	}
+
 	userMessages := make(map[int64][]*model.Message)
 	for _, msg := range messages {
 		userMessages[msg.UserID] = append(userMessages[msg.UserID], msg)
 	}
 
-	instruction := s.getProfileInstruction(s.profileInstruction, s.botInfo)
+	instruction := s.getProfileInstruction(s.profileInstruction, chatBotInfo)
 
 	chatMessages := []gopenai.ChatCompletionMessage{
 		{
@@ -317,10 +318,17 @@ func (s *aiService) GenerateProfiles(ctx context.Context, messages []*model.Mess
 
 	messageContent := msgBuilder.String()
 
-	messageContentTokens := util.EstimateTokens(messageContent)
-	s.logger.Debug("message content prepared",
-		zap.Int("users", len(userMessages)),
-		zap.Int("tokens", messageContentTokens))
+	// Get tokenizer for direct token counting
+	tokenizer, err := util.GetTokenizer()
+	if err != nil {
+		s.logger.Warn("failed to get tokenizer for token counting", zap.Error(err))
+	} else {
+		// Count tokens directly
+		messageContentTokens := len(tokenizer.Encode(messageContent, nil, nil))
+		s.logger.Debug("message content prepared",
+			zap.Int("users", len(userMessages)),
+			zap.Int("tokens", messageContentTokens))
+	}
 
 	// Add the user message to the chat messages
 	chatMessages = append(chatMessages, gopenai.ChatCompletionMessage{
@@ -348,7 +356,7 @@ func (s *aiService) GenerateProfiles(ctx context.Context, messages []*model.Mess
 		return nil, errors.New("no response choices returned")
 	}
 
-	profiles, err := s.parseProfileResponse(resp.Choices[0].Message.Content, userMessages, existingProfiles, s.botInfo)
+	profiles, err := s.parseProfileResponse(resp.Choices[0].Message.Content, userMessages, existingProfiles, chatBotInfo)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse profiles: %w", err)
 	}
@@ -363,7 +371,7 @@ func (s *aiService) GenerateProfiles(ctx context.Context, messages []*model.Mess
 	return profiles, nil
 }
 
-func (s *aiService) parseProfileResponse(response string, userMessages map[int64][]*model.Message, existingProfiles map[int64]*model.UserProfile, botInfo ai.BotInfo) (map[int64]*model.UserProfile, error) {
+func (s *aiService) parseProfileResponse(response string, userMessages map[int64][]*model.Message, existingProfiles map[int64]*model.UserProfile, chatBotInfo *model.ChatBotInfo) (map[int64]*model.UserProfile, error) {
 	startTime := time.Now()
 
 	s.logger.Debug("parsing profile response", zap.Int("response_length", len(response)))
@@ -450,12 +458,12 @@ func (s *aiService) parseProfileResponse(response string, userMessages map[int64
 
 		// Special handling for the bot's own profile
 		// This ensures the bot always has a consistent profile
-		if userID == botInfo.UserID {
-			s.logger.Debug("handling bot's own profile", zap.Int64("bot_id", botInfo.UserID))
+		if userID == chatBotInfo.UserID {
+			s.logger.Debug("handling chat bot's own profile", zap.Int64("bot_id", chatBotInfo.UserID))
 
-			botDisplayNames := botInfo.Username
-			if botInfo.DisplayName != "" && botInfo.DisplayName != botInfo.Username {
-				botDisplayNames = fmt.Sprintf("%s, %s", botInfo.DisplayName, botInfo.Username)
+			botDisplayNames := chatBotInfo.Username
+			if chatBotInfo.DisplayName != "" && chatBotInfo.DisplayName != chatBotInfo.Username {
+				botDisplayNames = fmt.Sprintf("%s, %s", chatBotInfo.DisplayName, chatBotInfo.Username)
 			}
 
 			updatedProfiles[userID] = &model.UserProfile{
@@ -518,10 +526,10 @@ func (s *aiService) parseProfileResponse(response string, userMessages map[int64
 	return updatedProfiles, nil
 }
 
-func (s *aiService) getProfileInstruction(configInstruction string, botInfo ai.BotInfo) string {
+func (s *aiService) getProfileInstruction(configInstruction string, chatBotInfo *model.ChatBotInfo) string {
 	s.logger.Debug("generating profile instruction",
-		zap.Int64("bot_id", botInfo.UserID),
-		zap.String("bot_username", botInfo.Username))
+		zap.Int64("bot_id", chatBotInfo.UserID),
+		zap.String("bot_username", chatBotInfo.Username))
 
 	startTime := time.Now()
 
@@ -550,7 +558,7 @@ Return ONLY a JSON object, no additional text, with this structure:
       "traits": "Comma-separated list of personality traits and characteristics"
     }
   }
-}`, botInfo.UserID, botInfo.Username, botInfo.DisplayName)
+}`, chatBotInfo.UserID, chatBotInfo.Username, chatBotInfo.DisplayName)
 
 	// Combine the configured instruction with the fixed part
 	fullInstruction := fmt.Sprintf("%s\n\n%s", configInstruction, botIdentificationAndFixedPart)
