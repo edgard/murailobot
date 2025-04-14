@@ -1,7 +1,5 @@
-// Package ai provides artificial intelligence capabilities for MurailoBot,
-// handling message response generation and user profile analysis using
-// OpenAI's API or compatible services.
-package ai
+// Package openai provides an OpenAI-based implementation of the AI service port.
+package openai
 
 import (
 	"context"
@@ -13,55 +11,51 @@ import (
 	"strings"
 	"time"
 
-	"github.com/edgard/murailobot/internal/config"
-	"github.com/edgard/murailobot/internal/db"
-	"github.com/edgard/murailobot/internal/utils"
-	"github.com/sashabaranov/go-openai"
+	gopenai "github.com/sashabaranov/go-openai"
+
+	"github.com/edgard/murailobot/internal/common/config"
+	"github.com/edgard/murailobot/internal/common/util"
+	"github.com/edgard/murailobot/internal/domain/model"
+	"github.com/edgard/murailobot/internal/port/ai"
+	"github.com/edgard/murailobot/internal/port/store"
 )
 
-// Client implements AI functionality for generating responses to user messages
-// and analyzing user profiles based on message history. It uses OpenAI's API
-// or compatible services to provide natural language processing capabilities.
-type Client struct {
-	client             *openai.Client
+// aiService implements the ai.Service interface using OpenAI's API
+type aiService struct {
+	client             *gopenai.Client
 	model              string
 	temperature        float32
 	instruction        string
 	profileInstruction string
 	timeout            time.Duration
-	storage            *db.DB
-	botInfo            BotInfo
+	store              store.Store
+	botInfo            ai.BotInfo
 }
 
-// New creates a new AI client with the provided configuration and storage.
-// It initializes the OpenAI client with the appropriate API token and base URL.
-func New(cfg *config.Config, storage *db.DB) (*Client, error) {
-	if storage == nil {
+// NewAIService creates a new AI service with the provided configuration and storage.
+func NewAIService(cfg *config.Config, store store.Store) (ai.Service, error) {
+	if store == nil {
 		return nil, errors.New("nil storage")
 	}
 
-	aiConfig := openai.DefaultConfig(cfg.AIToken)
+	aiConfig := gopenai.DefaultConfig(cfg.AIToken)
 	aiConfig.BaseURL = cfg.AIBaseURL
 
-	client := &Client{
-		client:             openai.NewClientWithConfig(aiConfig),
+	service := &aiService{
+		client:             gopenai.NewClientWithConfig(aiConfig),
 		model:              cfg.AIModel,
 		temperature:        cfg.AITemperature,
 		instruction:        cfg.AIInstruction,
 		profileInstruction: cfg.AIProfileInstruction,
 		timeout:            cfg.AITimeout,
-		storage:            storage,
+		store:              store,
 	}
 
-	return client, nil
+	return service, nil
 }
 
-// SetBotInfo configures the bot's identity information used for message processing
-// and profile generation. This information helps the AI distinguish between bot
-// and user messages, and properly handle the bot's own profile.
-//
-// Returns an error if the provided bot information is invalid.
-func (c *Client) SetBotInfo(info BotInfo) error {
+// SetBotInfo configures the bot's identity information
+func (s *aiService) SetBotInfo(info ai.BotInfo) error {
 	if info.UserID <= 0 {
 		return errors.New("invalid bot user ID")
 	}
@@ -70,44 +64,37 @@ func (c *Client) SetBotInfo(info BotInfo) error {
 		return errors.New("empty bot username")
 	}
 
-	c.botInfo = info
+	s.botInfo = info
 
 	return nil
 }
 
-func formatMessage(msg *db.Message) string {
+func formatMessage(msg *model.Message) string {
 	return fmt.Sprintf("[%s] UID %d: %s",
 		msg.Timestamp.Format(time.RFC3339),
 		msg.UserID,
 		msg.Content)
 }
 
-// CreateSystemPrompt generates the system prompt for the AI model based on the bot's identity
-// and user profiles. This prompt helps the AI understand its role in the conversation.
-//
-// Parameters:
-// - userProfiles: A map of user IDs to their profile information
-//
-// Returns a formatted system prompt string.
-func (c *Client) CreateSystemPrompt(userProfiles map[int64]*db.UserProfile) string {
+// CreateSystemPrompt generates the system prompt for the AI model
+func (s *aiService) CreateSystemPrompt(userProfiles map[int64]*model.UserProfile) string {
 	// Use the bot's display name if available, otherwise fall back to username
-	displayName := c.botInfo.Username
-	if c.botInfo.DisplayName != "" {
-		displayName = c.botInfo.DisplayName
+	displayName := s.botInfo.Username
+	if s.botInfo.DisplayName != "" {
+		displayName = s.botInfo.DisplayName
 	}
 
 	// Create a personalized header that defines the bot's identity and expected behavior
-	// This helps the AI model understand its role in the conversation
 	botIdentityHeader := fmt.Sprintf(
 		"You are %s, a Telegram bot in a group chat. When someone mentions you with @%s, "+
 			"your task is to respond to their message. Messages will include the @%s mention - "+
 			"this is normal and expected. Always respond directly to the content of the message. "+
 			"Even if the message doesn't contain a clear question, assume it's directed at you "+
 			"and respond appropriately.\n\n",
-		displayName, c.botInfo.Username, c.botInfo.Username)
+		displayName, s.botInfo.Username, s.botInfo.Username)
 
 	// Combine the identity header with the configured instruction text
-	systemPrompt := botIdentityHeader + c.instruction
+	systemPrompt := botIdentityHeader + s.instruction
 
 	// If user profiles are available, append them to provide context about the participants
 	if len(userProfiles) > 0 {
@@ -129,11 +116,11 @@ func (c *Client) CreateSystemPrompt(userProfiles map[int64]*db.UserProfile) stri
 
 		// Process each user profile, with special handling for the bot's own profile
 		for _, id := range userIDs {
-			if id == c.botInfo.UserID {
+			if id == s.botInfo.UserID {
 				// For the bot's own profile, use a standardized format
-				botDisplayNames := c.botInfo.Username
-				if c.botInfo.DisplayName != "" && c.botInfo.DisplayName != c.botInfo.Username {
-					botDisplayNames = fmt.Sprintf("%s, %s", c.botInfo.DisplayName, c.botInfo.Username)
+				botDisplayNames := s.botInfo.Username
+				if s.botInfo.DisplayName != "" && s.botInfo.DisplayName != s.botInfo.Username {
+					botDisplayNames = fmt.Sprintf("%s, %s", s.botInfo.DisplayName, s.botInfo.Username)
 				}
 
 				profileInfo.WriteString(fmt.Sprintf("UID %d (%s) | Internet | Internet | N/A | Group Chat Bot\n", id, botDisplayNames))
@@ -152,15 +139,8 @@ func (c *Client) CreateSystemPrompt(userProfiles map[int64]*db.UserProfile) stri
 	return systemPrompt
 }
 
-// GenerateResponse creates an AI-generated response to a user message.
-// It uses the provided context, user profiles, and conversation history
-// to generate a contextually appropriate response.
-//
-// The method handles token budget management to ensure the context fits
-// within the model's limitations, and properly formats messages for the AI.
-//
-// Returns the generated response as a string, or an error if the generation fails.
-func (c *Client) GenerateResponse(ctx context.Context, request *Request) (string, error) {
+// GenerateResponse creates an AI-generated response to a user message
+func (s *aiService) GenerateResponse(ctx context.Context, request *ai.Request) (string, error) {
 	startTime := time.Now()
 
 	// Check for nil request first to avoid nil pointer dereference
@@ -179,10 +159,10 @@ func (c *Client) GenerateResponse(ctx context.Context, request *Request) (string
 		return "", errors.New("empty user message")
 	}
 
-	systemPrompt := c.CreateSystemPrompt(request.UserProfiles)
+	systemPrompt := s.CreateSystemPrompt(request.UserProfiles)
 
 	// Initialize the messages array with the system prompt
-	messages := []openai.ChatCompletionMessage{
+	messages := []gopenai.ChatCompletionMessage{
 		{
 			Role:    "system",
 			Content: systemPrompt,
@@ -193,32 +173,32 @@ func (c *Client) GenerateResponse(ctx context.Context, request *Request) (string
 	// Properly identifying bot messages as "assistant" and user messages as "user"
 	for _, msg := range request.RecentMessages {
 		role := "user"
-		if msg.UserID == c.botInfo.UserID {
+		if msg.UserID == s.botInfo.UserID {
 			role = "assistant"
 		}
 
-		messages = append(messages, openai.ChatCompletionMessage{
+		messages = append(messages, gopenai.ChatCompletionMessage{
 			Role:    role,
 			Content: formatMessage(msg),
 		})
 	}
 
-	currentMsg := formatMessage(&db.Message{
+	currentMsg := formatMessage(&model.Message{
 		UserID:    request.UserID,
 		Content:   request.Message,
 		Timestamp: time.Now().UTC(),
 	})
 
-	messages = append(messages, openai.ChatCompletionMessage{
+	messages = append(messages, gopenai.ChatCompletionMessage{
 		Role:    "user",
 		Content: currentMsg,
 	})
 
 	if slog.Default().Enabled(ctx, slog.LevelDebug) {
 		// Estimate total tokens for logging purposes
-		totalInputTokens := utils.EstimateTokens(systemPrompt) + utils.EstimateTokens(request.Message)
+		totalInputTokens := util.EstimateTokens(systemPrompt) + util.EstimateTokens(request.Message)
 		for _, msg := range request.RecentMessages {
-			totalInputTokens += utils.EstimateTokens(msg.Content)
+			totalInputTokens += util.EstimateTokens(msg.Content)
 		}
 
 		slog.Debug("sending AI request",
@@ -227,15 +207,15 @@ func (c *Client) GenerateResponse(ctx context.Context, request *Request) (string
 	}
 
 	// Create a timeout context to prevent hanging on API calls
-	timeoutCtx, cancel := context.WithTimeout(ctx, c.timeout)
+	timeoutCtx, cancel := context.WithTimeout(ctx, s.timeout)
 	defer cancel()
 
 	// Make API call with timeout
 	apiStartTime := time.Now()
-	resp, err := c.client.CreateChatCompletion(timeoutCtx, openai.ChatCompletionRequest{
-		Model:       c.model,
+	resp, err := s.client.CreateChatCompletion(timeoutCtx, gopenai.ChatCompletionRequest{
+		Model:       s.model,
 		Messages:    messages,
-		Temperature: c.temperature,
+		Temperature: s.temperature,
 	})
 	apiDuration := time.Since(apiStartTime)
 
@@ -253,7 +233,7 @@ func (c *Client) GenerateResponse(ctx context.Context, request *Request) (string
 
 	rawResponse := resp.Choices[0].Message.Content
 
-	result, err := utils.Sanitize(rawResponse)
+	result, err := util.Sanitize(rawResponse)
 	if err != nil {
 		return "", fmt.Errorf("failed to sanitize response: %w", err)
 	}
@@ -268,16 +248,8 @@ func (c *Client) GenerateResponse(ctx context.Context, request *Request) (string
 	return result, nil
 }
 
-// GenerateProfiles analyzes user messages to create or update user profiles.
-// It processes the provided messages, groups them by user, and uses AI to
-// extract information about each user's characteristics, locations, and traits.
-//
-// The method preserves existing profile data when updating profiles and handles
-// special cases like the bot's own profile.
-//
-// Returns a map of user IDs to updated user profiles, or an error if the
-// profile generation fails.
-func (c *Client) GenerateProfiles(ctx context.Context, messages []*db.Message, existingProfiles map[int64]*db.UserProfile) (map[int64]*db.UserProfile, error) {
+// GenerateProfiles analyzes user messages to create or update user profiles
+func (s *aiService) GenerateProfiles(ctx context.Context, messages []*model.Message, existingProfiles map[int64]*model.UserProfile) (map[int64]*model.UserProfile, error) {
 	startTime := time.Now()
 
 	slog.Debug("starting profile generation",
@@ -288,14 +260,14 @@ func (c *Client) GenerateProfiles(ctx context.Context, messages []*db.Message, e
 		return nil, errors.New("no messages to analyze")
 	}
 
-	userMessages := make(map[int64][]*db.Message)
+	userMessages := make(map[int64][]*model.Message)
 	for _, msg := range messages {
 		userMessages[msg.UserID] = append(userMessages[msg.UserID], msg)
 	}
 
-	instruction := getProfileInstruction(c.profileInstruction, c.botInfo)
+	instruction := getProfileInstruction(s.profileInstruction, s.botInfo)
 
-	chatMessages := []openai.ChatCompletionMessage{
+	chatMessages := []gopenai.ChatCompletionMessage{
 		{
 			Role:    "system",
 			Content: instruction,
@@ -346,27 +318,27 @@ func (c *Client) GenerateProfiles(ctx context.Context, messages []*db.Message, e
 	messageContent := msgBuilder.String()
 
 	if slog.Default().Enabled(ctx, slog.LevelDebug) {
-		messageContentTokens := utils.EstimateTokens(messageContent)
+		messageContentTokens := util.EstimateTokens(messageContent)
 		slog.Debug("message content prepared",
 			"users", len(userMessages),
 			"tokens", messageContentTokens)
 	}
 
 	// Add the user message to the chat messages
-	chatMessages = append(chatMessages, openai.ChatCompletionMessage{
+	chatMessages = append(chatMessages, gopenai.ChatCompletionMessage{
 		Role:    "user",
 		Content: messageContent,
 	})
 
 	// Create a timeout context for the API call
-	timeoutCtx, cancel := context.WithTimeout(ctx, c.timeout)
+	timeoutCtx, cancel := context.WithTimeout(ctx, s.timeout)
 	defer cancel()
 
 	apiStartTime := time.Now()
-	resp, err := c.client.CreateChatCompletion(timeoutCtx, openai.ChatCompletionRequest{
-		Model:       c.model,
+	resp, err := s.client.CreateChatCompletion(timeoutCtx, gopenai.ChatCompletionRequest{
+		Model:       s.model,
 		Messages:    chatMessages,
-		Temperature: c.temperature,
+		Temperature: s.temperature,
 	})
 	apiDuration := time.Since(apiStartTime)
 
@@ -378,7 +350,7 @@ func (c *Client) GenerateProfiles(ctx context.Context, messages []*db.Message, e
 		return nil, errors.New("no response choices returned")
 	}
 
-	profiles, err := parseProfileResponse(resp.Choices[0].Message.Content, userMessages, existingProfiles, c.botInfo)
+	profiles, err := parseProfileResponse(resp.Choices[0].Message.Content, userMessages, existingProfiles, s.botInfo)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse profiles: %w", err)
 	}
@@ -393,7 +365,7 @@ func (c *Client) GenerateProfiles(ctx context.Context, messages []*db.Message, e
 	return profiles, nil
 }
 
-func parseProfileResponse(response string, userMessages map[int64][]*db.Message, existingProfiles map[int64]*db.UserProfile, botInfo BotInfo) (map[int64]*db.UserProfile, error) {
+func parseProfileResponse(response string, userMessages map[int64][]*model.Message, existingProfiles map[int64]*model.UserProfile, botInfo ai.BotInfo) (map[int64]*model.UserProfile, error) {
 	startTime := time.Now()
 
 	slog.Debug("parsing profile response", "response_length", len(response))
@@ -461,7 +433,7 @@ func parseProfileResponse(response string, userMessages map[int64][]*db.Message,
 		})
 	}
 
-	updatedProfiles := make(map[int64]*db.UserProfile)
+	updatedProfiles := make(map[int64]*model.UserProfile)
 	newProfiles := 0
 	updatedExistingProfiles := 0
 	skippedProfiles := 0
@@ -488,7 +460,7 @@ func parseProfileResponse(response string, userMessages map[int64][]*db.Message,
 				botDisplayNames = fmt.Sprintf("%s, %s", botInfo.DisplayName, botInfo.Username)
 			}
 
-			updatedProfiles[userID] = &db.UserProfile{
+			updatedProfiles[userID] = &model.UserProfile{
 				UserID:          userID,
 				DisplayNames:    botDisplayNames,
 				OriginLocation:  "Internet",
@@ -518,7 +490,7 @@ func parseProfileResponse(response string, userMessages map[int64][]*db.Message,
 		_, isExisting := existingProfiles[userID]
 
 		// Create updated profile for the user
-		updatedProfiles[userID] = &db.UserProfile{
+		updatedProfiles[userID] = &model.UserProfile{
 			UserID:          userID,
 			DisplayNames:    profile.DisplayNames,
 			OriginLocation:  profile.OriginLocation,
@@ -548,7 +520,7 @@ func parseProfileResponse(response string, userMessages map[int64][]*db.Message,
 	return updatedProfiles, nil
 }
 
-func getProfileInstruction(configInstruction string, botInfo BotInfo) string {
+func getProfileInstruction(configInstruction string, botInfo ai.BotInfo) string {
 	slog.Debug("generating profile instruction",
 		"bot_id", botInfo.UserID,
 		"bot_username", botInfo.Username)

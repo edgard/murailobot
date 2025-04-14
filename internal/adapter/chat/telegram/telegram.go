@@ -1,6 +1,5 @@
-// Package bot implements Telegram bot functionality for MurailoBot, handling
-// message processing, command execution, and user profile management.
-package bot
+// Package telegram provides a Telegram implementation of the chat service port.
+package telegram
 
 import (
 	"context"
@@ -11,39 +10,42 @@ import (
 	"strings"
 	"time"
 
-	"github.com/edgard/murailobot/internal/ai"
-	"github.com/edgard/murailobot/internal/config"
-	"github.com/edgard/murailobot/internal/db"
-	"github.com/edgard/murailobot/internal/utils"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+
+	"github.com/edgard/murailobot/internal/common/config"
+	"github.com/edgard/murailobot/internal/common/util"
+	"github.com/edgard/murailobot/internal/domain/model"
+	"github.com/edgard/murailobot/internal/port/ai"
+	"github.com/edgard/murailobot/internal/port/chat"
+	"github.com/edgard/murailobot/internal/port/scheduler"
+	"github.com/edgard/murailobot/internal/port/store"
 )
 
-// Bot represents a Telegram bot instance with all required dependencies
-// for handling messages, managing user profiles, and interacting with
-// the Telegram API.
-type Bot struct {
+// telegramChat implements the chat.Service interface using Telegram's API
+type telegramChat struct {
 	api       *tgbotapi.BotAPI
-	db        *db.DB
-	ai        *ai.Client
-	scheduler *utils.Scheduler
+	store     store.Store
+	ai        ai.Service
+	scheduler scheduler.Service
 	config    *config.Config
 	running   chan struct{}
 	handlers  map[string]func(*tgbotapi.Message) error
 	ctx       context.Context
 }
 
-// New creates a new bot instance with the provided dependencies.
-// It initializes the Telegram API client, sets up command handlers,
-// and configures the bot's information in the AI client.
-func New(cfg *config.Config, database *db.DB, aiClient *ai.Client, scheduler *utils.Scheduler) (*Bot, error) {
-	slog.Debug("initializing bot")
-
-	if database == nil {
-		return nil, errors.New("nil database")
+// NewChatService creates a new Telegram chat service with the provided dependencies.
+func NewChatService(
+	cfg *config.Config,
+	store store.Store,
+	aiService ai.Service,
+	scheduler scheduler.Service,
+) (chat.Service, error) {
+	if store == nil {
+		return nil, errors.New("nil store")
 	}
 
-	if aiClient == nil {
-		return nil, errors.New("nil AI client")
+	if aiService == nil {
+		return nil, errors.New("nil AI service")
 	}
 
 	if scheduler == nil {
@@ -55,7 +57,6 @@ func New(cfg *config.Config, database *db.DB, aiClient *ai.Client, scheduler *ut
 	api, err := tgbotapi.NewBotAPI(cfg.BotToken)
 	if err != nil {
 		slog.Error("failed to connect to Telegram API", "error", err)
-
 		return nil, err
 	}
 
@@ -66,55 +67,50 @@ func New(cfg *config.Config, database *db.DB, aiClient *ai.Client, scheduler *ut
 	api.Debug = false
 	ctx := context.Background()
 
-	bot := &Bot{
+	b := &telegramChat{
 		api:       api,
-		db:        database,
-		ai:        aiClient,
+		store:     store,
+		ai:        aiService,
 		scheduler: scheduler,
 		config:    cfg,
 		running:   make(chan struct{}),
 		ctx:       ctx,
 	}
 
-	slog.Debug("configuring bot info in AI client")
+	slog.Debug("configuring bot info in AI service")
 
-	if err := aiClient.SetBotInfo(ai.BotInfo{
+	if err := aiService.SetBotInfo(ai.BotInfo{
 		UserID:      api.Self.ID,
 		Username:    api.Self.UserName,
 		DisplayName: api.Self.FirstName,
 	}); err != nil {
-		slog.Error("failed to set bot info in AI client", "error", err)
-
+		slog.Error("failed to set bot info in AI service", "error", err)
 		return nil, err
 	}
 
 	slog.Debug("registering command handlers")
 
-	bot.handlers = map[string]func(*tgbotapi.Message) error{
-		"start":         bot.handleStartCommand,
-		"mrl_reset":     bot.handleResetCommand,
-		"mrl_analyze":   bot.handleAnalyzeCommand,
-		"mrl_profiles":  bot.handleProfilesCommand,
-		"mrl_edit_user": bot.handleEditUserCommand,
+	b.handlers = map[string]func(*tgbotapi.Message) error{
+		"start":         b.handleStartCommand,
+		"mrl_reset":     b.handleResetCommand,
+		"mrl_analyze":   b.handleAnalyzeCommand,
+		"mrl_profiles":  b.handleProfilesCommand,
+		"mrl_edit_user": b.handleEditUserCommand,
 	}
 
-	slog.Info("bot initialization complete")
+	slog.Info("chat service initialization complete")
 
-	return bot, nil
+	return b, nil
 }
 
-// Start begins processing incoming Telegram updates.
-// It registers bot commands, configures the update channel,
-// schedules maintenance tasks, and starts the message processing loop.
-// The errCh parameter allows reporting runtime errors back to the main goroutine.
-func (b *Bot) Start(errCh chan<- error) error {
-	slog.Info("starting bot")
+// Start begins processing incoming Telegram updates
+func (b *telegramChat) Start(errCh chan<- error) error {
+	slog.Info("starting chat service")
 
 	slog.Debug("setting up bot commands")
 
 	if err := b.setupCommands(); err != nil {
 		slog.Error("failed to setup commands", "error", err)
-
 		return err
 	}
 
@@ -128,29 +124,69 @@ func (b *Bot) Start(errCh chan<- error) error {
 
 	if err := b.scheduleMaintenanceTasks(); err != nil {
 		slog.Error("failed to schedule maintenance tasks", "error", err)
-
 		return err
 	}
 
-	slog.Info("bot started and processing updates")
+	slog.Info("chat service started and processing updates")
 
 	return b.processUpdates(updates, errCh)
 }
 
-// Stop gracefully shuts down the bot by stopping the update receiver
-// and signaling all goroutines to terminate.
-func (b *Bot) Stop() error {
-	slog.Info("stopping bot")
+// Stop gracefully shuts down the chat service
+func (b *telegramChat) Stop() error {
+	slog.Info("stopping chat service")
 
 	b.api.StopReceivingUpdates()
 	close(b.running)
 
-	slog.Debug("bot stopped successfully")
+	slog.Debug("chat service stopped successfully")
 
 	return nil
 }
 
-func (b *Bot) setupCommands() error {
+// IsAuthorized checks if a user is authorized for admin actions
+func (b *telegramChat) IsAuthorized(userID int64) bool {
+	return userID == b.config.BotAdminID
+}
+
+// SendUserProfiles formats and sends all user profiles to the specified chat
+func (b *telegramChat) SendUserProfiles(ctx context.Context, chatID int64) error {
+	profiles, err := b.store.GetAllUserProfiles(ctx)
+	if err != nil {
+		b.sendErrorMessage(chatID)
+		return fmt.Errorf("failed to get user profiles: %w", err)
+	}
+
+	if len(profiles) == 0 {
+		reply := tgbotapi.NewMessage(chatID, b.config.BotMsgNoProfiles)
+		return b.SendMessage(reply)
+	}
+
+	var profilesReport strings.Builder
+	profilesReport.WriteString(b.config.BotMsgProfilesHeader)
+
+	// Sort user IDs for consistent display
+	userIDs := make([]int64, 0, len(profiles))
+	for userID := range profiles {
+		userIDs = append(userIDs, userID)
+	}
+
+	sort.Slice(userIDs, func(i, j int) bool {
+		return userIDs[i] < userIDs[j]
+	})
+
+	for _, userID := range userIDs {
+		profile := profiles[userID]
+		profilesReport.WriteString(profile.FormatPipeDelimited() + "\n\n")
+	}
+
+	reply := tgbotapi.NewMessage(chatID, profilesReport.String())
+	return b.SendMessage(reply)
+}
+
+// Helper methods
+
+func (b *telegramChat) setupCommands() error {
 	if b.api == nil {
 		return errors.New("nil telegram API client")
 	}
@@ -164,13 +200,11 @@ func (b *Bot) setupCommands() error {
 	}
 
 	cmdConfig := tgbotapi.NewSetMyCommands(commands...)
-
 	_, err := b.api.Request(cmdConfig)
-
 	return err
 }
 
-func (b *Bot) processUpdates(updates tgbotapi.UpdatesChannel, errCh chan<- error) error {
+func (b *telegramChat) processUpdates(updates tgbotapi.UpdatesChannel, errCh chan<- error) error {
 	slog.Debug("starting to process message updates")
 
 	// Track received message count for periodic logging
@@ -180,13 +214,11 @@ func (b *Bot) processUpdates(updates tgbotapi.UpdatesChannel, errCh chan<- error
 	for {
 		select {
 		case <-b.running:
-			slog.Info("update processing stopped due to bot shutdown")
-
+			slog.Info("update processing stopped due to chat service shutdown")
 			return nil
 		case update, ok := <-updates:
 			if !ok {
 				slog.Info("update channel closed")
-
 				return nil
 			}
 
@@ -272,37 +304,15 @@ func (b *Bot) processUpdates(updates tgbotapi.UpdatesChannel, errCh chan<- error
 	}
 }
 
-// isCriticalError determines if an error is critical enough to warrant
-// terminating the application. This is a simple implementation that
-// can be expanded based on specific error types or conditions.
-func isCriticalError(err error) bool {
-	if err == nil {
-		return false
-	}
+// Command handlers
 
-	// Check for specific error types that are considered critical
-	// For example, database connection failures, API authentication errors, etc.
-	if strings.Contains(err.Error(), "database connection lost") {
-		return true
-	}
-
-	if strings.Contains(err.Error(), "API token revoked") {
-		return true
-	}
-
-	// Add more conditions as needed
-
-	return false
-}
-
-func (b *Bot) handleCommand(update tgbotapi.Update) error {
+func (b *telegramChat) handleCommand(update tgbotapi.Update) error {
 	msg := update.Message
 	cmd := msg.Command()
 
 	handler, exists := b.handlers[cmd]
 
 	var err error
-
 	if exists {
 		err = handler(msg)
 	}
@@ -324,69 +334,26 @@ func (b *Bot) handleCommand(update tgbotapi.Update) error {
 	return nil
 }
 
-func (b *Bot) sendErrorMessage(chatID int64) {
-	reply := tgbotapi.NewMessage(chatID, b.config.BotMsgGeneralError)
-	if err := b.SendMessage(reply); err != nil {
-		slog.Error("failed to send error message", "error", err)
-	}
-}
-
-func (b *Bot) checkAuthorization(msg *tgbotapi.Message) error {
-	if !b.IsAuthorized(msg.From.ID) {
-		reply := tgbotapi.NewMessage(msg.Chat.ID, b.config.BotMsgNotAuthorized)
-		if err := b.SendMessage(reply); err != nil {
-			slog.Error("failed to send unauthorized message", "error", err)
-		}
-
-		return errors.New("unauthorized access attempt")
-	}
-
-	return nil
-}
-
-func (b *Bot) validateMessage(msg *tgbotapi.Message) error {
-	if msg == nil || msg.Text == "" {
-		return errors.New("empty message")
-	}
-
-	if msg.Chat == nil {
-		return errors.New("nil chat in message")
-	}
-
-	if msg.From == nil {
-		return errors.New("nil sender in message")
-	}
-
-	if msg.Chat.ID == 0 || msg.From.ID == 0 {
-		return errors.New("invalid chat or user ID")
-	}
-
-	return nil
-}
-
-func (b *Bot) handleStartCommand(msg *tgbotapi.Message) error {
+func (b *telegramChat) handleStartCommand(msg *tgbotapi.Message) error {
 	reply := tgbotapi.NewMessage(msg.Chat.ID, b.config.BotMsgWelcome)
-
 	return b.SendMessage(reply)
 }
 
-func (b *Bot) handleResetCommand(msg *tgbotapi.Message) error {
+func (b *telegramChat) handleResetCommand(msg *tgbotapi.Message) error {
 	if err := b.checkAuthorization(msg); err != nil {
 		return err
 	}
 
-	if err := b.db.DeleteAll(b.ctx); err != nil {
+	if err := b.store.DeleteAll(b.ctx); err != nil {
 		b.sendErrorMessage(msg.Chat.ID)
-
 		return fmt.Errorf("failed to delete all records: %w", err)
 	}
 
 	reply := tgbotapi.NewMessage(msg.Chat.ID, b.config.BotMsgHistoryReset)
-
 	return b.SendMessage(reply)
 }
 
-func (b *Bot) handleAnalyzeCommand(msg *tgbotapi.Message) error {
+func (b *telegramChat) handleAnalyzeCommand(msg *tgbotapi.Message) error {
 	if err := b.checkAuthorization(msg); err != nil {
 		return err
 	}
@@ -406,7 +373,7 @@ func (b *Bot) handleAnalyzeCommand(msg *tgbotapi.Message) error {
 	return b.SendUserProfiles(b.ctx, msg.Chat.ID)
 }
 
-func (b *Bot) handleProfilesCommand(msg *tgbotapi.Message) error {
+func (b *telegramChat) handleProfilesCommand(msg *tgbotapi.Message) error {
 	if err := b.checkAuthorization(msg); err != nil {
 		return err
 	}
@@ -414,7 +381,7 @@ func (b *Bot) handleProfilesCommand(msg *tgbotapi.Message) error {
 	return b.SendUserProfiles(b.ctx, msg.Chat.ID)
 }
 
-func (b *Bot) handleEditUserCommand(msg *tgbotapi.Message) error {
+func (b *telegramChat) handleEditUserCommand(msg *tgbotapi.Message) error {
 	if err := b.checkAuthorization(msg); err != nil {
 		return err
 	}
@@ -422,31 +389,26 @@ func (b *Bot) handleEditUserCommand(msg *tgbotapi.Message) error {
 	args := msg.CommandArguments()
 	if args == "" {
 		reply := tgbotapi.NewMessage(msg.Chat.ID, "Usage: /mrl_edit_user <user_id> <field> <value>")
-
 		return b.SendMessage(reply)
 	}
 
 	var userID int64
-
 	var field, value string
 
 	_, err := fmt.Sscanf(args, "%d %s %s", &userID, &field, &value)
 	if err != nil {
 		reply := tgbotapi.NewMessage(msg.Chat.ID, "Invalid format. Use: /mrl_edit_user <user_id> <field> <value>")
-
 		return b.SendMessage(reply)
 	}
 
-	profile, err := b.db.GetUserProfile(b.ctx, userID)
+	profile, err := b.store.GetUserProfile(b.ctx, userID)
 	if err != nil {
 		b.sendErrorMessage(msg.Chat.ID)
-
 		return err
 	}
 
 	if profile == nil {
 		reply := tgbotapi.NewMessage(msg.Chat.ID, fmt.Sprintf("No profile found for user ID %d", userID))
-
 		return b.SendMessage(reply)
 	}
 
@@ -463,22 +425,19 @@ func (b *Bot) handleEditUserCommand(msg *tgbotapi.Message) error {
 		profile.Traits = value
 	default:
 		reply := tgbotapi.NewMessage(msg.Chat.ID, "Unknown field: "+field)
-
 		return b.SendMessage(reply)
 	}
 
-	if err := b.db.SaveUserProfile(b.ctx, profile); err != nil {
+	if err := b.store.SaveUserProfile(b.ctx, profile); err != nil {
 		b.sendErrorMessage(msg.Chat.ID)
-
 		return err
 	}
 
-	response := tgbotapi.NewMessage(msg.Chat.ID, fmt.Sprintf("Updated profile for user ID %d", userID))
-
-	return b.SendMessage(response)
+	reply := tgbotapi.NewMessage(msg.Chat.ID, fmt.Sprintf("Updated profile for user ID %d", userID))
+	return b.SendMessage(reply)
 }
 
-func (b *Bot) handleGroupMessage(msg *tgbotapi.Message) error {
+func (b *telegramChat) handleGroupMessage(msg *tgbotapi.Message) error {
 	if err := b.validateMessage(msg); err != nil {
 		return fmt.Errorf("invalid message: %w", err)
 	}
@@ -493,7 +452,7 @@ func (b *Bot) handleGroupMessage(msg *tgbotapi.Message) error {
 	}
 
 	// For regular messages, just save and return
-	message := &db.Message{
+	message := &model.Message{
 		GroupID:   msg.Chat.ID,
 		GroupName: msg.Chat.Title,
 		UserID:    msg.From.ID,
@@ -501,14 +460,14 @@ func (b *Bot) handleGroupMessage(msg *tgbotapi.Message) error {
 		Timestamp: time.Now().UTC(),
 	}
 
-	if err := b.db.SaveMessage(b.ctx, message); err != nil {
+	if err := b.store.SaveMessage(b.ctx, message); err != nil {
 		return fmt.Errorf("failed to save group message: %w", err)
 	}
 
 	return nil
 }
 
-func (b *Bot) handleMentionMessage(msg *tgbotapi.Message) error {
+func (b *telegramChat) handleMentionMessage(msg *tgbotapi.Message) error {
 	// Start typing indicator to provide user feedback
 	stopTyping := b.StartTyping(msg.Chat.ID)
 	defer close(stopTyping)
@@ -517,42 +476,37 @@ func (b *Bot) handleMentionMessage(msg *tgbotapi.Message) error {
 	startTime := time.Now()
 
 	// Get user profiles - failure is non-critical
-	userProfiles, err := b.db.GetAllUserProfiles(b.ctx)
+	userProfiles, err := b.store.GetAllUserProfiles(b.ctx)
 	if err != nil {
 		slog.Warn("proceeding with empty user profiles",
 			"error", err,
 			"chat_id", msg.Chat.ID)
 
-		userProfiles = make(map[int64]*db.UserProfile)
+		userProfiles = make(map[int64]*model.UserProfile)
 	}
 
 	// Calculate token budget available for message history
 	systemPrompt := b.ai.CreateSystemPrompt(userProfiles)
-	systemPromptTokens := utils.EstimateTokens(systemPrompt)
+	systemPromptTokens := util.EstimateTokens(systemPrompt)
 
 	// Estimate current message token count
-	currentMessageTokens := utils.EstimateTokens(msg.Text)
+	currentMessageTokens := util.EstimateTokens(msg.Text)
 
 	// Calculate available tokens for history
 	availableTokens := b.config.AIMaxContextTokens - systemPromptTokens - currentMessageTokens
 
 	// Retrieve messages in batches until token limit or no more messages
 	batchSize := 200
-
 	var beforeTimestamp time.Time // Zero time initially (get latest messages)
-
-	var beforeID uint = 0 // Zero ID initially
-
-	var allMessages []*db.Message
-
+	var beforeID uint = 0         // Zero ID initially
+	var allMessages []*model.Message
 	totalTokens := 0
 
 	for {
 		// Get a batch of messages before the current timestamp and ID
-		batchMessages, err := b.db.GetRecentMessages(b.ctx, msg.Chat.ID, batchSize, beforeTimestamp, beforeID)
+		batchMessages, err := b.store.GetRecentMessages(b.ctx, msg.Chat.ID, batchSize, beforeTimestamp, beforeID)
 		if err != nil {
 			b.sendErrorMessage(msg.Chat.ID)
-
 			return fmt.Errorf("failed to fetch batch of messages: %w", err)
 		}
 
@@ -563,10 +517,9 @@ func (b *Bot) handleMentionMessage(msg *tgbotapi.Message) error {
 
 		// Calculate token usage for this batch
 		batchTokens := 0
-
 		for _, message := range batchMessages {
 			// Add 15 tokens overhead per message for metadata
-			msgTokens := utils.EstimateTokens(message.Content) + 15
+			msgTokens := util.EstimateTokens(message.Content) + 15
 			batchTokens += msgTokens
 		}
 
@@ -575,7 +528,7 @@ func (b *Bot) handleMentionMessage(msg *tgbotapi.Message) error {
 			// We would exceed token limit, so don't add all messages from this batch
 			// Instead, add messages one by one until we reach the limit
 			for _, message := range batchMessages {
-				msgTokens := utils.EstimateTokens(message.Content) + 15
+				msgTokens := util.EstimateTokens(message.Content) + 15
 				if totalTokens+msgTokens <= availableTokens {
 					allMessages = append(allMessages, message)
 					totalTokens += msgTokens
@@ -584,7 +537,6 @@ func (b *Bot) handleMentionMessage(msg *tgbotapi.Message) error {
 					break
 				}
 			}
-
 			break
 		}
 
@@ -624,7 +576,6 @@ func (b *Bot) handleMentionMessage(msg *tgbotapi.Message) error {
 	response, err := b.ai.GenerateResponse(b.ctx, request)
 	if err != nil {
 		b.sendErrorMessage(msg.Chat.ID)
-
 		return fmt.Errorf("failed to generate AI response: %w", err)
 	}
 
@@ -632,7 +583,7 @@ func (b *Bot) handleMentionMessage(msg *tgbotapi.Message) error {
 
 	// Store messages - both operations are non-critical to the main flow
 	timestamp := time.Now().UTC()
-	messages := []*db.Message{
+	messages := []*model.Message{
 		{
 			GroupID:   msg.Chat.ID,
 			GroupName: msg.Chat.Title,
@@ -651,7 +602,7 @@ func (b *Bot) handleMentionMessage(msg *tgbotapi.Message) error {
 
 	// Store both messages
 	for i, message := range messages {
-		if err := b.db.SaveMessage(b.ctx, message); err != nil {
+		if err := b.store.SaveMessage(b.ctx, message); err != nil {
 			slog.Warn("failed to save message",
 				"error", err,
 				"chat_id", msg.Chat.ID,
@@ -669,7 +620,7 @@ func (b *Bot) handleMentionMessage(msg *tgbotapi.Message) error {
 	return nil
 }
 
-func (b *Bot) scheduleMaintenanceTasks() error {
+func (b *telegramChat) scheduleMaintenanceTasks() error {
 	slog.Debug("scheduling daily profile update task", "cron", "0 0 * * *")
 
 	err := b.scheduler.AddJob(
@@ -691,20 +642,18 @@ func (b *Bot) scheduleMaintenanceTasks() error {
 	)
 	if err != nil {
 		slog.Error("failed to schedule daily profile update", "error", err)
-
 		return err
 	}
 
 	slog.Info("maintenance tasks scheduled successfully")
-
 	return nil
 }
 
-func (b *Bot) processAndUpdateUserProfiles() error {
+func (b *telegramChat) processAndUpdateUserProfiles() error {
 	slog.Debug("starting user profile update process")
 
 	// Retrieve all messages that haven't been processed for user profile analysis yet
-	unprocessedMessages, err := b.db.GetUnprocessedMessages(b.ctx)
+	unprocessedMessages, err := b.store.GetUnprocessedMessages(b.ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get unprocessed messages: %w", err)
 	}
@@ -712,19 +661,17 @@ func (b *Bot) processAndUpdateUserProfiles() error {
 	// If there are no unprocessed messages, there's nothing to do
 	if len(unprocessedMessages) == 0 {
 		slog.Debug("no unprocessed messages found, skipping profile update")
-
 		return nil
 	}
 
 	slog.Debug("retrieved unprocessed messages", "count", len(unprocessedMessages))
 
 	// Get existing user profiles to provide context for the AI analysis
-	existingProfiles, err := b.db.GetAllUserProfiles(b.ctx)
+	existingProfiles, err := b.store.GetAllUserProfiles(b.ctx)
 	if err != nil {
 		// If we can't get existing profiles, start with an empty map
 		slog.Warn("failed to get existing profiles", "error", err)
-
-		existingProfiles = make(map[int64]*db.UserProfile)
+		existingProfiles = make(map[int64]*model.UserProfile)
 	}
 
 	// Use AI to analyze messages and generate updated user profiles
@@ -769,9 +716,8 @@ func (b *Bot) processAndUpdateUserProfiles() error {
 
 	// Save all updated profiles to the database
 	for userID, profile := range updatedProfiles {
-		if err := b.db.SaveUserProfile(b.ctx, profile); err != nil {
+		if err := b.store.SaveUserProfile(b.ctx, profile); err != nil {
 			slog.Error("failed to save user profile", "error", err, "user_id", userID)
-
 			return err
 		}
 	}
@@ -782,7 +728,7 @@ func (b *Bot) processAndUpdateUserProfiles() error {
 		messageIDs = append(messageIDs, msg.ID)
 	}
 
-	if err := b.db.MarkMessagesAsProcessed(b.ctx, messageIDs); err != nil {
+	if err := b.store.MarkMessagesAsProcessed(b.ctx, messageIDs); err != nil {
 		return fmt.Errorf("failed to mark messages as processed: %w", err)
 	}
 
@@ -791,12 +737,9 @@ func (b *Bot) processAndUpdateUserProfiles() error {
 	return nil
 }
 
-// StartTyping sends periodic typing indicators to a chat until the returned
-// channel is closed. This provides visual feedback to users that the bot
-// is processing their request, especially during longer operations.
-//
-// The returned channel should be closed when typing indicators are no longer needed.
-func (b *Bot) StartTyping(chatID int64) chan struct{} {
+// Utility functions
+
+func (b *telegramChat) StartTyping(chatID int64) chan struct{} {
 	stopTyping := make(chan struct{})
 
 	// Fast path - if no API client, just return the channel
@@ -854,9 +797,7 @@ func (b *Bot) StartTyping(chatID int64) chan struct{} {
 	return stopTyping
 }
 
-// SendMessage sends a message to a Telegram chat.
-// It returns an error if the Telegram API client is nil or if sending fails.
-func (b *Bot) SendMessage(msg tgbotapi.MessageConfig) error {
+func (b *telegramChat) SendMessage(msg tgbotapi.MessageConfig) error {
 	if b.api == nil {
 		return errors.New("nil telegram API client")
 	}
@@ -874,49 +815,64 @@ func (b *Bot) SendMessage(msg tgbotapi.MessageConfig) error {
 	return nil
 }
 
-// SendUserProfiles formats and sends all user profiles to the specified chat.
-// It retrieves profiles from the database, formats them in a readable way,
-// and sends them as a message to the chat.
-func (b *Bot) SendUserProfiles(ctx context.Context, chatID int64) error {
-	profiles, err := b.db.GetAllUserProfiles(ctx)
-	if err != nil {
-		b.sendErrorMessage(chatID)
-
-		return fmt.Errorf("failed to get user profiles: %w", err)
+func (b *telegramChat) sendErrorMessage(chatID int64) {
+	reply := tgbotapi.NewMessage(chatID, b.config.BotMsgGeneralError)
+	if err := b.SendMessage(reply); err != nil {
+		slog.Error("failed to send error message", "error", err)
 	}
-
-	if len(profiles) == 0 {
-		reply := tgbotapi.NewMessage(chatID, b.config.BotMsgNoProfiles)
-
-		return b.SendMessage(reply)
-	}
-
-	var profilesReport strings.Builder
-
-	profilesReport.WriteString(b.config.BotMsgProfilesHeader)
-
-	// Sort user IDs for consistent display
-	userIDs := make([]int64, 0, len(profiles))
-	for userID := range profiles {
-		userIDs = append(userIDs, userID)
-	}
-
-	sort.Slice(userIDs, func(i, j int) bool {
-		return userIDs[i] < userIDs[j]
-	})
-
-	for _, userID := range userIDs {
-		profile := profiles[userID]
-		profilesReport.WriteString(profile.FormatPipeDelimited() + "\n\n")
-	}
-
-	reply := tgbotapi.NewMessage(chatID, profilesReport.String())
-
-	return b.SendMessage(reply)
 }
 
-// IsAuthorized checks if a user is authorized for admin actions
-// by comparing their ID with the configured admin ID.
-func (b *Bot) IsAuthorized(userID int64) bool {
-	return userID == b.config.BotAdminID
+func (b *telegramChat) checkAuthorization(msg *tgbotapi.Message) error {
+	if !b.IsAuthorized(msg.From.ID) {
+		reply := tgbotapi.NewMessage(msg.Chat.ID, b.config.BotMsgNotAuthorized)
+		if err := b.SendMessage(reply); err != nil {
+			slog.Error("failed to send unauthorized message", "error", err)
+		}
+
+		return errors.New("unauthorized access attempt")
+	}
+
+	return nil
+}
+
+func (b *telegramChat) validateMessage(msg *tgbotapi.Message) error {
+	if msg == nil || msg.Text == "" {
+		return errors.New("empty message")
+	}
+
+	if msg.Chat == nil {
+		return errors.New("nil chat in message")
+	}
+
+	if msg.From == nil {
+		return errors.New("nil sender in message")
+	}
+
+	if msg.Chat.ID == 0 || msg.From.ID == 0 {
+		return errors.New("invalid chat or user ID")
+	}
+
+	return nil
+}
+
+// isCriticalError determines if an error is critical enough to warrant
+// terminating the application
+func isCriticalError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	// Check for specific error types that are considered critical
+	// For example, database connection failures, API authentication errors, etc.
+	if strings.Contains(err.Error(), "database connection lost") {
+		return true
+	}
+
+	if strings.Contains(err.Error(), "API token revoked") {
+		return true
+	}
+
+	// Add more conditions as needed
+
+	return false
 }
