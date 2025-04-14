@@ -7,7 +7,7 @@ import (
 	"go.uber.org/fx"
 	"go.uber.org/zap"
 
-	"github.com/edgard/murailobot/internal/common/config"
+	"github.com/edgard/murailobot/internal/infrastructure/config"
 	"github.com/edgard/murailobot/internal/port/ai"
 	"github.com/edgard/murailobot/internal/port/chat"
 	"github.com/edgard/murailobot/internal/port/scheduler"
@@ -27,8 +27,13 @@ type ServiceParams struct {
 	Logger    *zap.Logger
 }
 
-// ConfigModule provides application configuration
-var ConfigModule = fx.Module("config",
+// InfrastructureModule provides core infrastructure components
+var InfrastructureModule = fx.Module("infrastructure",
+	// Logger comes first as other components depend on it
+	fx.Provide(
+		ProvideLogger,
+	),
+	// Config comes next as most components need configuration
 	fx.Provide(
 		ProvideConfig,
 	),
@@ -118,7 +123,7 @@ var ApplicationModule = fx.Module("application",
 
 // RootModule is the main application module that combines all submodules
 var RootModule = fx.Module("root",
-	ConfigModule,
+	InfrastructureModule,
 	StoreModule,
 	AIModule,
 	SchedulerModule,

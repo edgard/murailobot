@@ -12,9 +12,9 @@ import (
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"go.uber.org/zap"
 
-	"github.com/edgard/murailobot/internal/common/config"
 	"github.com/edgard/murailobot/internal/common/util"
 	"github.com/edgard/murailobot/internal/domain/model"
+	"github.com/edgard/murailobot/internal/infrastructure/config"
 	"github.com/edgard/murailobot/internal/port/ai"
 	"github.com/edgard/murailobot/internal/port/chat"
 	"github.com/edgard/murailobot/internal/port/scheduler"

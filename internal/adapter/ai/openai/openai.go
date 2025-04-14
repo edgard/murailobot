@@ -1,4 +1,3 @@
-// Package openai provides an OpenAI-based implementation of the AI service port.
 package openai
 
 import (
@@ -13,9 +12,9 @@ import (
 	gopenai "github.com/sashabaranov/go-openai"
 	"go.uber.org/zap"
 
-	"github.com/edgard/murailobot/internal/common/config"
 	"github.com/edgard/murailobot/internal/common/util"
 	"github.com/edgard/murailobot/internal/domain/model"
+	"github.com/edgard/murailobot/internal/infrastructure/config"
 	"github.com/edgard/murailobot/internal/port/ai"
 	"github.com/edgard/murailobot/internal/port/store"
 )

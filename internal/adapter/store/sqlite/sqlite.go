@@ -7,13 +7,14 @@ import (
 	"sort"
 	"time"
 
+	_ "github.com/mattn/go-sqlite3"
 	"go.uber.org/zap"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 	gormlogger "gorm.io/gorm/logger"
 
-	"github.com/edgard/murailobot/internal/common/config"
 	"github.com/edgard/murailobot/internal/domain/model"
+	"github.com/edgard/murailobot/internal/infrastructure/config"
 	"github.com/edgard/murailobot/internal/port/store"
 )
 
