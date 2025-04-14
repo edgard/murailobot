@@ -1,10 +1,7 @@
-// Package util_test tests the util package
-package util_test
+package openai
 
 import (
 	"testing"
-
-	"github.com/edgard/murailobot/internal/common/util"
 )
 
 // TestSanitize tests the Sanitize function with various input types.
@@ -509,7 +506,7 @@ func TestSanitize(t *testing.T) {
 				t.Run(tc.name, func(t *testing.T) {
 					t.Parallel()
 
-					actual, err := util.Sanitize(tc.input)
+					actual, err := Sanitize(tc.input)
 					if (err != nil) != tc.wantErr {
 						t.Errorf("Sanitize() error = %v, wantErr %v", err, tc.wantErr)
 

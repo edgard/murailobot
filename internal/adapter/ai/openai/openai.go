@@ -5,14 +5,15 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
+	"unicode"
 
 	gopenai "github.com/sashabaranov/go-openai"
 	"go.uber.org/zap"
 
-	"github.com/edgard/murailobot/internal/common/util"
 	"github.com/edgard/murailobot/internal/domain/model"
 	"github.com/edgard/murailobot/internal/infrastructure/config"
 	"github.com/edgard/murailobot/internal/port/ai"
@@ -205,7 +206,7 @@ func (s *aiService) GenerateResponse(ctx context.Context, request *ai.Request) (
 
 	rawResponse := resp.Choices[0].Message.Content
 
-	result, err := util.Sanitize(rawResponse)
+	result, err := s.Sanitize(rawResponse)
 	if err != nil {
 		return "", fmt.Errorf("failed to sanitize response: %w", err)
 	}
@@ -214,8 +215,7 @@ func (s *aiService) GenerateResponse(ctx context.Context, request *ai.Request) (
 	s.logger.Info("AI response generated",
 		zap.Int64("user_id", request.UserID),
 		zap.Int64("duration_ms", time.Since(startTime).Milliseconds()),
-		zap.Int64("api_ms", apiDuration.Milliseconds()),
-		zap.Int("tokens", resp.Usage.TotalTokens))
+		zap.Int64("api_ms", apiDuration.Milliseconds()))
 
 	return result, nil
 }
@@ -324,8 +324,7 @@ func (s *aiService) GenerateProfiles(ctx context.Context, messages []*model.Mess
 	s.logger.Info("profile generation completed",
 		zap.Int64("duration_ms", time.Since(startTime).Milliseconds()),
 		zap.Int64("api_ms", apiDuration.Milliseconds()),
-		zap.Int("profile_count", len(profiles)),
-		zap.Int("tokens", resp.Usage.TotalTokens))
+		zap.Int("profile_count", len(profiles)))
 
 	return profiles, nil
 }
@@ -483,4 +482,56 @@ Return ONLY a JSON object, no additional text, with this structure:
 	fullInstruction := fmt.Sprintf("%s\n\n%s", configInstruction, botIdentificationAndFixedPart)
 
 	return fullInstruction
+}
+
+// Sanitize normalizes and cleans text by removing metadata prefixes,
+// normalizing line endings, and standardizing whitespace.
+func (s *aiService) Sanitize(input string) (string, error) {
+	if input == "" {
+		return "", errors.New("empty input string")
+	}
+
+	metadataFormatRegex := regexp.MustCompile(`^\s*\[\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})\]\s+[^:]*(?::[^:]*)*:\s*`)
+	multipleNewlinesRegex := regexp.MustCompile(`\n{3,}`)
+
+	// Remove metadata prefix (timestamp and user identifier)
+	sanitized := metadataFormatRegex.ReplaceAllString(input, "")
+
+	// Normalize line endings
+	sanitized = strings.ReplaceAll(sanitized, "\r\n", "\n")
+	sanitized = strings.ReplaceAll(sanitized, "\r", "\n")
+
+	// Normalize whitespace within each line
+	lines := strings.Split(sanitized, "\n")
+	for i, line := range lines {
+		// Normalize whitespace in each line (collapse multiple spaces to single space)
+		var strBuilder strings.Builder
+		var space bool
+		for _, r := range line {
+			if unicode.IsSpace(r) {
+				if !space {
+					strBuilder.WriteRune(' ')
+					space = true
+				}
+			} else {
+				strBuilder.WriteRune(r)
+				space = false
+			}
+		}
+		lines[i] = strings.TrimSpace(strBuilder.String())
+	}
+	sanitized = strings.Join(lines, "\n")
+
+	// Limit consecutive newlines to 2
+	sanitized = multipleNewlinesRegex.ReplaceAllString(sanitized, "\n\n")
+
+	// Trim leading/trailing whitespace of the entire result
+	result := strings.TrimSpace(sanitized)
+
+	if result == "" {
+		s.logger.Warn("sanitization resulted in empty string", zap.String("original_input_length", fmt.Sprintf("%d", len(input))))
+		return "", errors.New("sanitization resulted in empty string")
+	}
+
+	return result, nil
 }

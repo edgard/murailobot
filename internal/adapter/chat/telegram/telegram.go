@@ -7,18 +7,25 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+	"github.com/pkoukk/tiktoken-go"
 	"go.uber.org/zap"
 
-	"github.com/edgard/murailobot/internal/common/util"
 	"github.com/edgard/murailobot/internal/domain/model"
 	"github.com/edgard/murailobot/internal/infrastructure/config"
 	"github.com/edgard/murailobot/internal/port/ai"
 	"github.com/edgard/murailobot/internal/port/chat"
 	"github.com/edgard/murailobot/internal/port/scheduler"
 	"github.com/edgard/murailobot/internal/port/store"
+)
+
+var (
+	tokenizer     *tiktoken.Tiktoken
+	tokenizerOnce sync.Once
+	tokenizerErr  error
 )
 
 // telegramChat implements the chat.Service interface using Telegram's API
@@ -462,7 +469,7 @@ func (b *telegramChat) handleMentionMessage(msg *tgbotapi.Message) error {
 	}
 
 	// Get tokenizer
-	tokenizer, err := util.GetTokenizer()
+	tokenizer, err := b.GetTokenizer()
 	if err != nil {
 		b.logger.Warn("failed to get tokenizer",
 			zap.Error(err),
@@ -832,4 +839,17 @@ func isCriticalError(err error) bool {
 	// Add more conditions as needed
 
 	return false
+}
+
+// GetTokenizer returns the tiktoken tokenizer for direct token counting.
+// This provides access to the raw tokenizer without any safety margins or estimates.
+func (b *telegramChat) GetTokenizer() (*tiktoken.Tiktoken, error) {
+	tokenizerOnce.Do(func() {
+		tokenizer, tokenizerErr = tiktoken.GetEncoding("cl100k_base")
+		if tokenizerErr != nil {
+			b.logger.Error("failed to initialize tokenizer", zap.Error(tokenizerErr))
+		}
+	})
+
+	return tokenizer, tokenizerErr
 }
