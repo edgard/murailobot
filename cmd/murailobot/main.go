@@ -51,14 +51,12 @@ func main() {
 	logger := zap.NewExample()
 	defer logger.Sync() //nolint: errcheck
 
-	logger.Info("starting MurailoBot")
-
 	app := fx.New(
 		// Provide initial logger for fx startup
 		fx.Supply(logger),
 		// Configure fx logging
-		fx.WithLogger(func(log *zap.Logger) fxevent.Logger {
-			return &fxevent.ZapLogger{Logger: log}
+		fx.WithLogger(func(logger *zap.Logger) fxevent.Logger {
+			return &fxevent.ZapLogger{Logger: logger.Named("fx")}
 		}),
 		// Include all application modules
 		di.RootModule,
@@ -67,13 +65,6 @@ func main() {
 			if err := configureLogger(cfg); err != nil {
 				return err
 			}
-
-			// Get the new global logger
-			logger := zap.L()
-			logger.Info("logger configured",
-				zap.String("format", cfg.LogFormat),
-				zap.String("level", cfg.LogLevel))
-
 			return nil
 		}),
 	)
