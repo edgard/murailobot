@@ -79,107 +79,151 @@ func Load(filePath string) (*Config, error) {
 func applyDefaults(k *koanf.Koanf) {
 	// Bot default messages
 	if !k.Exists("bot_msg_welcome") {
-		k.Set("bot_msg_welcome", "Hello! I'm MurailoBot. Mention me in a group message to chat!")
+		if err := k.Set("bot_msg_welcome", "Hello! I'm MurailoBot. Mention me in a group message to chat!"); err != nil {
+			slog.Error("failed to set default config value", "key", "bot_msg_welcome", "error", err)
+		}
 	}
 
 	if !k.Exists("bot_msg_not_authorized") {
-		k.Set("bot_msg_not_authorized", "You are not authorized to use this command.")
+		if err := k.Set("bot_msg_not_authorized", "You are not authorized to use this command."); err != nil {
+			slog.Error("failed to set default config value", "key", "bot_msg_not_authorized", "error", err)
+		}
 	}
 
 	if !k.Exists("bot_msg_provide_message") {
-		k.Set("bot_msg_provide_message", "Please provide a message.")
+		if err := k.Set("bot_msg_provide_message", "Please provide a message."); err != nil {
+			slog.Error("failed to set default config value", "key", "bot_msg_provide_message", "error", err)
+		}
 	}
 
 	if !k.Exists("bot_msg_general_error") {
-		k.Set("bot_msg_general_error", "An error occurred. Please try again later.")
+		if err := k.Set("bot_msg_general_error", "An error occurred. Please try again later."); err != nil {
+			slog.Error("failed to set default config value", "key", "bot_msg_general_error", "error", err)
+		}
 	}
 
 	if !k.Exists("bot_msg_history_reset") {
-		k.Set("bot_msg_history_reset", "Message history and user profiles have been reset.")
+		if err := k.Set("bot_msg_history_reset", "Message history and user profiles have been reset."); err != nil {
+			slog.Error("failed to set default config value", "key", "bot_msg_history_reset", "error", err)
+		}
 	}
 
 	if !k.Exists("bot_msg_analyzing") {
-		k.Set("bot_msg_analyzing", "Analyzing messages and updating user profiles...")
+		if err := k.Set("bot_msg_analyzing", "Analyzing messages and updating user profiles..."); err != nil {
+			slog.Error("failed to set default config value", "key", "bot_msg_analyzing", "error", err)
+		}
 	}
 
 	if !k.Exists("bot_msg_no_profiles") {
-		k.Set("bot_msg_no_profiles", "No user profiles found. Try analyzing more messages first.")
+		if err := k.Set("bot_msg_no_profiles", "No user profiles found. Try analyzing more messages first."); err != nil {
+			slog.Error("failed to set default config value", "key", "bot_msg_no_profiles", "error", err)
+		}
 	}
 
 	if !k.Exists("bot_msg_profiles_header") {
-		k.Set("bot_msg_profiles_header", "📊 User Profiles:\n\n")
+		if err := k.Set("bot_msg_profiles_header", "📊 User Profiles:\n\n"); err != nil {
+			slog.Error("failed to set default config value", "key", "bot_msg_profiles_header", "error", err)
+		}
 	}
 
 	// Bot command descriptions
 	if !k.Exists("bot_cmd_start") {
-		k.Set("bot_cmd_start", "Start the bot and get a welcome message")
+		if err := k.Set("bot_cmd_start", "Start the bot and get a welcome message"); err != nil {
+			slog.Error("failed to set default config value", "key", "bot_cmd_start", "error", err)
+		}
 	}
 
 	if !k.Exists("bot_cmd_reset") {
-		k.Set("bot_cmd_reset", "Reset message history and profiles")
+		if err := k.Set("bot_cmd_reset", "Reset message history and profiles"); err != nil {
+			slog.Error("failed to set default config value", "key", "bot_cmd_reset", "error", err)
+		}
 	}
 
 	if !k.Exists("bot_cmd_analyze") {
-		k.Set("bot_cmd_analyze", "Analyze messages and update profiles")
+		if err := k.Set("bot_cmd_analyze", "Analyze messages and update profiles"); err != nil {
+			slog.Error("failed to set default config value", "key", "bot_cmd_analyze", "error", err)
+		}
 	}
 
 	if !k.Exists("bot_cmd_profiles") {
-		k.Set("bot_cmd_profiles", "Show user profiles")
+		if err := k.Set("bot_cmd_profiles", "Show user profiles"); err != nil {
+			slog.Error("failed to set default config value", "key", "bot_cmd_profiles", "error", err)
+		}
 	}
 
 	if !k.Exists("bot_cmd_edit_user") {
-		k.Set("bot_cmd_edit_user", "Edit a user profile field")
+		if err := k.Set("bot_cmd_edit_user", "Edit a user profile field"); err != nil {
+			slog.Error("failed to set default config value", "key", "bot_cmd_edit_user", "error", err)
+		}
 	}
 
 	// AI configuration defaults
 	if !k.Exists("ai_base_url") {
-		k.Set("ai_base_url", "https://api.openai.com/v1")
+		if err := k.Set("ai_base_url", "https://api.openai.com/v1"); err != nil {
+			slog.Error("failed to set default config value", "key", "ai_base_url", "error", err)
+		}
 	}
 
 	if !k.Exists("ai_model") {
-		k.Set("ai_model", "gpt-3.5-turbo")
+		if err := k.Set("ai_model", "gpt-3.5-turbo"); err != nil {
+			slog.Error("failed to set default config value", "key", "ai_model", "error", err)
+		}
 	}
 
 	if !k.Exists("ai_temperature") {
-		k.Set("ai_temperature", 0.8)
+		if err := k.Set("ai_temperature", 0.8); err != nil {
+			slog.Error("failed to set default config value", "key", "ai_temperature", "error", err)
+		}
 	}
 
 	if !k.Exists("ai_timeout") {
-		k.Set("ai_timeout", 30*time.Second)
+		if err := k.Set("ai_timeout", 30*time.Second); err != nil {
+			slog.Error("failed to set default config value", "key", "ai_timeout", "error", err)
+		}
 	}
 
 	if !k.Exists("ai_max_context_tokens") {
-		k.Set("ai_max_context_tokens", 4000)
+		if err := k.Set("ai_max_context_tokens", 4000); err != nil {
+			slog.Error("failed to set default config value", "key", "ai_max_context_tokens", "error", err)
+		}
 	}
 
 	// Database configuration defaults
 	if !k.Exists("db_path") {
-		k.Set("db_path", "storage.db")
+		if err := k.Set("db_path", "storage.db"); err != nil {
+			slog.Error("failed to set default config value", "key", "db_path", "error", err)
+		}
 	}
 
 	// Logging configuration defaults
 	if !k.Exists("log_format") {
-		k.Set("log_format", "json")
+		if err := k.Set("log_format", "json"); err != nil {
+			slog.Error("failed to set default config value", "key", "log_format", "error", err)
+		}
 	}
 
 	if !k.Exists("log_level") {
-		k.Set("log_level", "info")
+		if err := k.Set("log_level", "info"); err != nil {
+			slog.Error("failed to set default config value", "key", "log_level", "error", err)
+		}
 	}
 
 	// Default system prompt if not provided
 	if !k.Exists("ai_instruction") {
-		k.Set("ai_instruction", `You are a helpful and friendly assistant in a Telegram group chat.
+		if err := k.Set("ai_instruction", `You are a helpful and friendly assistant in a Telegram group chat.
 Your responses should be concise, helpful, and conversational.
 
 When asked about technical topics, provide accurate information with examples where appropriate.
 For subjective questions, present multiple perspectives and avoid strong bias.
 Keep responses concise and to the point, use markdown formatting sparingly for readability.
-Be friendly and casual in tone while remaining respectful.`)
+Be friendly and casual in tone while remaining respectful.`); err != nil {
+			slog.Error("failed to set default config value", "key", "ai_instruction", "error", err)
+		}
 	}
 
 	// Default profile generation prompt if not provided
 	if !k.Exists("ai_profile_instruction") {
-		k.Set("ai_profile_instruction", `You are a behavioral analyst with expertise in psychology, linguistics, and social dynamics.
+		if err := k.Set("ai_profile_instruction", `You are a behavioral analyst with expertise in psychology, linguistics, and social dynamics.
 
 Your task is to analyze chat messages and build concise, meaningful profiles of users. Pay special attention to:
 
@@ -190,7 +234,9 @@ Your task is to analyze chat messages and build concise, meaningful profiles of 
 5. Personality traits, interests, and characteristics (traits)
 
 Focus on what the text directly reveals. Make cautious, conservative inferences where evidence is limited.
-If information is missing, leave those fields empty rather than guessing.`)
+If information is missing, leave those fields empty rather than guessing.`); err != nil {
+			slog.Error("failed to set default config value", "key", "ai_profile_instruction", "error", err)
+		}
 	}
 }
 
