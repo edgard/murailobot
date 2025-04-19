@@ -4,6 +4,8 @@
 package config
 
 import (
+	// Added for validation
+	"fmt"
 	"log/slog"
 	"os"
 	"time"
@@ -38,14 +40,17 @@ type Config struct {
 	BotCmdProfiles string `koanf:"bot_cmd_profiles"`
 	BotCmdEditUser string `koanf:"bot_cmd_edit_user"`
 
-	AIToken              string        `koanf:"ai_token"               validate:"required"`
-	AIBaseURL            string        `koanf:"ai_base_url"            validate:"url"`
-	AIModel              string        `koanf:"ai_model"`
-	AITemperature        float32       `koanf:"ai_temperature"         validate:"min=0,max=2"`
-	AIInstruction        string        `koanf:"ai_instruction"         validate:"required"`
-	AIProfileInstruction string        `koanf:"ai_profile_instruction" validate:"required"`
-	AITimeout            time.Duration `koanf:"ai_timeout"             validate:"min=1s,max=10m"`
-	AIMaxContextTokens   int           `koanf:"ai_max_context_tokens"  validate:"min=1000,max=1000000"`
+	AIToken               string        `koanf:"ai_token"               validate:"required"`
+	AIBaseURL             string        `koanf:"ai_base_url"            validate:"url"`
+	AIModel               string        `koanf:"ai_model"`
+	AITemperature         float32       `koanf:"ai_temperature"         validate:"min=0,max=2"`
+	AIInstruction         string        `koanf:"ai_instruction"         validate:"required"`
+	AIProfileInstruction  string        `koanf:"ai_profile_instruction" validate:"required"`
+	AITimeout             time.Duration `koanf:"ai_timeout"             validate:"min=1s,max=10m"`
+	AIMaxContextTokens    int           `koanf:"ai_max_context_tokens"  validate:"min=1000,max=1000000"`
+	AIBackend             string        `koanf:"ai_backend"             validate:"required,oneof=openai gemini"` // Added
+	GeminiSearchGrounding bool          `koanf:"gemini_search_grounding"`                                        // Added for Gemini grounding
+	// GeminiAPIToken       string        `koanf:"gemini_api_token"` // Removed, using AIToken for both
 
 	DBPath string `koanf:"db_path"`
 }
@@ -79,14 +84,30 @@ func Load() (*Config, error) {
 		}
 	}
 
-	// Validate configuration
-	if err := validator.New().Struct(config); err != nil {
-		return nil, err
+	// Perform initial struct-level validation
+	validate := validator.New()
+	if err := validate.Struct(config); err != nil {
+		return nil, fmt.Errorf("initial configuration validation failed: %w", err)
+	}
+
+	// Perform conditional validation based on AIBackend
+	if config.AIToken == "" {
+		return nil, fmt.Errorf("ai_token is required for the selected backend ('%s')", config.AIBackend)
+	}
+
+	switch config.AIBackend {
+	case "openai":
+		// AIBaseURL validation is already handled by the 'url' tag if provided
+		// If AIBaseURL is empty, the default will be used.
+	case "gemini":
+		// Clear OpenAI specific fields if Gemini is selected, to avoid confusion if they were set
+		config.AIBaseURL = "" // Gemini client uses a hardcoded base URL
 	}
 
 	// Log only the most important settings at Info level with consolidated information
 	slog.Info("configuration loaded",
 		"log_level", config.LogLevel,
+		"ai_backend", config.AIBackend, // Added backend to log
 		"ai_model", config.AIModel,
 		"db_path", config.DBPath,
 		"max_tokens", config.AIMaxContextTokens)
@@ -102,6 +123,8 @@ func setDefaults(config *Config) {
 	config.AITemperature = 1.7
 	config.AIMaxContextTokens = 16000
 	config.AITimeout = 2 * time.Minute
+	config.AIBackend = "openai"          // Default backend
+	config.GeminiSearchGrounding = false // Default for Gemini grounding
 
 	config.DBPath = "storage.db"
 

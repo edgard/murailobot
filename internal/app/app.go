@@ -19,7 +19,7 @@ import (
 type App struct {
 	config    *config.Config
 	db        *db.DB
-	ai        *ai.Client
+	ai        ai.AIClient // Use the interface type
 	scheduler *utils.Scheduler
 	bot       *bot.Bot
 }
@@ -55,7 +55,8 @@ func New() (*App, error) {
 		return nil, fmt.Errorf("failed to initialize database: %w", err)
 	}
 
-	aiClient, err := ai.New(cfg, database)
+	// Initialize AI client using the factory
+	aiClient, err := ai.NewAIClient(cfg, database)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize AI client: %w", err)
 	}

@@ -24,7 +24,7 @@ import (
 type Bot struct {
 	api       *tgbotapi.BotAPI
 	db        *db.DB
-	ai        *ai.Client
+	ai        ai.AIClient // Use the interface type
 	scheduler *utils.Scheduler
 	config    *config.Config
 	running   chan struct{}
@@ -35,7 +35,7 @@ type Bot struct {
 // New creates a new bot instance with the provided dependencies.
 // It initializes the Telegram API client, sets up command handlers,
 // and configures the bot's information in the AI client.
-func New(cfg *config.Config, database *db.DB, aiClient *ai.Client, scheduler *utils.Scheduler) (*Bot, error) {
+func New(cfg *config.Config, database *db.DB, aiClient ai.AIClient, scheduler *utils.Scheduler) (*Bot, error) {
 	slog.Debug("initializing bot")
 
 	if database == nil {
@@ -519,98 +519,65 @@ func (b *Bot) handleMentionMessage(msg *tgbotapi.Message) error {
 	// Get user profiles - failure is non-critical
 	userProfiles, err := b.db.GetAllUserProfiles(b.ctx)
 	if err != nil {
-		slog.Warn("proceeding with empty user profiles",
-			"error", err,
-			"chat_id", msg.Chat.ID)
-
+		slog.Warn("proceeding with empty user profiles", "error", err, "chat_id", msg.Chat.ID)
 		userProfiles = make(map[int64]*db.UserProfile)
 	}
 
-	// Calculate token budget available for message history
-	systemPrompt := b.ai.CreateSystemPrompt(userProfiles)
-	systemPromptTokens := utils.EstimateTokens(systemPrompt)
+	// NOTE: Token estimation based on system prompt removed.
+	// The AI client implementations are now responsible for managing context size.
+	// We still retrieve history, but the client will truncate if necessary.
+	// Consider adding a simple message count limit here as a fallback safeguard.
+	maxHistoryMessages := 200 // Example limit, adjust as needed
 
-	// Estimate current message token count
-	currentMessageTokens := utils.EstimateTokens(msg.Text)
+	// Retrieve recent messages
+	// Retrieve messages in batches until limit or no more messages
+	batchSize := 50 // Smaller batch size might be sufficient now
 
-	// Calculate available tokens for history
-	availableTokens := b.config.AIMaxContextTokens - systemPromptTokens - currentMessageTokens
-
-	// Retrieve messages in batches until token limit or no more messages
-	batchSize := 200
-
-	var beforeTimestamp time.Time // Zero time initially (get latest messages)
-
-	var beforeID uint = 0 // Zero ID initially
-
+	var beforeTimestamp time.Time // Zero time initially
+	var beforeID uint = 0         // Zero ID initially
 	var allMessages []*db.Message
 
-	totalTokens := 0
+	for len(allMessages) < maxHistoryMessages {
+		currentBatchSize := batchSize
+		if maxHistoryMessages-len(allMessages) < batchSize {
+			currentBatchSize = maxHistoryMessages - len(allMessages)
+		}
 
-	for {
-		// Get a batch of messages before the current timestamp and ID
-		batchMessages, err := b.db.GetRecentMessages(b.ctx, msg.Chat.ID, batchSize, beforeTimestamp, beforeID)
+		batchMessages, err := b.db.GetRecentMessages(b.ctx, msg.Chat.ID, currentBatchSize, beforeTimestamp, beforeID)
 		if err != nil {
 			b.sendErrorMessage(msg.Chat.ID)
-
 			return fmt.Errorf("failed to fetch batch of messages: %w", err)
 		}
 
-		// If no messages returned, we've retrieved all available messages
 		if len(batchMessages) == 0 {
-			break
+			break // No more messages
 		}
 
-		// Calculate token usage for this batch
-		batchTokens := 0
+		// Prepend batch to maintain chronological order (newest last)
+		allMessages = append(batchMessages, allMessages...)
 
-		for _, message := range batchMessages {
-			// Add 15 tokens overhead per message for metadata
-			msgTokens := utils.EstimateTokens(message.Content) + 15
-			batchTokens += msgTokens
+		// Update cursor for next batch (oldest message in the current batch)
+		oldestMessage := batchMessages[0]
+		beforeTimestamp = oldestMessage.Timestamp
+		beforeID = oldestMessage.ID
+
+		if len(batchMessages) < currentBatchSize {
+			break // Reached the beginning of history
 		}
+	}
 
-		// Check if adding this batch would exceed our token budget
-		if totalTokens+batchTokens > availableTokens {
-			// We would exceed token limit, so don't add all messages from this batch
-			// Instead, add messages one by one until we reach the limit
-			for _, message := range batchMessages {
-				msgTokens := utils.EstimateTokens(message.Content) + 15
-				if totalTokens+msgTokens <= availableTokens {
-					allMessages = append(allMessages, message)
-					totalTokens += msgTokens
-				} else {
-					// Stop adding messages once we exceed the token limit
-					break
-				}
-			}
-
-			break
-		}
-
-		// Add all messages from this batch
-		allMessages = append(allMessages, batchMessages...)
-		totalTokens += batchTokens
-
-		// If we got fewer messages than the batch size, we've reached the end
-		if len(batchMessages) < batchSize {
-			break
-		}
-
-		// Update timestamp and ID for next batch - use the values from the oldest message in this batch
-		// The messages are sorted in ascending order by timestamp, so we want the first element
-		if len(batchMessages) > 0 {
-			oldestMessage := batchMessages[0]
-			beforeTimestamp = oldestMessage.Timestamp
-			beforeID = oldestMessage.ID
-		}
+	// Reverse messages so they are oldest first for the AI context
+	// (Alternatively, fetch in reverse and append)
+	// Let's stick with the current fetch logic and reverse here.
+	for i, j := 0, len(allMessages)-1; i < j; i, j = i+1, j-1 {
+		allMessages[i], allMessages[j] = allMessages[j], allMessages[i]
 	}
 
 	slog.Debug("context collection completed",
 		"chat_id", msg.Chat.ID,
 		"total_messages_retrieved", len(allMessages),
 		"profile_count", len(userProfiles),
-		"estimated_tokens", totalTokens,
+		// "estimated_tokens", totalTokens, // Removed token estimation
 		"duration_ms", time.Since(startTime).Milliseconds())
 
 	// Generate AI response

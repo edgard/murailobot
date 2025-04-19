@@ -11,8 +11,8 @@ bot_token: "your-telegram-bot-token"
 # Your Telegram User ID (for admin access)
 bot_admin_id: 123456789
 
-# OpenAI API Key or compatible service key
-ai_token: "your-openai-api-key"
+# API Key for the selected AI backend (OpenAI or Gemini)
+ai_token: "your-ai-api-key"
 
 # System instruction for the AI
 ai_instruction: "You are a helpful assistant focused on providing clear and accurate responses."
@@ -33,6 +33,9 @@ ai_model: "gpt-4o"                        # Model identifier
 ai_temperature: 1.7                       # Range: 0.0-2.0 (higher = more random)
 ai_max_context_tokens: 16000              # Range: 1000-1000000
 ai_timeout: "2m"                          # Format: 30s, 2m, 1h (Range: 1s-10m)
+ai_backend: "openai"                      # Choose the AI backend: "openai" or "gemini" (default: openai)
+gemini_search_grounding: false            # Enable Gemini's search grounding feature (default: false)
+# gemini_api_token: "YOUR_GEMINI_API_KEY"   # Removed, use ai_token above
 
 # Database Configuration
 db_path: "storage.db"  # Path to SQLite database file
