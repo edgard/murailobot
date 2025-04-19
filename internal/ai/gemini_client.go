@@ -71,7 +71,7 @@ type geminiTool struct {
 
 type geminiChatCompletionRequest struct {
 	Contents          []geminiContent        `json:"contents"`
-	SystemInstruction *geminiContent         `json:"systemInstruction,omitempty"`
+	SystemInstruction *geminiContent         `json:"system_instruction,omitempty"`
 	Tools             []geminiTool           `json:"tools,omitempty"`
 	GenerationConfig  geminiGenerationConfig `json:"generationConfig,omitempty"`
 	SafetySettings    []geminiSafetySetting  `json:"safetySettings,omitempty"`
@@ -307,12 +307,17 @@ func (c *GeminiClient) GenerateResponse(ctx context.Context, request *Request) (
 
 		// Check if content is valid
 		if len(apiResponse.Candidates) > 0 && len(apiResponse.Candidates[0].Content.Parts) > 0 && apiResponse.Candidates[0].Content.Parts[0].Text != "" {
-			// Success case
-			var responseBuilder strings.Builder
-			for _, part := range apiResponse.Candidates[0].Content.Parts {
-				responseBuilder.WriteString(part.Text)
+			// Success case: Assume the last part contains the actual response,
+			// especially when grounding might add preceding parts.
+			var rawResponse string
+			if len(apiResponse.Candidates) > 0 && len(apiResponse.Candidates[0].Content.Parts) > 0 {
+				lastPartIndex := len(apiResponse.Candidates[0].Content.Parts) - 1
+				rawResponse = apiResponse.Candidates[0].Content.Parts[lastPartIndex].Text
+			} else {
+				// Handle cases with no parts or candidates if necessary
+				slog.Warn("Gemini response candidate had no content parts", "candidate_index", 0)
+				rawResponse = "" // Or handle as an error?
 			}
-			rawResponse := responseBuilder.String()
 
 			result, err := utils.Sanitize(rawResponse)
 			if err != nil {
