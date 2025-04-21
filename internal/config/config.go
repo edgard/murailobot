@@ -99,9 +99,10 @@ func Load() (*Config, error) {
 	case "openai":
 		// AIBaseURL validation is already handled by the 'url' tag if provided
 		// If AIBaseURL is empty, the default will be used.
+		config.GeminiSearchGrounding = false // Ensure Gemini specific flag is off
 	case "gemini":
-		// Clear OpenAI specific fields if Gemini is selected, to avoid confusion if they were set
-		config.AIBaseURL = "" // Gemini client uses a hardcoded base URL
+		// No specific validation needed here for Gemini beyond AIToken check
+		break // Explicit break for clarity
 	}
 
 	// Log only the most important settings at Info level with consolidated information
