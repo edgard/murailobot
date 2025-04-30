@@ -7,7 +7,7 @@ import (
 
 	"github.com/go-telegram/bot"
 
-	"github.com/edgard/murailobot-go/internal/bot/handlers"
+	"github.com/edgard/murailobot/internal/bot/handlers"
 )
 
 // NewTelegramBot creates a new Telegram bot instance using the go-telegram/bot library.

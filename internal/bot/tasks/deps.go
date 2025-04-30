@@ -4,9 +4,9 @@ package tasks
 import (
 	"log/slog"
 
-	"github.com/edgard/murailobot-go/internal/config"
-	"github.com/edgard/murailobot-go/internal/database"
-	"github.com/edgard/murailobot-go/internal/gemini"
+	"github.com/edgard/murailobot/internal/config"
+	"github.com/edgard/murailobot/internal/database"
+	"github.com/edgard/murailobot/internal/gemini"
 )
 
 // TaskDeps provides dependencies for scheduled tasks.

@@ -12,7 +12,7 @@ import (
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
 
-	"github.com/edgard/murailobot-go/internal/database"
+	"github.com/edgard/murailobot/internal/database"
 )
 
 type mentionHandler struct {

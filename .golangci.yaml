@@ -76,14 +76,14 @@ formatters:
           replacement: "any"
     goimports:
       local-prefixes:
-        - "github.com/edgard/murailobot-go"
+        - "github.com/edgard/murailobot"
     gofumpt:
       extra-rules: true
     gci:
       sections:
         - standard
         - default
-        - prefix(github.com/edgard/murailobot-go)
+        - prefix(github.com/edgard/murailobot)
         - blank
 
 output:

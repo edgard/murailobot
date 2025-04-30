@@ -11,9 +11,9 @@ import (
 	"github.com/jmoiron/sqlx"
 	"golang.org/x/sync/errgroup" // Use errgroup for managing goroutines
 
-	"github.com/edgard/murailobot-go/internal/config"
-	"github.com/edgard/murailobot-go/internal/database"
-	"github.com/edgard/murailobot-go/internal/gemini"
+	"github.com/edgard/murailobot/internal/config"
+	"github.com/edgard/murailobot/internal/database"
+	"github.com/edgard/murailobot/internal/gemini"
 )
 
 // Bot orchestrates the main components of the application.

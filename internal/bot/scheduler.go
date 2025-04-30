@@ -9,8 +9,8 @@ import (
 
 	"github.com/go-co-op/gocron/v2" // Replaced cron library
 
-	"github.com/edgard/murailobot-go/internal/bot/tasks"
-	"github.com/edgard/murailobot-go/internal/config"
+	"github.com/edgard/murailobot/internal/bot/tasks"
+	"github.com/edgard/murailobot/internal/config"
 )
 
 // Scheduler manages scheduled tasks using the gocron library.

@@ -4,9 +4,9 @@ import (
 	"context"
 	// "log/slog" // Removed unused import
 	// "github.com/go-telegram/bot" // Bot instance is now in TaskDeps
-	// "github.com/edgard/murailobot-go/internal/config" // Config is in TaskDeps
-	// "github.com/edgard/murailobot-go/internal/database" // Store is in TaskDeps
-	// "github.com/edgard/murailobot-go/internal/gemini" // GeminiClient is in TaskDeps
+	// "github.com/edgard/murailobot/internal/config" // Config is in TaskDeps
+	// "github.com/edgard/murailobot/internal/database" // Store is in TaskDeps
+	// "github.com/edgard/murailobot/internal/gemini" // GeminiClient is in TaskDeps
 )
 
 // ScheduledTaskFunc defines the standard signature for all scheduled tasks.

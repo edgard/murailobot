@@ -15,7 +15,7 @@ import (
 	"github.com/golang-migrate/migrate/v4/source/iofs"
 	"github.com/jmoiron/sqlx"
 
-	"github.com/edgard/murailobot-go/migrations"
+	"github.com/edgard/murailobot/migrations"
 
 	_ "modernc.org/sqlite" //revive:disable:blank-imports
 )

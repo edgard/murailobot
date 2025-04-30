@@ -13,14 +13,14 @@ import (
 
 	tgbot "github.com/go-telegram/bot"
 
-	"github.com/edgard/murailobot-go/internal/bot"
-	"github.com/edgard/murailobot-go/internal/bot/handlers"
-	"github.com/edgard/murailobot-go/internal/bot/tasks"
-	"github.com/edgard/murailobot-go/internal/config"
-	"github.com/edgard/murailobot-go/internal/database"
-	"github.com/edgard/murailobot-go/internal/gemini"
-	"github.com/edgard/murailobot-go/internal/logger"
-	"github.com/edgard/murailobot-go/internal/telegram"
+	"github.com/edgard/murailobot/internal/bot"
+	"github.com/edgard/murailobot/internal/bot/handlers"
+	"github.com/edgard/murailobot/internal/bot/tasks"
+	"github.com/edgard/murailobot/internal/config"
+	"github.com/edgard/murailobot/internal/database"
+	"github.com/edgard/murailobot/internal/gemini"
+	"github.com/edgard/murailobot/internal/logger"
+	"github.com/edgard/murailobot/internal/telegram"
 
 	_ "modernc.org/sqlite"
 )

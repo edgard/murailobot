@@ -12,8 +12,8 @@ import (
 
 	"google.golang.org/genai"
 
-	"github.com/edgard/murailobot-go/internal/config"
-	"github.com/edgard/murailobot-go/internal/database"
+	"github.com/edgard/murailobot/internal/config"
+	"github.com/edgard/murailobot/internal/database"
 )
 
 // Client defines the interface for interacting with the Gemini AI model.
