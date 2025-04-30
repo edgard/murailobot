@@ -5,13 +5,13 @@
 [![Go Version](https://img.shields.io/badge/go-1.24-blue.svg)](https://golang.org)
 [![GitHub Release](https://img.shields.io/github/v/release/edgard/murailobot)](https://github.com/edgard/murailobot/releases/latest)
 
-A Telegram bot powered by AI models that provides intelligent responses through the Telegram messaging platform.
+A Telegram bot powered by Google's Gemini AI models that provides intelligent responses through the Telegram messaging platform.
 
 ## Prerequisites
 
 - Go 1.24+
 - Telegram Bot Token (from @BotFather)
-- AI API Key (compatible with OpenAI API format)
+- Google Gemini API Key
 
 ## Quick Start
 
@@ -43,14 +43,12 @@ bot_token: "your-telegram-bot-token"
 # Your Telegram User ID (for admin access)
 bot_admin_id: 123456789
 
-# OpenAI API Key or compatible service key
-ai_token: "your-openai-api-key"
+# Google Gemini API Key
+gemini_api_key: "your-gemini-api-key"
 
-# System instruction for the AI
-ai_instruction: "You are a helpful assistant focused on providing clear and accurate responses."
-
-# Instruction for profile generation
-ai_profile_instruction: "You are a behavioral analyst with expertise in psychology, linguistics, and social dynamics.\n\nYour task is to analyze chat messages and build concise, meaningful profiles of users."
+# Database configuration
+database:
+  path: "./murailobot.db"
 ```
 
 For a complete configuration with all options, see [config.yaml.example](config.yaml.example).
@@ -66,11 +64,12 @@ docker run -v $(pwd)/config.yaml:/app/config.yaml ghcr.io/edgard/murailobot:late
 
 ### Commands
 
-- `/start` - Initialize bot conversation
-- `/mrl_reset` - Clear chat history (admin only)
-- `/mrl_analyze` - Analyze user messages and update profiles (admin only)
-- `/mrl_profiles` - Show user profiles (admin only)
-- `/mrl_edit_user` - Edit user profile data (admin only)
+- `/start` - Introduction to the bot
+- `/help` - Show available commands
+- `/mrl_reset` - Clear chat history and user profiles (admin only)
+- `/mrl_analyze` - Analyze unprocessed messages and update profiles (admin only)
+- `/mrl_profiles` - Show all user profiles in the database (admin only)
+- `/mrl_edit_user` - Edit user profile fields (admin only)
 
 ### Group Chat Usage
 
@@ -79,31 +78,32 @@ MurailoBot is designed to operate in Telegram group chats:
 1. Add the bot to your group
 2. Mention the bot (@your_bot_name) in your message to get a response
 3. The bot will analyze the conversation context and respond appropriately
-4. Group messages are saved for context and profile generation
+4. The bot can analyze both text and images when mentioned
+5. Group messages are saved for context and profile generation
 
 ## Features
 
-- Chat with AI through Telegram group mentions
-- Persistent conversation history with context preservation
+- Chat with Google's Gemini AI through Telegram group mentions
+- Image analysis capabilities for photos shared in the chat
+- Persistent conversation history with sophisticated context management
 - Advanced user profiling system with behavioral analysis
-- Automated daily user profile updates
-- Role-based access control
+- Scheduled database maintenance tasks
+- Role-based access control for administrative commands
 - Docker support for both AMD64 and ARM64 architectures
 - Simple YAML configuration
-- Efficient message cleanup and storage management
+- Efficient database management with SQLite
 
 ## User Profiling System
 
 MurailoBot includes a sophisticated user profiling system that:
 
 - Automatically analyzes message patterns and content to build psychological profiles
-- Runs daily profile updates with data preservation mechanisms
-- Tracks user metadata including display names, locations, and age ranges
-- Maintains persistent profiles across conversations
+- Maintains user information including aliases, locations, age ranges, and personality traits
+- Preserves profile data between sessions and incrementally builds understanding
 - Enhances AI responses with contextual user information
-- Preserves existing profile data while incrementally updating with new insights
+- Supports manual profile editing by administrators
 
-The profiling system helps the bot provide more personalized and context-aware responses by analyzing:
+The profiling system gathers insights by analyzing:
 - Language patterns and word choice
 - Emotional expressions and communication style
 - Recurring themes in communications
@@ -116,9 +116,9 @@ This project uses an automated release workflow. Here's how it works:
 
 ### Automated Releases
 
-When code is pushed to the `main` branch, the following happens automatically:
+When code is pushed to the `master` branch, the following happens automatically:
 
-1. The CI workflow detects changes in the codebase
+1. The CI workflow validates the code with tests and linting
 2. Version is automatically bumped based on commit messages:
    - `fix:` or `fix(scope):` → patch bump
    - `feat:` or `feat(scope):` → minor bump
@@ -142,6 +142,5 @@ CC0 1.0 Universal - see [LICENSE](LICENSE) file
 
 ## Links
 
-- [OpenAI API](https://platform.openai.com/)
-- [OpenRouter](https://openrouter.ai/)
+- [Google Gemini API](https://ai.google.dev/docs/gemini_api_overview)
 - [Telegram Bot API](https://core.telegram.org/bots/api)
