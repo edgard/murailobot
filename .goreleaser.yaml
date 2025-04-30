@@ -11,7 +11,7 @@ before:
 
 builds:
   - id: "{{ .ProjectName }}-amd64"
-    main: ./cmd/murailobot
+    main: ./cmd/bot
     binary: "{{ .ProjectName }}"
     goos:
       - linux
@@ -20,7 +20,7 @@ builds:
     ldflags:
       - -s -w
   - id: "{{ .ProjectName }}-arm64"
-    main: ./cmd/murailobot
+    main: ./cmd/bot
     binary: "{{ .ProjectName }}"
     env:
       - CC=aarch64-linux-gnu-gcc
