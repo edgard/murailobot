@@ -316,23 +316,11 @@ func (c *sdkClient) extractTextFromResponse(ctx context.Context, resp *genai.Gen
 		return "", fmt.Errorf("%s returned no candidates or content", op)
 	}
 
-	// Iterate through parts and append Text content.
-	var responseText strings.Builder
-	for _, part := range resp.Candidates[0].Content.Parts {
-		// Access the Text field directly from the *genai.Part
-		if part.Text != "" {
-			responseText.WriteString(part.Text)
-		} else {
-			// Log if we encounter a part that isn't text, might be unexpected
-			// (e.g., if the model returned a function call or blob unexpectedly)
-			c.log.WarnContext(ctx, "Encountered non-text part in Gemini response", "operation", op, "part_details", fmt.Sprintf("%#v", part))
-		}
-	}
-
-	resultText := responseText.String()
+	// Use resp.Text() to retrieve full response text instead of manual part iteration
+	rawText := resp.Text()
 	// Strip timestamp/UID prefixes from response
 	re := regexp.MustCompile(`(?m)^(?:\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\] UID \d+: )+`)
-	cleanText := re.ReplaceAllString(resultText, "")
+	cleanText := re.ReplaceAllString(rawText, "")
 	if cleanText == "" {
 		c.log.WarnContext(ctx, "Gemini response text is empty after processing parts", "operation", op)
 		return "", fmt.Errorf("%s returned empty text", op)
