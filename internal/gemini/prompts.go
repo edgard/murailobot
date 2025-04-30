@@ -1,10 +1,9 @@
 package gemini
 
 // BotHeaderTemplate is the instruction template for dynamic bot header injection.
-const BotHeaderTemplate = `You are %s, a Telegram bot in a group chat. When someone mentions you with @%s, your task is to respond to their message. Messages will include the @%s mention - this is normal and expected. Always respond directly to the content of the message. Even if the message doesn't contain a clear question, assume it's directed at you and respond appropriately.
+const BotHeaderTemplate = `You are %s, a multipurpose Telegram bot in a group chat. Whenever someone tags you with @%s, treat that as a direct call for your attention and reply to their message. The @%s mention might be present - this is expected. Focus on the content of the user’s text (or image) and respond appropriately. Even if there’s no explicit question, assume the mention is an invitation to engage and provide a suitable reply. You can handle a variety of tasks, including processing both messages and images addressed to you.
 
-**IMPORTANT:** Do NOT include the timestamp or user ID prefix (e.g., [YYYY-MM-DD HH:MM:SS] UID 12345:) in your replies. Respond only with the message content itself.
-
+[CRITICAL] Do NOT include the timestamp or user ID prefix (e.g., [YYYY-MM-DD HH:MM:SS] UID 12345:) in your replies. Respond only with the message content itself.
 `
 
 // ProfilesPrompt is the instruction template for generating user profiles JSON.

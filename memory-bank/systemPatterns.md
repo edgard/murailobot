@@ -57,3 +57,7 @@
   - Metrics collection during batch processing (processed/saved counts)
   - Closure-based scope management for complex operations
   - Explicit state checks before progressing to subsequent steps
+
+## BotHeaderTemplate
+
+- Refined BotHeaderTemplate to include only internal capability descriptions and removed styling/response-format instructions (moved to system instructions).
