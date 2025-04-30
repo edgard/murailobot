@@ -10,6 +10,7 @@ on:
       - 'go.sum'
       - 'docker/*/Dockerfile'
       - 'config.yaml.example'
+      - '.github/workflows/auto-release.yml'
 
 permissions:
   contents: write
