@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"regexp"
 	"runtime"
 	"strconv"
 	"strings"
@@ -329,9 +330,12 @@ func (c *sdkClient) extractTextFromResponse(ctx context.Context, resp *genai.Gen
 	}
 
 	resultText := responseText.String()
-	if resultText == "" {
+	// Strip timestamp/UID prefixes from response
+	re := regexp.MustCompile(`(?m)^(?:\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\] UID \d+: )+`)
+	cleanText := re.ReplaceAllString(resultText, "")
+	if cleanText == "" {
 		c.log.WarnContext(ctx, "Gemini response text is empty after processing parts", "operation", op)
 		return "", fmt.Errorf("%s returned empty text", op)
 	}
-	return resultText, nil
+	return cleanText, nil
 }
