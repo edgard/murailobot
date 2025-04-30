@@ -89,7 +89,7 @@ func (h mentionHandler) Handle(ctx context.Context, b *bot.Bot, update *models.U
 		return
 	}
 
-	log.InfoContext(ctx, "Handling mention", "chat_id", chatID, "user_id", userID, "message_id", messageID)
+	log.DebugContext(ctx, "Handling mention", "chat_id", chatID, "user_id", userID, "message_id", messageID)
 
 	// --- Database: Save Incoming Message ---
 	incomingMsg := &database.Message{
@@ -419,6 +419,7 @@ func processImageMention(ctx context.Context, b *bot.Bot, deps HandlerDeps, chat
 // helper for text-based mentions
 func processTextMention(ctx context.Context, b *bot.Bot, deps HandlerDeps, chatID int64, messageID int, contextMessages []*database.Message) {
 	log := deps.Logger.With("handler", "mention")
+	log.InfoContext(ctx, "Handling text mention", "chat_id", chatID, "message_id", messageID)
 
 	// Parameter validation
 	if chatID == 0 {
