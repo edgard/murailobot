@@ -37,18 +37,12 @@ make build
 
 Minimal config.yaml example:
 ```yaml
-# Telegram Bot Token (from BotFather)
-bot_token: "your-telegram-bot-token"
+telegram:
+  token: "your-telegram-bot-token" # Required
+  admin_user_id: 123456789         # Required
 
-# Your Telegram User ID (for admin access)
-bot_admin_id: 123456789
-
-# Google Gemini API Key
-gemini_api_key: "your-gemini-api-key"
-
-# Database configuration
-database:
-  path: "./murailobot.db"
+gemini:
+  api_key: "your-gemini-api-key"   # Required
 ```
 
 For a complete configuration with all options, see [config.yaml.example](config.yaml.example).
