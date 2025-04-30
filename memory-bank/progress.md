@@ -58,6 +58,8 @@
   - Statistical reporting of operations (processed/saved counts)
   - Explicit error categorization and handling
   - Closure-based scope management for complex operations
+- AI Response Formatting:
+  - Updated `BotHeaderTemplate` prompt to prevent the AI from mimicking input message prefixes (timestamp/UID) in its replies.
 
 **What's Left to Build**
 - Unit and integration tests for the new scheduler implementation
@@ -95,6 +97,7 @@
 - Profile analysis implementation is robust with proper error handling and recovery
 - Terminology has been standardized across code and database schema for better consistency
 - Configuration example updated with detailed inline documentation
+- AI prompts refined to ensure cleaner output formatting.
 
 **Known Issues**
 - No comprehensive tests for the new scheduler implementation yet
@@ -108,6 +111,7 @@
 - AI analysis operations may timeout under high load or complex profiles
 - Need better telemetry for long-running AI operations
 - Large message batches may cause performance issues during analysis
+- ~~AI model sometimes mimics input message format (timestamp/UID prefix) in replies.~~ (Resolved by prompt update)
 
 **Evolution of Decisions**
 - Moved from custom validators to built-in validators where possible for simplicity and maintainability
@@ -127,3 +131,4 @@
 - Implemented partial success handling for batch operations rather than all-or-nothing approach
 - Added statistical reporting (processed/saved counts) to batch operations
 - Introduced dedicated timeout contexts for long-running AI operations
+- Refined AI prompts to explicitly guide output formatting and prevent unwanted mimicry of input structure.

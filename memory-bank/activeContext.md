@@ -64,6 +64,8 @@
   - Enhanced recovery mechanism for partial AI operation failures
   - Improved logging with operation timing and result statistics
   - Added structured error reporting for both users and logs
+- Gemini Prompt Refinement:
+  - Updated `BotHeaderTemplate` to explicitly instruct the model *not* to mimic the input message format (timestamp/UID prefix) in its replies.
 
 **Next Steps**
 - Implement comprehensive unit tests to verify scheduler and mention handler
@@ -98,6 +100,7 @@
 - Implement partial success handling for batch operations rather than all-or-nothing
 - Use statistical reporting for complex operations (processed/saved counts)
 - Prefer explicit cancellation and timeout handling over generic error checks
+- Ensure AI responses do not include the input message formatting prefixes (timestamp/UID).
 
 **Important Patterns & Preferences**
 - Configuration: Prefer built-in validators and provide sensible defaults for all options
@@ -114,6 +117,7 @@
 - Batch Processing: Include detailed statistics (processed/saved counts) in logs and responses
 - Error Recovery: Implement graceful degradation with partial success handling in batch operations
 - Concurrency Management: Use proper timeout contexts for long-running operations with clear duration
+- AI Prompting: Explicitly instruct the model on desired output formatting, including what *not* to include (e.g., input prefixes).
 
 **Learnings & Project Insights**
 - Consolidated error handling in batch operations significantly improves robustness and maintainability
