@@ -19,10 +19,6 @@ builds:
       - amd64
     ldflags:
       - -s -w
-      - -X main.version={{.Version}}
-      - -X main.commit={{.ShortCommit}}
-      - -X main.date={{.Date}}
-      - -X main.builtBy=goreleaser
   - id: "{{ .ProjectName }}-arm64"
     main: ./cmd/murailobot
     binary: "{{ .ProjectName }}"
@@ -34,10 +30,6 @@ builds:
       - arm64
     ldflags:
       - -s -w
-      - -X main.version={{.Version}}
-      - -X main.commit={{.ShortCommit}}
-      - -X main.date={{.Date}}
-      - -X main.builtBy=goreleaser
 
 archives:
   - name_template: "{{ .ProjectName }}-{{ .Version }}-{{ .Os }}-{{ .Arch }}{{ if .Arm }}v{{ .Arm }}{{ end }}"

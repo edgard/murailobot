@@ -1,48 +1,51 @@
-# Build variables
+# Go parameters
+GOCMD=go
+GOBUILD=$(GOCMD) build
+GOCLEAN=$(GOCMD) clean
+GOTIDY=$(GOCMD) mod tidy
+GORUN=$(GOCMD) run
+
+# Binary name
 BINARY_NAME=murailobot
-VERSION=$(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
-COMMIT=$(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
-DATE=$(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
-BUILT_BY=makefile
-LDFLAGS=-s -w -X main.version=${VERSION} -X main.commit=${COMMIT} -X main.date=${DATE} -X main.builtBy=${BUILT_BY}
-MAIN_PATH=./cmd/murailobot
+BINARY_UNIX=$(BINARY_NAME)
 
-.PHONY: all default build clean test lint vet mod generate help
+# Main package path
+CMD_PATH=./cmd/bot
 
-default: all
+# Default target
+all: tidy fmt lint build
 
-all: mod generate lint vet test build
-
-help:
-	@echo "Available commands:"
-	@echo "  all           - Run mod, generate, lint, vet, tests and build the binary (default)"
-	@echo "  build         - Build the binary"
-	@echo "  clean         - Remove build artifacts"
-	@echo "  test          - Run tests"
-	@echo "  lint          - Run golangci-lint"
-	@echo "  vet           - Run go vet"
-	@echo "  mod           - Run go mod tidy and download"
-	@echo "  generate      - Run go generate"
-
+# Build the application
 build:
-	CGO_ENABLED=1 go build -ldflags "${LDFLAGS}" -o ${BINARY_NAME} ${MAIN_PATH}
+	@echo "Building $(BINARY_NAME)..."
+	$(GOBUILD) -o $(BINARY_UNIX) $(CMD_PATH)
+	@echo "$(BINARY_NAME) built successfully."
 
-clean:
-	rm -f ${BINARY_NAME}
-	rm -rf dist/
+# Run the application
+run:
+	@echo "Running $(BINARY_NAME)..."
+	$(GORUN) $(CMD_PATH) --config ./config.yaml
 
-test:
-	go test ./...
+# Tidy dependencies
+tidy:
+	@echo "Tidying dependencies..."
+	$(GOTIDY)
 
+# Format the code
+fmt:
+	@echo "Formatting the code..."
+	golangci-lint-v2 fmt ./...
+
+# Lint the code
 lint:
-	golangci-lint run
+	@echo "Linting the code..."
+	golangci-lint-v2 run ./...
 
-vet:
-	go vet ./...
+# Clean build artifacts
+clean:
+	@echo "Cleaning..."
+	$(GOCLEAN)
+	rm -f $(BINARY_UNIX)
 
-mod:
-	go mod tidy
-	go mod download
-
-generate:
-	go generate ./...
+# Phony targets
+.PHONY: all build run tidy fmt lint clean

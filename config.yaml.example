@@ -1,62 +1,56 @@
-# MurailoBot Configuration Example
-# Copy this file to config.yaml and update with your settings
-
-#------------------------------------------------------------------------------
-# REQUIRED SETTINGS - These must be configured for the bot to work
-#------------------------------------------------------------------------------
-
-# Telegram Bot Token (from BotFather)
-bot_token: "your-telegram-bot-token"
-
-# Your Telegram User ID (for admin access)
-bot_admin_id: 123456789
-
-# API Key for the selected AI backend (OpenAI or Gemini)
-ai_token: "your-ai-api-key"
-
-# System instruction for the AI
-ai_instruction: "You are a helpful assistant focused on providing clear and accurate responses."
-
-# Instruction for profile generation
-ai_profile_instruction: "You are a behavioral analyst with expertise in psychology, linguistics, and social dynamics.\n\nYour task is to analyze chat messages and build concise, meaningful profiles of users."
-
-#------------------------------------------------------------------------------
-# OPTIONAL SETTINGS - These have sensible defaults if not specified
-#------------------------------------------------------------------------------
-
-# Logging Configuration
-log_level: "info"   # Options: debug, info, warn, error
-
-# AI Configuration
-ai_base_url: "https://api.openai.com/v1"  # API endpoint URL
-ai_model: "gpt-4o"                        # Model identifier
-ai_temperature: 1.7                       # Range: 0.0-2.0 (higher = more random)
-ai_max_context_tokens: 16000              # Range: 1000-1000000
-ai_timeout: "2m"                          # Format: 30s, 2m, 1h (Range: 1s-10m)
-ai_backend: "openai"                      # Choose the AI backend: "openai" or "gemini" (default: openai)
-gemini_search_grounding: false            # Enable Gemini's search grounding feature (default: false)
-# gemini_api_token: "YOUR_GEMINI_API_KEY"   # Removed, use ai_token above
+# Telegram Bot Configuration
+telegram:
+  token: "YOUR_TELEGRAM_BOT_TOKEN" # Bot token from BotFather (required)
+  admin_user_id: 123456789 # Telegram User ID of the bot administrator (required, must be > 0)
 
 # Database Configuration
-db_path: "storage.db"  # Path to SQLite database file
+database:
+  path: "storage.db" # SQLite database file path
+  max_history_messages: 100 # Maximum historical messages for context (range: > 0)
 
-#------------------------------------------------------------------------------
-# BOT MESSAGES - Default text for various bot responses
-#------------------------------------------------------------------------------
-bot_msg_welcome: "I'm ready to assist you. Mention me in your group message to start a conversation."
-bot_msg_not_authorized: "You are not authorized to use this command."
-bot_msg_provide_message: "Please provide a message."
-bot_msg_general_error: "An error occurred. Please try again later."
-bot_msg_history_reset: "History has been reset."
-bot_msg_analyzing: "Analyzing messages..."
-bot_msg_no_profiles: "No user profiles found."
-bot_msg_profiles_header: "User Profiles:\n\n"
+# Google Gemini API Configuration
+gemini:
+  api_key: "YOUR_GEMINI_API_KEY" # Gemini API Key (required)
+  model_name: "gemini-2.0-flash" # Gemini model name
+  temperature: 1.0 # Sampling temperature for generation (range: 0.0-2.0)
+  search_grounding: true # Enable Google Search grounding tool
+  system_instruction: "You're a helpful assistant." # System instructions for AI behavior
 
-#------------------------------------------------------------------------------
-# BOT COMMANDS - Default descriptions for Telegram commands
-#------------------------------------------------------------------------------
-bot_cmd_start: "Start conversation with the bot"
-bot_cmd_reset: "Reset chat history (admin only)"
-bot_cmd_analyze: "Analyze messages and update profiles (admin only)"
-bot_cmd_profiles: "Show user profiles (admin only)"
-bot_cmd_edit_user: "Edit user profile data (admin only)"
+# Logger Configuration
+logger:
+  level: "info" # Log level (options: debug, info, warn, error)
+  json: false # Output logs in JSON format
+
+# Scheduler Configuration
+scheduler:
+  tasks:
+    # SQL maintenance task runs daily at 3 AM
+    sql_maintenance:
+      schedule: "0 3 * * *" # Cron schedule expression (valid cron format)
+      enabled: true # Whether task is active
+
+    # Profile update task runs daily at 1 AM
+    profile_update:
+      schedule: "0 1 * * *" # Cron schedule expression (valid cron format)
+      enabled: true # Whether task is active
+
+# Bot Message Strings
+messages:
+  # General Messages
+  welcome: "Hello! Use @botname to chat with me." # Welcome message
+  general_error: "Sorry, something went wrong. Please try again later." # Generic error message
+  not_authorized: "You are not authorized to use this command." # Unauthorized access message
+  help: "Available commands:\n/help - Show this help message\nUse @botname to chat with the bot.\n\nAdmin commands:\n/mrl_reset - Delete all message history and profiles\n/mrl_analyze - Force analysis of unprocessed messages\n/mrl_profiles - Show all stored user profiles\n/mrl_edit_user <user_id> <field> <value> - Manually edit a user profile field (fields: aliases, origin_location, current_location, age_range, traits)" # Help command response
+
+  # Admin Command Responses
+  history_reset: "All message history and user profiles have been soft-deleted." # Response after reset
+  analyzing: "Analyzing unprocessed messages to update user profiles..." # Analysis start message
+  analysis_no_messages: "No new messages found to analyze." # Empty analysis result message
+  analysis_complete_fmt: "Analysis complete. Processed %d messages. Updated/created %d profiles." # Analysis completion message (must contain two %d format specifiers)
+  no_profiles: "No user profiles found in the database." # Empty profiles response
+  profiles_header: "--- User Profiles ---\nUserID | Aliases | Origin | Current | Age | Traits\n--------------------------------------------------\n" # Profile listing header
+  edit_user_usage: "Usage: /mrl_edit_user <user_id> <field_name> <new_value...>" # Usage instructions
+  edit_user_invalid_id: "Invalid User ID provided. It must be a number." # Invalid ID error message
+  edit_user_invalid_field_fmt: "Invalid field name: '%s'. Allowed fields are: %s" # Invalid field error (must contain %s format specifier)
+  edit_user_not_found_fmt: "User profile not found for ID: %d" # User not found error (must contain %d format specifier)
+  edit_user_success_fmt: "Successfully updated field '%s' for user %d." # Success message (must contain %s and %d format specifiers)

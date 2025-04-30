@@ -1,0 +1,90 @@
+version: "2"
+
+run:
+  timeout: 5m
+  tests: false
+  modules-download-mode: readonly
+  concurrency: 4
+  relative-path-mode: gomod
+
+linters:
+  default: "standard"
+
+  enable:
+    - bodyclose
+    - copyloopvar
+    - dogsled
+    - errcheck
+    - errorlint
+    - gocheckcompilerdirectives
+    - gochecknoinits
+    - goconst
+    - gocritic
+    - godox
+    - goprintffuncname
+    - gosec
+    - govet
+    - ineffassign
+    - intrange
+    - nakedret
+    - noctx
+    - nolintlint
+    - revive
+    - revive
+    - staticcheck
+    - testifylint
+    - unconvert
+    - unparam
+    - unused
+    - whitespace
+  settings:
+    goconst:
+      min-len: 2
+      min-occurrences: 3
+    gocritic:
+      disabled-checks:
+        - ifElseChain
+    godox:
+      keywords:
+        - FIXME
+        - TODO
+    govet:
+      enable:
+        - nilness
+    errorlint:
+      asserts: false
+    nolintlint:
+      allow-unused: false
+      require-explanation: true
+      require-specific: true
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+    - gofumpt
+    - gci
+  settings:
+    gofmt:
+      simplify: true
+      rewrite-rules:
+        - pattern: "interface{}"
+          replacement: "any"
+    goimports:
+      local-prefixes:
+        - "github.com/edgard/murailobot-go"
+    gofumpt:
+      extra-rules: true
+    gci:
+      sections:
+        - standard
+        - default
+        - prefix(github.com/edgard/murailobot-go)
+        - blank
+
+output:
+  path-mode: "abs"

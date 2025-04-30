@@ -1,146 +1,180 @@
-// Package config provides configuration loading, validation, and management
-// for the MurailoBot application. It handles reading from YAML files,
-// setting default values, and validating configuration parameters.
+// Package config handles loading and validation of application configuration.
 package config
 
 import (
-	// Added for validation
 	"fmt"
-	"log/slog"
-	"os"
-	"time"
+	"strings"
 
 	"github.com/go-playground/validator/v10"
-	"github.com/knadh/koanf/parsers/yaml"
-	"github.com/knadh/koanf/providers/file"
-	"github.com/knadh/koanf/v2"
+	"github.com/go-telegram/bot/models"
+	"github.com/spf13/viper"
 )
 
-// Config defines the application configuration parameters for all components
-// of the MurailoBot system, including logging, bot settings, AI integration,
-// and database configuration.
+// Config holds the application configuration.
+// Tags use mapstructure for Viper unmarshalling and validate for validation.
 type Config struct {
-	LogLevel string `koanf:"log_level" validate:"oneof=debug info warn error"`
-
-	BotToken   string `koanf:"bot_token"    validate:"required"`
-	BotAdminID int64  `koanf:"bot_admin_id" validate:"required,gt=0"`
-
-	BotMsgWelcome        string `koanf:"bot_msg_welcome"`
-	BotMsgNotAuthorized  string `koanf:"bot_msg_not_authorized"`
-	BotMsgProvideMessage string `koanf:"bot_msg_provide_message"`
-	BotMsgGeneralError   string `koanf:"bot_msg_general_error"`
-	BotMsgHistoryReset   string `koanf:"bot_msg_history_reset"`
-	BotMsgAnalyzing      string `koanf:"bot_msg_analyzing"`
-	BotMsgNoProfiles     string `koanf:"bot_msg_no_profiles"`
-	BotMsgProfilesHeader string `koanf:"bot_msg_profiles_header"`
-
-	BotCmdStart    string `koanf:"bot_cmd_start"`
-	BotCmdReset    string `koanf:"bot_cmd_reset"`
-	BotCmdAnalyze  string `koanf:"bot_cmd_analyze"`
-	BotCmdProfiles string `koanf:"bot_cmd_profiles"`
-	BotCmdEditUser string `koanf:"bot_cmd_edit_user"`
-
-	AIToken               string        `koanf:"ai_token"               validate:"required"`
-	AIBaseURL             string        `koanf:"ai_base_url"            validate:"url"`
-	AIModel               string        `koanf:"ai_model"`
-	AITemperature         float32       `koanf:"ai_temperature"         validate:"min=0,max=2"`
-	AIInstruction         string        `koanf:"ai_instruction"         validate:"required"`
-	AIProfileInstruction  string        `koanf:"ai_profile_instruction" validate:"required"`
-	AITimeout             time.Duration `koanf:"ai_timeout"             validate:"min=1s,max=10m"`
-	AIMaxContextTokens    int           `koanf:"ai_max_context_tokens"  validate:"min=1000,max=1000000"`
-	AIBackend             string        `koanf:"ai_backend"             validate:"required,oneof=openai gemini"` // Added
-	GeminiSearchGrounding bool          `koanf:"gemini_search_grounding"`                                        // Added for Gemini grounding
-	// GeminiAPIToken       string        `koanf:"gemini_api_token"` // Removed, using AIToken for both
-
-	DBPath string `koanf:"db_path"`
+	Telegram  TelegramConfig    `mapstructure:"telegram" validate:"required"`
+	Database  DatabaseConfig    `mapstructure:"database" validate:"required"`
+	Gemini    GeminiConfig      `mapstructure:"gemini" validate:"required"`
+	Logger    LoggerConfig      `mapstructure:"logger" validate:"required"`
+	Scheduler SchedulerConfig   `mapstructure:"scheduler" validate:"required"`
+	Messages  BotMessagesConfig `mapstructure:"messages" validate:"required"`
 }
 
-// Load reads configuration from config.yaml, sets default values for
-// optional fields, and validates the configuration. If the config file
-// doesn't exist, it uses default values for all optional fields.
-//
-// Returns the validated configuration or an error if loading or validation fails.
-func Load() (*Config, error) {
-	slog.Debug("loading configuration")
+// TelegramConfig holds Telegram specific settings.
+type TelegramConfig struct {
+	Token       string       `mapstructure:"token" validate:"required,min=45,max=50"` // Bot token from BotFather (typically 46 chars)
+	AdminUserID int64        `mapstructure:"admin_user_id" validate:"required,gt=0"`  // User ID of the bot administrator
+	BotInfo     *models.User `mapstructure:"-" validate:"-"`                          // Bot information (filled in at runtime)
+}
 
-	config := &Config{}
+// DatabaseConfig holds database connection details.
+type DatabaseConfig struct {
+	Path               string `mapstructure:"path" validate:"required,filepath"`             // Database file path (e.g., "./storage.db")
+	MaxHistoryMessages int    `mapstructure:"max_history_messages" validate:"required,gt=0"` // Maximum number of historical messages to include in context
+}
 
-	// Set default values and load configuration from file
-	setDefaults(config)
+// GeminiConfig holds Google Gemini API settings.
+type GeminiConfig struct {
+	APIKey            string  `mapstructure:"api_key" validate:"required,min=10"`          // Gemini API Key
+	ModelName         string  `mapstructure:"model_name" validate:"required"`              // Gemini Model Name (e.g., "gemini-1.5-flash")
+	Temperature       float32 `mapstructure:"temperature" validate:"required,gte=0,lte=2"` // Sampling temperature for generation
+	SearchGrounding   bool    `mapstructure:"search_grounding"`                            // Enable Google Search grounding tool
+	SystemInstruction string  `mapstructure:"system_instruction" validate:"required"`      // Developer-provided system instruction for AI
+}
 
-	configPath := "config.yaml"
+// LoggerConfig holds logging settings.
+type LoggerConfig struct {
+	Level string `mapstructure:"level" validate:"required,oneof=debug info warn error"` // Log level
+	JSON  bool   `mapstructure:"json"`                                                  // JSON output flag
+}
 
-	k := koanf.New(".")
-	if err := k.Load(file.Provider(configPath), yaml.Parser()); err != nil {
-		if !os.IsNotExist(err) {
-			return nil, err
-		}
+// SchedulerConfig holds settings for scheduled tasks.
+type SchedulerConfig struct {
+	Tasks map[string]TaskConfig `mapstructure:"tasks" validate:"required,dive"`
+}
 
-		slog.Debug("using default configuration (no config file found)")
+// TaskConfig defines settings for a single scheduled task.
+type TaskConfig struct {
+	Schedule string `mapstructure:"schedule" validate:"required,cron"`
+	Enabled  bool   `mapstructure:"enabled"`
+}
+
+// BotMessagesConfig holds configurable strings used by the bot in replies.
+type BotMessagesConfig struct {
+	// General
+	Welcome       string `mapstructure:"welcome" validate:"required"`
+	GeneralError  string `mapstructure:"general_error" validate:"required"`
+	NotAuthorized string `mapstructure:"not_authorized" validate:"required"`
+	Help          string `mapstructure:"help" validate:"required"`
+
+	// Admin Command Responses
+	HistoryReset            string `mapstructure:"history_reset" validate:"required"`
+	Analyzing               string `mapstructure:"analyzing" validate:"required"`
+	AnalysisNoMessages      string `mapstructure:"analysis_no_messages" validate:"required"`
+	AnalysisCompleteFmt     string `mapstructure:"analysis_complete_fmt" validate:"required,contains=%d"` // Must contain %d for formatting
+	NoProfiles              string `mapstructure:"no_profiles" validate:"required"`
+	ProfilesHeader          string `mapstructure:"profiles_header" validate:"required"`
+	EditUserUsage           string `mapstructure:"edit_user_usage" validate:"required"`
+	EditUserInvalidID       string `mapstructure:"edit_user_invalid_id" validate:"required"`
+	EditUserInvalidFieldFmt string `mapstructure:"edit_user_invalid_field_fmt" validate:"required,contains=%s"` // Must contain %s for formatting
+	EditUserNotFoundFmt     string `mapstructure:"edit_user_not_found_fmt" validate:"required,contains=%d"`     // Must contain %d for formatting
+	EditUserSuccessFmt      string `mapstructure:"edit_user_success_fmt" validate:"required,contains=%s"`       // Must contain %s for formatting
+}
+
+// LoadConfig reads configuration from file, environment variables, and validates it.
+func LoadConfig(configPath string) (*Config, error) {
+	v := viper.New()
+
+	// Set default values
+	// Logger defaults
+	v.SetDefault("logger.level", "info")
+	v.SetDefault("logger.json", false)
+
+	// Database defaults
+	v.SetDefault("database.path", "storage.db")
+	v.SetDefault("database.max_history_messages", 100)
+
+	// Gemini API defaults
+	v.SetDefault("gemini.model_name", "gemini-2.0-flash")
+	v.SetDefault("gemini.temperature", 1.0)
+	v.SetDefault("gemini.search_grounding", true)
+	v.SetDefault("gemini.system_instruction", "You're a helpful assistant.")
+
+	// Scheduler defaults - empty map as default
+	v.SetDefault("scheduler.tasks", map[string]TaskConfig{
+		"sql_maintenance": {
+			Schedule: "0 3 * * *", // Daily at 3 AM
+			Enabled:  true,
+		},
+		"profile_update": {
+			Schedule: "0 1 * * *", // Daily at 1 AM
+			Enabled:  true,
+		},
+	})
+
+	// Default Messages
+	v.SetDefault("messages.welcome", "Hello! Use @botname to chat with me.")
+	v.SetDefault("messages.general_error", "Sorry, something went wrong. Please try again later.")
+	v.SetDefault("messages.not_authorized", "You are not authorized to use this command.")
+	v.SetDefault("messages.help", "Available commands:\n/help - Show this help message\nUse @botname to chat with the bot.\n\nAdmin commands:\n/mrl_reset - Delete all message history and profiles\n/mrl_analyze - Force analysis of unprocessed messages\n/mrl_profiles - Show all stored user profiles\n/mrl_edit_user <user_id> <field> <value> - Manually edit a user profile field (fields: aliases, origin_location, current_location, age_range, traits)")
+	v.SetDefault("messages.history_reset", "All message history and user profiles have been soft-deleted.")
+	v.SetDefault("messages.analyzing", "Analyzing unprocessed messages to update user profiles...")
+	v.SetDefault("messages.analysis_no_messages", "No new messages found to analyze.")
+	v.SetDefault("messages.analysis_complete_fmt", "Analysis complete. Processed %d messages. Updated/created %d profiles.")
+	v.SetDefault("messages.no_profiles", "No user profiles found in the database.")
+	v.SetDefault("messages.profiles_header", "--- User Profiles ---\nUserID | Aliases | Origin | Current | Age | Traits\n--------------------------------------------------\n")
+	v.SetDefault("messages.edit_user_usage", "Usage: /mrl_edit_user <user_id> <field_name> <new_value...>")
+	v.SetDefault("messages.edit_user_invalid_id", "Invalid User ID provided. It must be a number.")
+	v.SetDefault("messages.edit_user_invalid_field_fmt", "Invalid field name: '%s'. Allowed fields are: %s")
+	v.SetDefault("messages.edit_user_not_found_fmt", "User profile not found for ID: %d")
+	v.SetDefault("messages.edit_user_success_fmt", "Successfully updated field '%s' for user %d.")
+
+	// Set config file path, name, and type
+	if configPath != "" {
+		v.SetConfigFile(configPath)
 	} else {
-		// Only log parsing errors, don't log normal parsing operations
-		if err := k.Unmarshal("", config); err != nil {
-			return nil, err
+		v.AddConfigPath(".")
+		v.SetConfigName("config")
+		v.SetConfigType("yaml")
+	}
+
+	// Read config file
+	if err := v.ReadInConfig(); err != nil {
+		if _, ok := err.(viper.ConfigFileNotFoundError); !ok || configPath != "" {
+			return nil, fmt.Errorf("failed to read config file: %w", err)
 		}
+		// If config file not found and no specific path was given, defaults are used.
 	}
 
-	// Perform initial struct-level validation
+	// Enable environment variable overriding
+	v.SetEnvPrefix("BOT")
+	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
+	v.AutomaticEnv()
+
+	// Unmarshal the config into the Config struct
+	var cfg Config
+	if err := v.Unmarshal(&cfg); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal config: %w", err)
+	}
+
+	// --- Validation ---
 	validate := validator.New()
-	if err := validate.Struct(config); err != nil {
-		return nil, fmt.Errorf("initial configuration validation failed: %w", err)
+
+	if err := validate.Struct(&cfg); err != nil {
+		// Improve error message to be more specific about validation failures
+		validationErrors, ok := err.(validator.ValidationErrors)
+		if !ok {
+			return nil, fmt.Errorf("config validation failed: %w", err) // Should not happen
+		}
+		// Build a more informative error string
+		var errorMsgs []string
+		for _, e := range validationErrors {
+			errorMsgs = append(errorMsgs, fmt.Sprintf("Field '%s': validation '%s' failed (value: '%v')", e.Namespace(), e.Tag(), e.Value()))
+		}
+		return nil, fmt.Errorf("config validation failed: %s", strings.Join(errorMsgs, "; "))
 	}
+	// --- End Validation ---
 
-	// Perform conditional validation based on AIBackend
-	if config.AIToken == "" {
-		return nil, fmt.Errorf("ai_token is required for the selected backend ('%s')", config.AIBackend)
-	}
-
-	switch config.AIBackend {
-	case "openai":
-		// AIBaseURL validation is already handled by the 'url' tag if provided
-		// If AIBaseURL is empty, the default will be used.
-		config.GeminiSearchGrounding = false // Ensure Gemini specific flag is off
-	case "gemini":
-		// No specific validation needed here for Gemini beyond AIToken check
-		break // Explicit break for clarity
-	}
-
-	// Log only the most important settings at Info level with consolidated information
-	slog.Info("configuration loaded",
-		"log_level", config.LogLevel,
-		"ai_backend", config.AIBackend, // Added backend to log
-		"ai_model", config.AIModel,
-		"db_path", config.DBPath,
-		"max_tokens", config.AIMaxContextTokens)
-
-	return config, nil
-}
-
-func setDefaults(config *Config) {
-	config.LogLevel = "info"
-
-	config.AIBaseURL = "https://api.openai.com/v1"
-	config.AIModel = "gpt-4o"
-	config.AITemperature = 1.7
-	config.AIMaxContextTokens = 16000
-	config.AITimeout = 2 * time.Minute
-	config.AIBackend = "openai"          // Default backend
-	config.GeminiSearchGrounding = false // Default for Gemini grounding
-
-	config.DBPath = "storage.db"
-
-	config.BotMsgWelcome = "I'm ready to assist you. Mention me in your group message to start a conversation."
-	config.BotMsgNotAuthorized = "You are not authorized to use this command."
-	config.BotMsgProvideMessage = "Please provide a message."
-	config.BotMsgGeneralError = "An error occurred. Please try again later."
-	config.BotMsgHistoryReset = "History has been reset."
-	config.BotMsgAnalyzing = "Analyzing messages..."
-	config.BotMsgNoProfiles = "No user profiles found."
-	config.BotMsgProfilesHeader = "User Profiles:\n\n"
-
-	config.BotCmdStart = "Start conversation with the bot"
-	config.BotCmdReset = "Reset chat history (admin only)"
-	config.BotCmdAnalyze = "Analyze messages and update profiles (admin only)"
-	config.BotCmdProfiles = "Show user profiles (admin only)"
-	config.BotCmdEditUser = "Edit user profile data (admin only)"
+	return &cfg, nil
 }

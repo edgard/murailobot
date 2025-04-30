@@ -1,3 +1,8 @@
-/murailobot
+/.env
 /config.yaml
-/storage.db*
+/*.db
+/*.sqlite
+/*.sqlite3
+/murailobot
+/old
+/go-genai
