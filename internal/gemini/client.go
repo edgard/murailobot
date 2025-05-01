@@ -19,9 +19,9 @@ import (
 
 // Client defines the interface for interacting with the Gemini AI model.
 type Client interface {
-	GenerateReply(ctx context.Context, messages []*database.Message, botID int64, botUsername, botFirstName string) (string, error)
+	GenerateReply(ctx context.Context, messages []*database.Message, botID int64, botUsername, botFirstName string, searchGrounding bool) (string, error)
 	GenerateProfiles(ctx context.Context, messages []*database.Message, existingProfiles map[int64]*database.UserProfile) (map[int64]*database.UserProfile, error)
-	GenerateImageAnalysis(ctx context.Context, messages []*database.Message, mimeType string, imageData []byte, botID int64, botUsername, botFirstName string) (string, error)
+	GenerateImageAnalysis(ctx context.Context, messages []*database.Message, mimeType string, imageData []byte, botID int64, botUsername, botFirstName string, searchGrounding bool) (string, error)
 }
 
 // sdkClient implements Client using Google GenAI.
@@ -35,7 +35,7 @@ type sdkClient struct {
 // prependBotHeader injects the dynamic system instruction header.
 func (c *sdkClient) prependBotHeader(cfg *genai.GenerateContentConfig, botUsername, botFirstName string) *genai.GenerateContentConfig {
 	copyCfg := *cfg
-	header := fmt.Sprintf(BotHeaderTemplate, botFirstName, botUsername, botUsername)
+	header := fmt.Sprintf(MentionSystemInstructionHeader, botFirstName, botUsername, botUsername)
 	var existingText string
 	if cfg.SystemInstruction != nil && len(cfg.SystemInstruction.Parts) > 0 {
 		existingText = cfg.SystemInstruction.Parts[0].Text
@@ -84,9 +84,6 @@ func NewClient(
 	if cfg.SystemInstruction != "" {
 		baseCfg.SystemInstruction = &genai.Content{Parts: []*genai.Part{{Text: cfg.SystemInstruction}}}
 	}
-	if cfg.SearchGrounding {
-		baseCfg.Tools = append(baseCfg.Tools, &genai.Tool{GoogleSearch: &genai.GoogleSearch{}})
-	}
 
 	logger := log.With("component", "gemini_client")
 	logger.Info("Gemini client initialized successfully")
@@ -99,7 +96,7 @@ func NewClient(
 }
 
 // GenerateReply sends conversation to Gemini with a dynamic header.
-func (c *sdkClient) GenerateReply(ctx context.Context, messages []*database.Message, botID int64, botUsername, botFirstName string) (string, error) {
+func (c *sdkClient) GenerateReply(ctx context.Context, messages []*database.Message, botID int64, botUsername, botFirstName string, searchGrounding bool) (string, error) {
 	c.log.DebugContext(ctx, "Generating reply", "count", len(messages))
 	var contents []*genai.Content
 	for _, m := range messages {
@@ -109,7 +106,11 @@ func (c *sdkClient) GenerateReply(ctx context.Context, messages []*database.Mess
 		}
 		contents = append(contents, genai.NewContentFromText(formatMessageForAI(m), role))
 	}
+
 	copyCfg := *c.contentConfig
+	if searchGrounding {
+		copyCfg.Tools = append(copyCfg.Tools, &genai.Tool{GoogleSearch: &genai.GoogleSearch{}})
+	}
 	cfgWith := c.prependBotHeader(&copyCfg, botUsername, botFirstName)
 
 	resp, err := c.genaiClient.Models.GenerateContent(ctx, c.defaultModelName, contents, cfgWith)
@@ -154,7 +155,7 @@ func (c *sdkClient) GenerateProfiles(
 
 	var sb strings.Builder
 	// Simplified prompt focusing on the task, letting the schema enforce structure.
-	sb.WriteString(ProfilesPrompt)
+	sb.WriteString(ProfileAnalyzerSystemInstruction)
 	existingJSON, err := json.MarshalIndent(existingProfiles, "", "  ")
 	if err != nil {
 		c.log.WarnContext(ctx, "Failed to marshal existing profiles for prompt", "error", err)
@@ -254,6 +255,7 @@ func (c *sdkClient) GenerateImageAnalysis(
 	mimeType string,
 	imageData []byte,
 	botID int64, botUsername, botFirstName string,
+	searchGrounding bool,
 ) (string, error) {
 	c.log.DebugContext(ctx, "Generating image analysis", "size", len(imageData), "mime", mimeType)
 	if len(imageData) == 0 || mimeType == "" {
@@ -272,7 +274,9 @@ func (c *sdkClient) GenerateImageAnalysis(
 	contents = append(contents, genai.NewContentFromParts([]*genai.Part{genai.NewPartFromBytes(imageData, mimeType)}, genai.RoleUser))
 
 	copyCfg := *c.contentConfig
-	copyCfg.Tools = nil
+	if searchGrounding {
+		copyCfg.Tools = append(copyCfg.Tools, &genai.Tool{GoogleSearch: &genai.GoogleSearch{}})
+	}
 	cfgWith := c.prependBotHeader(&copyCfg, botUsername, botFirstName)
 
 	resp, err := c.genaiClient.Models.GenerateContent(ctx, c.defaultModelName, contents, cfgWith)

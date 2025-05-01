@@ -13,7 +13,6 @@ gemini:
   api_key: "YOUR_GEMINI_API_KEY" # Gemini API Key (required)
   model_name: "gemini-2.0-flash" # Gemini model name
   temperature: 1.0 # Sampling temperature for generation (range: 0.0-2.0)
-  search_grounding: true # Enable Google Search grounding tool
   system_instruction: "You're a helpful assistant." # System instructions for AI behavior
 
 # Logger Configuration

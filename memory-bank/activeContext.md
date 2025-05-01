@@ -65,7 +65,7 @@
   - Improved logging with operation timing and result statistics
   - Added structured error reporting for both users and logs
 - Gemini Prompt Refinement:
-  - Updated `BotHeaderTemplate` to include a capabilities list (conversational assistant, admin commands, user profile analysis, image analysis, task scheduling, database operations) and explicitly instruct the model *not* to mimic the input message format (timestamp/UID prefix) in its replies.
+  - Updated `MentionSystemInstructionHeader` to include a capabilities list (conversational assistant, admin commands, user profile analysis, image analysis, task scheduling, database operations) and explicitly instruct the model *not* to mimic the input message format (timestamp/UID prefix) in its replies.
 
 **Next Steps**
 - Implement comprehensive unit tests to verify scheduler and mention handler

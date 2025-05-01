@@ -399,7 +399,8 @@ func processImageMention(ctx context.Context, b *bot.Bot, deps HandlerDeps, chat
 		log.DebugContext(ctx, "Deduplicated messages before sending to AI", "original_count", len(contextMessages), "final_count", len(finalContextMessages), "chat_id", chatID)
 	}
 
-	analysisText, err := deps.GeminiClient.GenerateImageAnalysis(aiCtx, finalContextMessages, mimeType, data, deps.Config.Telegram.BotInfo.ID, deps.Config.Telegram.BotInfo.Username, deps.Config.Telegram.BotInfo.FirstName)
+	// Generate image analysis with search grounding enabled
+	analysisText, err := deps.GeminiClient.GenerateImageAnalysis(aiCtx, finalContextMessages, mimeType, data, deps.Config.Telegram.BotInfo.ID, deps.Config.Telegram.BotInfo.Username, deps.Config.Telegram.BotInfo.FirstName, true)
 	if err != nil {
 		log.ErrorContext(ctx, "Image analysis failed", "error", err)
 		if _, sendErr := b.SendMessage(ctx, &bot.SendMessageParams{ChatID: chatID, Text: deps.Config.Messages.GeneralError}); sendErr != nil {
@@ -453,8 +454,8 @@ func processTextMention(ctx context.Context, b *bot.Bot, deps HandlerDeps, chatI
 		log.DebugContext(ctx, "Deduplicated messages before sending to AI", "original_count", len(contextMessages), "final_count", len(finalContextMessages), "chat_id", chatID)
 	}
 
-	// Generate reply
-	replyText, err := deps.GeminiClient.GenerateReply(aiCtx, finalContextMessages, deps.Config.Telegram.BotInfo.ID, deps.Config.Telegram.BotInfo.Username, deps.Config.Telegram.BotInfo.FirstName)
+	// Generate reply with search grounding enabled
+	replyText, err := deps.GeminiClient.GenerateReply(aiCtx, finalContextMessages, deps.Config.Telegram.BotInfo.ID, deps.Config.Telegram.BotInfo.Username, deps.Config.Telegram.BotInfo.FirstName, true)
 	if err != nil {
 		log.ErrorContext(ctx, "Reply generation failed", "error", err)
 		if _, sendErr := b.SendMessage(ctx, &bot.SendMessageParams{ChatID: chatID, Text: deps.Config.Messages.GeneralError}); sendErr != nil {

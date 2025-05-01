@@ -39,7 +39,6 @@ type GeminiConfig struct {
 	APIKey            string  `mapstructure:"api_key" validate:"required,min=10"`          // Gemini API Key
 	ModelName         string  `mapstructure:"model_name" validate:"required"`              // Gemini Model Name (e.g., "gemini-1.5-flash")
 	Temperature       float32 `mapstructure:"temperature" validate:"required,gte=0,lte=2"` // Sampling temperature for generation
-	SearchGrounding   bool    `mapstructure:"search_grounding"`                            // Enable Google Search grounding tool
 	SystemInstruction string  `mapstructure:"system_instruction" validate:"required"`      // Developer-provided system instruction for AI
 }
 
@@ -98,7 +97,6 @@ func LoadConfig(configPath string) (*Config, error) {
 	// Gemini API defaults
 	v.SetDefault("gemini.model_name", "gemini-2.0-flash")
 	v.SetDefault("gemini.temperature", 1.0)
-	v.SetDefault("gemini.search_grounding", true)
 	v.SetDefault("gemini.system_instruction", "You're a helpful assistant.")
 
 	// Scheduler defaults - empty map as default

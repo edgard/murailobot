@@ -59,7 +59,7 @@
   - Explicit error categorization and handling
   - Closure-based scope management for complex operations
 - AI Response Formatting:
-  - Updated `BotHeaderTemplate` prompt to include a capabilities list (conversational assistant, admin commands, user profile analysis, image analysis, task scheduling, database operations) and prevent the AI from mimicking input message prefixes (timestamp/UID) in its replies.
+  - Updated `MentionSystemInstructionHeader` prompt to include a capabilities list (conversational assistant, admin commands, user profile analysis, image analysis, task scheduling, database operations) and prevent the AI from mimicking input message prefixes (timestamp/UID) in its replies.
 
 **What's Left to Build**
 - Unit and integration tests for the new scheduler implementation
