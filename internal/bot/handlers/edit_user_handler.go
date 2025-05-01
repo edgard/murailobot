@@ -1,3 +1,5 @@
+// Package handlers contains Telegram bot command and message handlers,
+// along with their registration logic.
 package handlers
 
 import (
@@ -19,6 +21,11 @@ type editUserHandler struct {
 	deps HandlerDeps
 }
 
+// Handle processes the /mrl_edit_user command.
+// It expects arguments: <user_id> <field_name> <new_value>.
+// It validates the arguments, fetches the user profile, updates the specified field,
+// saves the profile, and sends a confirmation or error message.
+// This handler requires admin privileges (enforced by middleware).
 func (h editUserHandler) Handle(ctx context.Context, b *bot.Bot, update *models.Update) {
 	log := h.deps.Logger.With("handler", "edit_user")
 	allowedFields := map[string]bool{
@@ -42,7 +49,7 @@ func (h editUserHandler) Handle(ctx context.Context, b *bot.Bot, update *models.
 	}
 
 	chatID := update.Message.Chat.ID
-	args := strings.Fields(update.Message.Text) // Split command and arguments
+	args := strings.Fields(update.Message.Text)
 
 	// 2. Validate Arguments
 	if len(args) < 4 {
@@ -187,6 +194,3 @@ func (h editUserHandler) Handle(ctx context.Context, b *bot.Bot, update *models.
 		log.ErrorContext(ctx, "Failed to send success message", "error", err, "chat_id", chatID)
 	}
 }
-
-// Deprecated: original newEditUserHandler kept for reference
-// func newEditUserHandler(deps HandlerDeps) bot.HandlerFunc { ... }

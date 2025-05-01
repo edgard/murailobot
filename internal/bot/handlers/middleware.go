@@ -1,3 +1,5 @@
+// Package handlers contains Telegram bot command and message handlers,
+// along with their registration logic and middleware.
 package handlers
 
 import (
@@ -24,15 +26,13 @@ func AdminOnly(deps HandlerDeps) tgbot.Middleware {
 			adminID := deps.Config.Telegram.AdminUserID
 
 			if userID != adminID {
-				// User is not the admin
 				chatID := update.Message.Chat.ID
-				// Get logger from deps
 				log := deps.Logger.With("middleware", "AdminOnly")
 				log.WarnContext(ctx, "Unauthorized access attempt", "user_id", userID, "chat_id", chatID)
-				// Send unauthorized message using config
+
 				_, err := bot.SendMessage(ctx, &tgbot.SendMessageParams{
 					ChatID: chatID,
-					Text:   deps.Config.Messages.ErrorUnauthorizedMsg, // Updated field name
+					Text:   deps.Config.Messages.ErrorUnauthorizedMsg,
 				})
 				if err != nil {
 					log.ErrorContext(ctx, "Failed to send unauthorized message", "error", err, "chat_id", chatID)
@@ -45,7 +45,3 @@ func AdminOnly(deps HandlerDeps) tgbot.Middleware {
 		}
 	}
 }
-
-// Helper function isAdmin removed (duplicate of one in deps.go)
-
-// Helper function sendReply removed (duplicate of one in deps.go)

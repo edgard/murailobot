@@ -1,3 +1,5 @@
+// Package tasks provides interfaces, dependencies, and implementations
+// for scheduled background tasks.
 package tasks
 
 import (
@@ -10,6 +12,8 @@ import (
 func newSQLMaintenanceTask(deps TaskDeps) ScheduledTaskFunc {
 	log := deps.Logger.With("task", "sql_maintenance")
 
+	// This function is the actual task executed by the scheduler.
+	// It calls the RunSQLMaintenance method on the database store.
 	return func(ctx context.Context) error {
 		log.InfoContext(ctx, "Starting scheduled SQL maintenance task...")
 		startTime := time.Now()
@@ -20,9 +24,8 @@ func newSQLMaintenanceTask(deps TaskDeps) ScheduledTaskFunc {
 		duration := time.Since(startTime)
 
 		if err != nil {
-			// Log the error
 			log.ErrorContext(ctx, "SQL maintenance task failed", "error", err, "duration", duration)
-
+			// Wrap the error for the scheduler to potentially handle
 			return fmt.Errorf("sql maintenance failed: %w", err)
 		}
 

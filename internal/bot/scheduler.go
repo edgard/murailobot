@@ -30,7 +30,6 @@ func NewScheduler(logger *slog.Logger, cfg *config.SchedulerConfig, taskMap map[
 	}
 	log := logger.With("component", "scheduler")
 
-	// Create a new gocron scheduler
 	s, err := gocron.NewScheduler()
 	if err != nil {
 		// This error typically occurs only if time.LoadLocation fails, which is rare.
@@ -40,7 +39,7 @@ func NewScheduler(logger *slog.Logger, cfg *config.SchedulerConfig, taskMap map[
 	}
 
 	// gocron v2 doesn't have built-in structured logging integration like slog yet.
-	// We can log before/after job execution within the task wrapper if needed.
+	// We log before/after job execution within the task wrapper.
 
 	return &Scheduler{
 		scheduler: s,
@@ -51,8 +50,7 @@ func NewScheduler(logger *slog.Logger, cfg *config.SchedulerConfig, taskMap map[
 }
 
 // Start schedules and starts all enabled tasks based on the configuration.
-// Note: gocron starts jobs immediately upon addition unless configured otherwise.
-// The StartAsync method starts the scheduler's internal ticking.
+// It uses gocron's job registration and starts the scheduler's internal ticking.
 func (s *Scheduler) Start() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -88,11 +86,11 @@ func (s *Scheduler) Start() error {
 			continue
 		}
 
-		// Define the job using gocron's fluent API
 		_, err := s.scheduler.NewJob(
 			gocron.CronJob(taskConfig.Schedule, true), // true = use seconds field if present
 			gocron.NewTask(
-				func(ctx context.Context, name string) { // Wrap the original task func
+				// Wrap the original task func to add logging and context handling
+				func(ctx context.Context, name string) {
 					s.logger.Info("Running scheduled task", "task_name", name)
 					startTime := time.Now()
 					// Pass the context provided by gocron to the task and capture error
@@ -106,7 +104,7 @@ func (s *Scheduler) Start() error {
 				taskName,             // Pass task name to the wrapper
 			),
 			gocron.WithName(taskName), // Set a name for the job for logging/management
-			// gocron.WithSingletonMode(gocron.LimitModeReschedule), // Prevent job overrun
+			// gocron.WithSingletonMode(gocron.LimitModeReschedule), // Example: Prevent job overrun if needed
 		)
 		if err != nil {
 			s.logger.Error("Failed to schedule task", "task_name", taskName, "schedule", taskConfig.Schedule, "error", err)
@@ -117,7 +115,6 @@ func (s *Scheduler) Start() error {
 		scheduledCount++
 	}
 
-	// Start the scheduler's async loop
 	s.scheduler.Start()
 	s.running = true
 	s.logger.Info("Scheduler initialized and started", "tasks_scheduled", scheduledCount)
@@ -148,5 +145,3 @@ func (s *Scheduler) Stop() error {
 	s.running = false
 	return err // Return shutdown error if any
 }
-
-// --- Old cron logger adapters removed ---

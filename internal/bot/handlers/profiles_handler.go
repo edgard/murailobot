@@ -1,3 +1,5 @@
+// Package handlers contains Telegram bot command and message handlers,
+// along with their registration logic.
 package handlers
 
 import (
@@ -12,10 +14,13 @@ import (
 
 // NewProfilesHandler creates a handler for the /mrl_profiles command.
 func NewProfilesHandler(deps HandlerDeps) bot.HandlerFunc {
+	// This function returns the actual handler logic for the /mrl_profiles command.
+	// It fetches all stored user profiles, formats them into a readable list,
+	// and sends the list back to the admin user who invoked the command.
+	// Requires admin privileges (enforced by middleware).
 	return func(ctx context.Context, b *bot.Bot, update *models.Update) {
 		log := deps.Logger.With("handler", "profiles")
 
-		// Basic validation
 		if update.Message == nil || update.Message.From == nil {
 			log.DebugContext(ctx, "Ignoring update with nil message or sender")
 			return
@@ -26,34 +31,32 @@ func NewProfilesHandler(deps HandlerDeps) bot.HandlerFunc {
 
 		log.InfoContext(ctx, "Admin requested user profiles list", "admin_user_id", adminID, "chat_id", chatID)
 
-		// Fetch all user profiles
 		profilesMap, err := deps.Store.GetAllUserProfiles(ctx)
 		if err != nil {
 			log.ErrorContext(ctx, "Failed to fetch user profiles", "error", err)
 			_, sendErr := b.SendMessage(ctx, &bot.SendMessageParams{
 				ChatID: chatID,
-				Text:   deps.Config.Messages.ErrorGeneralMsg, // Use general error config
+				Text:   deps.Config.Messages.ErrorGeneralMsg,
 			})
 			if sendErr != nil {
-				log.ErrorContext(ctx, "Failed to send error message", "error", sendErr)
+				log.ErrorContext(ctx, "Failed to send error message after profile fetch failure", "error", sendErr)
 			}
 			return
 		}
 
-		// Check if any profiles were found
 		if len(profilesMap) == 0 {
-			log.InfoContext(ctx, "No user profiles found")
+			log.InfoContext(ctx, "No user profiles found in the database")
 			_, sendErr := b.SendMessage(ctx, &bot.SendMessageParams{
 				ChatID: chatID,
-				Text:   deps.Config.Messages.ProfilesEmptyMsg, // Use no profiles config
+				Text:   deps.Config.Messages.ProfilesEmptyMsg,
 			})
 			if sendErr != nil {
-				log.ErrorContext(ctx, "Failed to send no profiles message", "error", sendErr)
+				log.ErrorContext(ctx, "Failed to send 'no profiles' message", "error", sendErr)
 			}
 			return
 		}
 
-		// Extract user IDs and sort them
+		// Sort user IDs for consistent output order
 		userIDs := make([]int64, 0, len(profilesMap))
 		for id := range profilesMap {
 			userIDs = append(userIDs, id)
@@ -62,13 +65,13 @@ func NewProfilesHandler(deps HandlerDeps) bot.HandlerFunc {
 			return userIDs[i] < userIDs[j]
 		})
 
-		// Format the profiles into a message, iterating over sorted IDs
+		// Format the profiles into a single message string
 		var sb strings.Builder
-		sb.WriteString(deps.Config.Messages.ProfilesHeaderMsg) // Use header config
+		sb.WriteString(deps.Config.Messages.ProfilesHeaderMsg) // Add header
 
 		for _, userID := range userIDs {
 			p := profilesMap[userID]
-			// Format each profile line
+			// Add spacing after commas for better readability
 			aliasesFormatted := strings.ReplaceAll(p.Aliases, ",", ", ")
 			traitsFormatted := strings.ReplaceAll(p.Traits, ",", ", ")
 			sb.WriteString(fmt.Sprintf("%d | %s | %s | %s | %s | %s\n\n",
@@ -87,14 +90,14 @@ func NewProfilesHandler(deps HandlerDeps) bot.HandlerFunc {
 			Text:   sb.String(),
 		})
 		if err != nil {
-			log.ErrorContext(ctx, "Failed to send profiles list", "error", err)
-			// Optionally send a generic error if sending the list fails
+			log.ErrorContext(ctx, "Failed to send profiles list message", "error", err)
+			// Attempt to send a generic error if the main message failed
 			_, sendErr := b.SendMessage(ctx, &bot.SendMessageParams{
 				ChatID: chatID,
 				Text:   deps.Config.Messages.ErrorGeneralMsg,
 			})
 			if sendErr != nil {
-				log.ErrorContext(ctx, "Failed to send error message after list failure", "error", sendErr)
+				log.ErrorContext(ctx, "Failed to send error message after list send failure", "error", sendErr)
 			}
 		}
 	}

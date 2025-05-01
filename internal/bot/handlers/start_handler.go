@@ -1,3 +1,5 @@
+// Package handlers contains Telegram bot command and message handlers,
+// along with their registration logic.
 package handlers
 
 import (
@@ -12,7 +14,6 @@ func NewStartHandler(deps HandlerDeps) bot.HandlerFunc {
 	return func(ctx context.Context, b *bot.Bot, update *models.Update) {
 		log := deps.Logger.With("handler", "start")
 
-		// Basic validation
 		if update.Message == nil || update.Message.From == nil {
 			log.DebugContext(ctx, "Ignoring update with nil message or sender")
 			return
@@ -24,8 +25,7 @@ func NewStartHandler(deps HandlerDeps) bot.HandlerFunc {
 
 		log.InfoContext(ctx, "/start command received", "chat_id", chatID, "user_id", userID, "username", username)
 
-		// Use the welcome message from the config
-		welcome := deps.Config.Messages.StartWelcomeMsg // Updated field name
+		welcome := deps.Config.Messages.StartWelcomeMsg
 
 		_, err := b.SendMessage(ctx, &bot.SendMessageParams{ChatID: chatID, Text: welcome})
 		if err != nil {

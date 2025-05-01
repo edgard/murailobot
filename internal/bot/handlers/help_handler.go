@@ -1,3 +1,5 @@
+// Package handlers contains Telegram bot command and message handlers,
+// along with their registration logic.
 package handlers
 
 import (
@@ -24,8 +26,7 @@ func NewHelpHandler(deps HandlerDeps) bot.HandlerFunc {
 
 		log.InfoContext(ctx, "/help command received", "chat_id", chatID, "user_id", userID, "username", username)
 
-		// Use the help message from the config
-		helpMsg := deps.Config.Messages.HelpMsg // Updated field name
+		helpMsg := deps.Config.Messages.HelpMsg
 
 		_, err := b.SendMessage(ctx, &bot.SendMessageParams{ChatID: chatID, Text: helpMsg})
 		if err != nil {

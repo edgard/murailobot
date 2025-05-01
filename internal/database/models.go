@@ -1,3 +1,4 @@
+// Package database provides database setup, models, and data access layer (Store).
 package database
 
 import (
@@ -13,12 +14,12 @@ type Message struct {
 	CreatedAt time.Time `db:"created_at"`
 	UpdatedAt time.Time `db:"updated_at"`
 
-	ChatID    int64     `db:"chat_id"` // Column name now matches field name
-	UserID    int64     `db:"user_id"`
-	Content   string    `db:"content"`
-	Timestamp time.Time `db:"timestamp"`
+	ChatID    int64     `db:"chat_id"`   // Telegram Chat ID
+	UserID    int64     `db:"user_id"`   // Telegram User ID of the sender
+	Content   string    `db:"content"`   // Text content of the message
+	Timestamp time.Time `db:"timestamp"` // Time the message was sent
 
-	ProcessedAt sql.NullTime `db:"processed_at"` // Use sql.NullTime for nullable timestamps
+	ProcessedAt sql.NullTime `db:"processed_at"` // Timestamp when the message was processed for profile analysis (NULL if not processed)
 }
 
 // UserProfile represents a user's accumulated profile information
@@ -30,10 +31,10 @@ type UserProfile struct {
 	CreatedAt time.Time `db:"created_at"`
 	UpdatedAt time.Time `db:"updated_at"`
 
-	UserID          int64  `db:"user_id"`
-	Aliases         string `db:"aliases"`
-	OriginLocation  string `db:"origin_location"`
-	CurrentLocation string `db:"current_location"`
-	AgeRange        string `db:"age_range"`
-	Traits          string `db:"traits"`
+	UserID          int64  `db:"user_id"`          // Unique Telegram User ID
+	Aliases         string `db:"aliases"`          // Comma-separated list of known aliases or names
+	OriginLocation  string `db:"origin_location"`  // User's place of origin, if known
+	CurrentLocation string `db:"current_location"` // User's current location, if known
+	AgeRange        string `db:"age_range"`        // Estimated age range (e.g., "20-30")
+	Traits          string `db:"traits"`           // Comma-separated list of observed personality traits or characteristics
 }

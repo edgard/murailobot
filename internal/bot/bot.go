@@ -49,14 +49,15 @@ func NewBot(
 }
 
 // Run starts the bot's main components (Telegram listener, scheduler)
-// and waits for a shutdown signal via the context.
+// and waits for a shutdown signal via the context using an errgroup.
+// It returns an error if any component fails unexpectedly.
 func (b *Bot) Run(ctx context.Context) error {
 	b.logger.Info("Starting bot orchestrator...")
 
 	// Use errgroup to manage lifecycles of concurrent components
 	g, gCtx := errgroup.WithContext(ctx)
 
-	// Start the Telegram bot listener
+	// Goroutine for the Telegram bot listener
 	g.Go(func() error {
 		b.logger.Info("Starting Telegram bot listener...")
 		// tgBot.Start blocks until the context is cancelled or an error occurs
@@ -72,10 +73,9 @@ func (b *Bot) Run(ctx context.Context) error {
 		return nil // Return nil on expected shutdown (context cancelled)
 	})
 
-	// Start the scheduler management goroutine
+	// Goroutine for the scheduler
 	g.Go(func() error {
 		b.logger.Info("Starting scheduler...")
-		// Start the scheduler (schedules jobs and starts ticker)
 		if err := b.scheduler.Start(); err != nil {
 			b.logger.Error("Failed to start scheduler", "error", err)
 			return fmt.Errorf("failed to start scheduler: %w", err) // Propagate error to errgroup
@@ -100,7 +100,6 @@ func (b *Bot) Run(ctx context.Context) error {
 	b.logger.Info("Bot orchestrator running. Waiting for shutdown signal or error...")
 	err := g.Wait()
 
-	// Check the reason for stopping
 	// Ignore context.Canceled errors as they indicate graceful shutdown.
 	if err != nil && !errors.Is(err, context.Canceled) {
 		b.logger.Error("Bot orchestrator stopped due to error", "error", err)

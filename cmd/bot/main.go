@@ -28,12 +28,13 @@ import (
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	exitCode := run(ctx)
-	stop()
+	stop() // Ensure context cancellation is signaled before exit
 	os.Exit(exitCode)
 }
 
+// run initializes and starts all application components (config, logger, db, ai client, bot, scheduler),
+// handles graceful shutdown, and returns an exit code (0 for success, 1 for failure).
 func run(ctx context.Context) int {
-	// Load configuration
 	configPath := flag.String("config", "./config.yaml", "Path to configuration file")
 	flag.Parse()
 
@@ -43,28 +44,25 @@ func run(ctx context.Context) int {
 		return 1
 	}
 
-	// Initialize logger
 	log := logger.NewLogger(cfg.Logger.Level, cfg.Logger.JSON)
 	slog.SetDefault(log)
 	log.Info("Logger initialized", "level", cfg.Logger.Level, "json", cfg.Logger.JSON)
 
-	// Connect to database
 	db, err := database.NewDB(cfg.Database.Path)
 	if err != nil {
 		log.Error("Failed to connect to database", "path", cfg.Database.Path, "error", err)
 		return 1
 	}
-	defer database.CloseDB(db)
+	defer database.CloseDB(db) // Ensure DB is closed on function exit
 	store := database.NewStore(db, log)
 
-	// Initialize Gemini client
 	gemClient, err := gemini.NewClient(ctx, cfg.Gemini, log)
 	if err != nil {
 		log.Error("Failed to initialize Gemini client", "error", err)
 		return 1
 	}
+	// Note: Gemini client does not have an explicit Close method in the SDK used.
 
-	// Prepare dependencies
 	hDeps := handlers.HandlerDeps{
 		Logger:       log,
 		Store:        store,
@@ -78,7 +76,6 @@ func run(ctx context.Context) int {
 		Config:       cfg,
 	}
 
-	// Initialize Telegram bot
 	botOpts := []tgbot.Option{
 		tgbot.WithMiddlewares(logger.Middleware(log)),
 		tgbot.WithDefaultHandler(handlers.NewMentionHandler(hDeps)),
@@ -89,7 +86,7 @@ func run(ctx context.Context) int {
 		return 1
 	}
 
-	// Retrieve bot info
+	// Retrieve bot info and store it in the config for runtime use
 	cfg.Telegram.BotInfo, err = tg.GetMe(ctx)
 	if err != nil {
 		log.Error("Failed to get bot info", "error", err)
@@ -97,28 +94,29 @@ func run(ctx context.Context) int {
 	}
 	log.Info("Retrieved bot info", "bot_id", cfg.Telegram.BotInfo.ID, "bot_username", cfg.Telegram.BotInfo.Username)
 
-	// Register Telegram handlers
 	cmdHandlers := handlers.RegisterAllCommands(hDeps)
 	if err := telegram.RegisterHandlers(tg, log, cmdHandlers); err != nil {
 		log.Error("Failed to register Telegram handlers", "error", err)
 		return 1
 	}
 
-	// Initialize scheduler and bot orchestrator
 	sched := bot.NewScheduler(log, &cfg.Scheduler, tasks.RegisterAllTasks(tDeps))
 	app := bot.NewBot(log, cfg, db, store, gemClient, tg, sched)
 
-	// Start bot
 	log.Info("Starting bot...")
-	runErr := app.Run(ctx)
+	runErr := app.Run(ctx) // Run blocks until context is cancelled or an error occurs
 	log.Info("Bot run loop finished. Initiating shutdown...")
 
+	// Check if the error is significant (not just context cancellation)
 	if runErr != nil && !errors.Is(runErr, context.Canceled) {
 		log.Error("Bot stopped due to error", "error", runErr)
+		// Allow logs to flush before exiting on error
 		time.Sleep(time.Second)
 		return 1
 	}
+
 	log.Info("Bot stopped gracefully.")
+	// Allow logs to flush before exiting gracefully
 	log.Info("Waiting briefly before exit...")
 	time.Sleep(time.Second)
 	return 0

@@ -1,3 +1,5 @@
+// Package handlers contains Telegram bot command and message handlers,
+// along with their registration logic and shared dependencies.
 package handlers
 
 import (

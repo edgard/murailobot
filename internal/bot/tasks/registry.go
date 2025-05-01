@@ -1,12 +1,9 @@
+// Package tasks provides interfaces, dependencies, and registration logic
+// for scheduled background tasks.
 package tasks
 
 import (
 	"context"
-	// "log/slog" // Removed unused import
-	// "github.com/go-telegram/bot" // Bot instance is now in TaskDeps
-	// "github.com/edgard/murailobot/internal/config" // Config is in TaskDeps
-	// "github.com/edgard/murailobot/internal/database" // Store is in TaskDeps
-	// "github.com/edgard/murailobot/internal/gemini" // GeminiClient is in TaskDeps
 )
 
 // ScheduledTaskFunc defines the standard signature for all scheduled tasks.
@@ -26,16 +23,14 @@ func RegisterAllTasks(deps TaskDeps) map[string]ScheduledTaskFunc {
 	// --- Register Tasks ---
 	// The key (e.g., "sql_maintenance") should match the key used in the config.yaml scheduler section.
 	tasks["sql_maintenance"] = newSQLMaintenanceTask(deps) // Refers to function in sql_maintenance_task.go
-	// tasks["profile_update"] = newProfileUpdateTask(deps) // Removed profile update task
 
 	// Add more tasks here by calling their respective factory functions:
 	// tasks["daily_report"] = newDailyReportTask(deps)
 	// tasks["cleanup_old_data"] = newCleanupTask(deps)
 
-	// Use logger from deps
 	deps.Logger.Info("Initialized scheduled tasks", "count", len(tasks))
 	return tasks
 }
 
 // --- Placeholder Task Factories ---
-// Implementations are now in separate files (e.g., sql_maintenance_task.go, profile_update.go)
+// Implementations are now in separate files (e.g., sql_maintenance_task.go)
