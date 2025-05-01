@@ -2,40 +2,34 @@ package handlers
 
 import (
 	"context"
-	"strings"
 
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
 )
 
-// NewHelpHandler returns a handler for the /help command.
+// NewHelpHandler creates a handler for the /help command.
 func NewHelpHandler(deps HandlerDeps) bot.HandlerFunc {
-	return helpHandler{deps}.Handle
-}
+	return func(ctx context.Context, b *bot.Bot, update *models.Update) {
+		log := deps.Logger.With("handler", "help")
 
-// helpHandler processes the /help command using injected dependencies.
-type helpHandler struct {
-	deps HandlerDeps
-}
+		// Basic validation
+		if update.Message == nil || update.Message.From == nil {
+			log.DebugContext(ctx, "Ignoring update with nil message or sender")
+			return
+		}
 
-func (h helpHandler) Handle(ctx context.Context, b *bot.Bot, update *models.Update) {
-	log := h.deps.Logger.With("handler", "help")
+		chatID := update.Message.Chat.ID
+		username := update.Message.From.Username
+		userID := update.Message.From.ID
 
-	if update.Message == nil || update.Message.From == nil {
-		log.WarnContext(ctx, "Help handler received update with nil message or sender", "update_id", update.ID)
-		return
-	}
+		log.InfoContext(ctx, "/help command received", "chat_id", chatID, "user_id", userID, "username", username)
 
-	log.InfoContext(ctx, "Handling /help command", "chat_id", update.Message.Chat.ID, "user_id", update.Message.From.ID)
+		// Use the help message from the config
+		helpMsg := deps.Config.Messages.HelpMsg // Updated field name
 
-	helpMsg := h.deps.Config.Messages.Help
-	if h.deps.Config.Telegram.BotInfo.Username != "" {
-		helpMsg = strings.ReplaceAll(helpMsg, "@botname", "@"+h.deps.Config.Telegram.BotInfo.Username)
-	}
-	_, err := b.SendMessage(ctx, &bot.SendMessageParams{ChatID: update.Message.Chat.ID, Text: helpMsg})
-	if err != nil {
-		log.ErrorContext(ctx, "Failed to send help message", "error", err, "chat_id", update.Message.Chat.ID)
-	} else {
-		log.DebugContext(ctx, "Successfully sent help message", "chat_id", update.Message.Chat.ID)
+		_, err := b.SendMessage(ctx, &bot.SendMessageParams{ChatID: chatID, Text: helpMsg})
+		if err != nil {
+			log.ErrorContext(ctx, "Failed to send help message", "error", err, "chat_id", chatID)
+		}
 	}
 }

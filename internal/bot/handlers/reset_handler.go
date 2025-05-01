@@ -41,7 +41,7 @@ func (h resetHandler) Handle(ctx context.Context, b *bot.Bot, update *models.Upd
 		log.WarnContext(ctx, "Reset operation timed out or was cancelled", "chat_id", chatID)
 		_, sendErr := b.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID: chatID,
-			Text:   "The reset operation took too long and was automatically cancelled. Please try again.",
+			Text:   h.deps.Config.Messages.ResetTimeoutMsg, // Use config message
 		})
 		if sendErr != nil {
 			log.ErrorContext(ctx, "Failed to send timeout message", "error", sendErr, "chat_id", chatID)
@@ -54,7 +54,7 @@ func (h resetHandler) Handle(ctx context.Context, b *bot.Bot, update *models.Upd
 		log.ErrorContext(ctx, "Failed to reset data", "error", err, "chat_id", chatID)
 		_, sendErr := b.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID: chatID,
-			Text:   h.deps.Config.Messages.GeneralError,
+			Text:   h.deps.Config.Messages.ResetErrorMsg, // Updated field name
 		})
 		if sendErr != nil {
 			log.ErrorContext(ctx, "Failed to send error message", "error", sendErr, "chat_id", chatID)
@@ -67,7 +67,7 @@ func (h resetHandler) Handle(ctx context.Context, b *bot.Bot, update *models.Upd
 	// Send confirmation
 	_, err = b.SendMessage(ctx, &bot.SendMessageParams{
 		ChatID: chatID,
-		Text:   h.deps.Config.Messages.HistoryReset,
+		Text:   h.deps.Config.Messages.ResetConfirmMsg, // Updated field name
 	})
 	if err != nil {
 		log.ErrorContext(ctx, "Failed to send reset confirmation message", "error", err, "chat_id", chatID)

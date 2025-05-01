@@ -31,15 +31,12 @@ func (h analyzeHandler) Handle(ctx context.Context, b *bot.Bot, update *models.U
 
 	chatID := update.Message.Chat.ID
 	userID := update.Message.From.ID
-	log.InfoContext(ctx, "Admin requested manual profile analysis", "chat_id", chatID, "user_id", userID)
+	log.InfoContext(ctx, "Admin requested profile analysis", "chat_id", chatID, "user_id", userID)
 
-	// Send initial "Analyzing..." message
-	_, err := b.SendMessage(ctx, &bot.SendMessageParams{
-		ChatID: chatID,
-		Text:   h.deps.Config.Messages.Analyzing,
-	})
-	if err != nil {
-		log.ErrorContext(ctx, "Failed to send analyzing message", "error", err, "chat_id", chatID)
+	// Send initial progress message
+	if _, err := b.SendMessage(ctx, &bot.SendMessageParams{ChatID: chatID, Text: h.deps.Config.Messages.AnalyzeProgressMsg}); err != nil { // Updated field name
+		log.ErrorContext(ctx, "Failed to send analysis progress message", "error", err, "chat_id", chatID)
+		// Don't return, try to proceed anyway
 	}
 
 	// Create a timeout context for the analysis operation
@@ -211,50 +208,48 @@ func (h analyzeHandler) Handle(ctx context.Context, b *bot.Bot, update *models.U
 
 	// --- End of consolidated profile generation logic ---
 
-	// Handle timeout specific error message
+	// Handle timeout errors specifically
 	if errors.Is(analysisErr, context.DeadlineExceeded) || errors.Is(analysisErr, context.Canceled) {
-		log.WarnContext(ctx, "Analysis operation timed out or was cancelled", "chat_id", chatID)
-		_, err := b.SendMessage(ctx, &bot.SendMessageParams{
+		log.WarnContext(ctx, "Profile analysis timed out or was cancelled", "chat_id", chatID)
+		_, sendErr := b.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID: chatID,
-			Text:   "The analysis operation took too long and was automatically cancelled. Try with fewer unprocessed messages.",
+			Text:   h.deps.Config.Messages.AnalyzeTimeoutMsg, // Updated field name
 		})
-		if err != nil {
-			log.ErrorContext(ctx, "Failed to send timeout message", "error", err, "chat_id", chatID)
+		if sendErr != nil {
+			log.ErrorContext(ctx, "Failed to send timeout message", "error", sendErr, "chat_id", chatID)
 		}
 		return
 	}
 
-	// Handle other errors
+	// Handle other errors during the process
 	if analysisErr != nil {
 		log.ErrorContext(ctx, "Profile generation logic failed", "error", analysisErr, "chat_id", chatID)
-		// Inline sendErrorReply
-		_, err := b.SendMessage(ctx, &bot.SendMessageParams{
+		_, sendErr := b.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID: chatID,
-			Text:   h.deps.Config.Messages.GeneralError,
+			Text:   h.deps.Config.Messages.ErrorGeneralMsg, // Updated field name
 		})
-		if err != nil {
-			log.ErrorContext(ctx, "Failed to send error message", "error", err, "chat_id", chatID)
+		if sendErr != nil {
+			log.ErrorContext(ctx, "Failed to send error message", "error", sendErr, "chat_id", chatID)
 		}
 		return
 	}
 
+	// Handle case where no messages were processed
 	if processedCount == 0 {
 		log.InfoContext(ctx, "No unprocessed messages found or processed by profile generation logic", "chat_id", chatID)
-		// Inline sendReply
-		_, err := b.SendMessage(ctx, &bot.SendMessageParams{
+		_, sendErr := b.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID: chatID,
-			Text:   h.deps.Config.Messages.AnalysisNoMessages,
+			Text:   h.deps.Config.Messages.AnalyzeNoMessagesMsg, // Updated field name
 		})
-		if err != nil {
-			log.ErrorContext(ctx, "Failed to send no messages reply", "error", err, "chat_id", chatID)
+		if sendErr != nil {
+			log.ErrorContext(ctx, "Failed to send no messages reply", "error", sendErr, "chat_id", chatID)
 		}
 		return
 	}
 
-	// Send Confirmation
-	replyMsg := fmt.Sprintf(h.deps.Config.Messages.AnalysisCompleteFmt, processedCount, savedCount)
-	// Inline sendReply
-	_, err = b.SendMessage(ctx, &bot.SendMessageParams{
+	// Send completion message
+	replyMsg := fmt.Sprintf(h.deps.Config.Messages.AnalyzeCompleteFmt, processedCount, savedCount) // Updated field name
+	_, err := b.SendMessage(ctx, &bot.SendMessageParams{
 		ChatID: chatID,
 		Text:   replyMsg,
 	})

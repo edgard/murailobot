@@ -66,22 +66,20 @@
   - Added structured error reporting for both users and logs
 - Gemini Prompt Refinement:
   - Updated `MentionSystemInstructionHeader` to include a capabilities list (conversational assistant, admin commands, user profile analysis, image analysis, task scheduling, database operations) and explicitly instruct the model *not* to mimic the input message format (timestamp/UID prefix) in its replies.
+- Bot Info Retrieval: Implemented runtime retrieval of bot information (`GetMe`) and storage within the configuration struct.
 
 **Next Steps**
-- Implement comprehensive unit tests to verify scheduler and mention handler
-- Add integration tests for the bot orchestrator and component interactions
-- Improve documentation of the new gocron scheduler implementation
-- Consider implementing additional AI models beyond Gemini for comparison
-- Dockerize the application and set up a CI/CD workflow
-- Create helper CLI scripts for development tasks
-- Enhance the testing of transaction management and atomic operations
-- Consider additional middleware for rate limiting and request validation
-- Improve user feedback for administrative operations
-- Add telemetry for AI operation performance monitoring
-- Implement circuit breaker pattern for AI service resilience
-- Add comprehensive tests for the profile analysis logic
-- Consider implementing pagination for large profile datasets
-- Optimize message processing batch sizes for improved throughput
+- Implement comprehensive unit tests for scheduler, mention handler, transaction logic, middleware, and profile analysis logic.
+- Add integration tests for the bot orchestrator and component interactions.
+- Update `README.md` and other documentation to reflect recent changes (scheduler, commands, features).
+- Dockerize the application and set up a CI/CD workflow (GitHub Actions based on README).
+- Create helper CLI scripts for development tasks (e.g., seeding, resetting state).
+- Improve user feedback for administrative operations.
+- Add telemetry/monitoring for AI operation performance.
+- Implement circuit breaker pattern for AI service resilience.
+- Consider implementing pagination for large profile datasets (`/mrl_profiles`).
+- Optimize message processing batch sizes for improved throughput.
+- Explore database connection pooling improvements.
 
 **Active Decisions & Considerations**
 - Use built-in validators from go-playground/validator when available instead of custom implementations
@@ -101,6 +99,7 @@
 - Use statistical reporting for complex operations (processed/saved counts)
 - Prefer explicit cancellation and timeout handling over generic error checks
 - Ensure AI responses do not include the input message formatting prefixes (timestamp/UID).
+- Enrich configuration at runtime where necessary (e.g., BotInfo from `GetMe`).
 
 **Important Patterns & Preferences**
 - Configuration: Prefer built-in validators and provide sensible defaults for all options
@@ -118,6 +117,7 @@
 - Error Recovery: Implement graceful degradation with partial success handling in batch operations
 - Concurrency Management: Use proper timeout contexts for long-running operations with clear duration
 - AI Prompting: Explicitly instruct the model on desired output formatting, including what *not* to include (e.g., input prefixes).
+- Enrich configuration struct at runtime with dynamic data (e.g., BotInfo) when feasible.
 
 **Learnings & Project Insights**
 - Consolidated error handling in batch operations significantly improves robustness and maintainability
@@ -127,3 +127,4 @@
 - Factory functions for handlers create consistent initialization patterns and dependency injection
 - Explicit context management with timeouts prevents resource leaks in long-running operations
 - Structured logging with operation timing provides valuable diagnostic information
+- Separating core system instructions (like bot capabilities) from response formatting instructions (like avoiding prefixes) in AI prompts leads to cleaner and more maintainable prompt management.

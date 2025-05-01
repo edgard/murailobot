@@ -25,7 +25,7 @@
 - Sqlx for DB access and migrations via `migrate`
 - Errgroup and `signal.NotifyContext` for graceful concurrency and shutdown
 - Context-aware HTTP clients for image downloads with proper timeout handling
-- go-telegram/bot for Telegram API integration with middleware support
+- go-telegram/bot for Telegram API integration with middleware support, including `GetMe` for runtime bot info retrieval.
 - Explicit context timeouts for AI operations with appropriate durations
 
 **Technical Constraints**

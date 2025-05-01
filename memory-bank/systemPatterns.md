@@ -1,7 +1,7 @@
 # System Patterns
 
 **Architecture & Layout**
-- Entry point: `cmd/bot/main.go` initializes config, logger, DB, AI client, scheduler, handlers, tasks, and starts the orchestrator.
+- Entry point: `cmd/bot/main.go` initializes config, logger, DB, AI client, scheduler, handlers, tasks, retrieves bot info (`GetMe`) storing it in config, and starts the orchestrator.
 - Modular packages under `internal/`:
   - `config`: Viper-based `LoadConfig` and validation
   - `logger`: `NewLogger` using Go `slog`
@@ -57,6 +57,8 @@
   - Metrics collection during batch processing (processed/saved counts)
   - Closure-based scope management for complex operations
   - Explicit state checks before progressing to subsequent steps
+  - Use of JSON schema mode for structured output (`GenerateProfiles`)
+  - Dynamic system instruction header injection for context (`GenerateReply`, `GenerateImageAnalysis`)
 
 ## MentionSystemInstructionHeader
 

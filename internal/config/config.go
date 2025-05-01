@@ -61,24 +61,43 @@ type TaskConfig struct {
 
 // BotMessagesConfig holds configurable strings used by the bot in replies.
 type BotMessagesConfig struct {
-	// General
-	Welcome       string `mapstructure:"welcome" validate:"required"`
-	GeneralError  string `mapstructure:"general_error" validate:"required"`
-	NotAuthorized string `mapstructure:"not_authorized" validate:"required"`
-	Help          string `mapstructure:"help" validate:"required"`
+	// --- General Bot Messages ---
+	StartWelcomeMsg string `mapstructure:"start_welcome_msg" validate:"required"`
+	HelpMsg         string `mapstructure:"help_msg" validate:"required"`
 
-	// Admin Command Responses
-	HistoryReset            string `mapstructure:"history_reset" validate:"required"`
-	Analyzing               string `mapstructure:"analyzing" validate:"required"`
-	AnalysisNoMessages      string `mapstructure:"analysis_no_messages" validate:"required"`
-	AnalysisCompleteFmt     string `mapstructure:"analysis_complete_fmt" validate:"required,contains=%d"` // Must contain %d for formatting
-	NoProfiles              string `mapstructure:"no_profiles" validate:"required"`
-	ProfilesHeader          string `mapstructure:"profiles_header" validate:"required"`
-	EditUserUsage           string `mapstructure:"edit_user_usage" validate:"required"`
-	EditUserInvalidID       string `mapstructure:"edit_user_invalid_id" validate:"required"`
-	EditUserInvalidFieldFmt string `mapstructure:"edit_user_invalid_field_fmt" validate:"required,contains=%s"` // Must contain %s for formatting
-	EditUserNotFoundFmt     string `mapstructure:"edit_user_not_found_fmt" validate:"required,contains=%d"`     // Must contain %d for formatting
-	EditUserSuccessFmt      string `mapstructure:"edit_user_success_fmt" validate:"required,contains=%s"`       // Must contain %s for formatting
+	// --- Error & Fallback Messages ---
+	ErrorGeneralMsg      string `mapstructure:"error_general_msg" validate:"required"`
+	ErrorUnauthorizedMsg string `mapstructure:"error_unauthorized_msg" validate:"required"`
+
+	// --- Mention Handler Specific ---
+	MentionNoPromptMsg           string `mapstructure:"mention_no_prompt_msg" validate:"required"`
+	MentionImageErrorMsg         string `mapstructure:"mention_image_error_msg" validate:"required"`
+	MentionAIEmptyFallbackMsg    string `mapstructure:"mention_ai_empty_fallback_msg" validate:"required"`
+	MentionEmptyReplyFallbackMsg string `mapstructure:"mention_empty_reply_fallback_msg" validate:"required"`
+
+	// --- Admin Command: /mrl_reset ---
+	ResetConfirmMsg string `mapstructure:"reset_confirm_msg" validate:"required"`
+	ResetErrorMsg   string `mapstructure:"reset_error_msg" validate:"required"`
+	ResetTimeoutMsg string `mapstructure:"reset_timeout_msg" validate:"required"`
+
+	// --- Admin Command: /mrl_analyze ---
+	AnalyzeProgressMsg   string `mapstructure:"analyze_progress_msg" validate:"required"`
+	AnalyzeNoMessagesMsg string `mapstructure:"analyze_no_messages_msg" validate:"required"`
+	AnalyzeCompleteFmt   string `mapstructure:"analyze_complete_fmt" validate:"required,contains=%d"` // Must contain %d for formatting
+	AnalyzeTimeoutMsg    string `mapstructure:"analyze_timeout_msg" validate:"required"`
+
+	// --- Admin Command: /mrl_profiles ---
+	ProfilesEmptyMsg  string `mapstructure:"profiles_empty_msg" validate:"required"`
+	ProfilesHeaderMsg string `mapstructure:"profiles_header_msg" validate:"required"`
+
+	// --- Admin Command: /mrl_edit_user ---
+	EditUserUsageMsg          string `mapstructure:"edit_user_usage_msg" validate:"required"`
+	EditUserInvalidIDErrorMsg string `mapstructure:"edit_user_invalid_id_error_msg" validate:"required"`
+	EditUserInvalidFieldFmt   string `mapstructure:"edit_user_invalid_field_fmt" validate:"required,contains=%s"` // Must contain %s for formatting
+	EditUserNotFoundFmt       string `mapstructure:"edit_user_not_found_fmt" validate:"required,contains=%d"`     // Must contain %d for formatting
+	EditUserSuccessFmt        string `mapstructure:"edit_user_success_fmt" validate:"required,contains=%s"`       // Must contain %s for formatting
+	EditUserUpdateErrorFmt    string `mapstructure:"edit_user_update_error_fmt" validate:"required,contains=%s"`  // Must contain %s for formatting
+	EditUserFetchErrorFmt     string `mapstructure:"edit_user_fetch_error_fmt" validate:"required,contains=%d"`   // Must contain %d for formatting
 }
 
 // LoadConfig reads configuration from file, environment variables, and validates it.
@@ -111,22 +130,44 @@ func LoadConfig(configPath string) (*Config, error) {
 		},
 	})
 
-	// Default Messages
-	v.SetDefault("messages.welcome", "Hello! Use @botname to chat with me.")
-	v.SetDefault("messages.general_error", "Sorry, something went wrong. Please try again later.")
-	v.SetDefault("messages.not_authorized", "You are not authorized to use this command.")
-	v.SetDefault("messages.help", "Available commands:\n/help - Show this help message\nUse @botname to chat with the bot.\n\nAdmin commands:\n/mrl_reset - Delete all message history and profiles\n/mrl_analyze - Force analysis of unprocessed messages\n/mrl_profiles - Show all stored user profiles\n/mrl_edit_user <user_id> <field> <value> - Manually edit a user profile field (fields: aliases, origin_location, current_location, age_range, traits)")
-	v.SetDefault("messages.history_reset", "All message history and user profiles have been soft-deleted.")
-	v.SetDefault("messages.analyzing", "Analyzing unprocessed messages to update user profiles...")
-	v.SetDefault("messages.analysis_no_messages", "No new messages found to analyze.")
-	v.SetDefault("messages.analysis_complete_fmt", "Analysis complete. Processed %d messages. Updated/created %d profiles.")
-	v.SetDefault("messages.no_profiles", "No user profiles found in the database.")
-	v.SetDefault("messages.profiles_header", "--- User Profiles ---\nUserID | Aliases | Origin | Current | Age | Traits\n--------------------------------------------------\n")
-	v.SetDefault("messages.edit_user_usage", "Usage: /mrl_edit_user <user_id> <field_name> <new_value...>")
-	v.SetDefault("messages.edit_user_invalid_id", "Invalid User ID provided. It must be a number.")
+	// Default Messages (Grouped logically)
+	// --- General Bot Messages ---
+	v.SetDefault("messages.start_welcome_msg", "Hello! Mention me (@botname) or use /help to see what I can do.")
+	v.SetDefault("messages.help_msg", "Here's how you can interact with me:\\n- Mention me (@botname) followed by your question or request.\\n- Use /help to see this message again.\\n\\nAdmin commands:\\n/mrl_reset - Delete all message history and profiles\\n/mrl_analyze - Force analysis of unprocessed messages\\n/mrl_profiles - Show all stored user profiles\\n/mrl_edit_user <user_id> <field> <value> - Manually edit a user profile field (fields: aliases, origin_location, current_location, age_range, traits)")
+
+	// --- Error & Fallback Messages ---
+	v.SetDefault("messages.error_general_msg", "Sorry, something went wrong. Please try again later.")
+	v.SetDefault("messages.error_unauthorized_msg", "You are not authorized to use this command.")
+
+	// --- Mention Handler Specific ---
+	v.SetDefault("messages.mention_no_prompt_msg", "You mentioned me, but didn't provide a prompt. How can I help?")
+	v.SetDefault("messages.mention_image_error_msg", "I couldn't process the image. Please try again.")
+	v.SetDefault("messages.mention_ai_empty_fallback_msg", "I processed your message but couldn't generate a meaningful response. Could you rephrase or provide more context?")
+	v.SetDefault("messages.mention_empty_reply_fallback_msg", "Sorry, I couldn't come up with a response for that.")
+
+	// --- Admin Command: /mrl_reset ---
+	v.SetDefault("messages.reset_confirm_msg", "All message history and user profiles have been deleted.")
+	v.SetDefault("messages.reset_error_msg", "Sorry, I encountered an error while trying to reset the data.")
+	v.SetDefault("messages.reset_timeout_msg", "The data reset operation timed out. Please try again later.")
+
+	// --- Admin Command: /mrl_analyze ---
+	v.SetDefault("messages.analyze_progress_msg", "Analyzing unprocessed messages to update user profiles...")
+	v.SetDefault("messages.analyze_no_messages_msg", "No new messages found to analyze.")
+	v.SetDefault("messages.analyze_complete_fmt", "Analysis complete. Processed %d messages. Updated/created %d profiles.")
+	v.SetDefault("messages.analyze_timeout_msg", "The profile analysis operation timed out. Please try again later.")
+
+	// --- Admin Command: /mrl_profiles ---
+	v.SetDefault("messages.profiles_empty_msg", "No user profiles found in the database.")
+	v.SetDefault("messages.profiles_header_msg", "UserID | Aliases | Origin | Current | Age | Traits\n\n")
+
+	// --- Admin Command: /mrl_edit_user ---
+	v.SetDefault("messages.edit_user_usage_msg", "Usage: /mrl_edit_user <user_id> <field_name> <new_value...>")
+	v.SetDefault("messages.edit_user_invalid_id_error_msg", "Invalid User ID provided. It must be a number.")
 	v.SetDefault("messages.edit_user_invalid_field_fmt", "Invalid field name: '%s'. Allowed fields are: %s")
 	v.SetDefault("messages.edit_user_not_found_fmt", "User profile not found for ID: %d")
 	v.SetDefault("messages.edit_user_success_fmt", "Successfully updated field '%s' for user %d.")
+	v.SetDefault("messages.edit_user_update_error_fmt", "Sorry, I encountered an error while trying to update field '%s'.")
+	v.SetDefault("messages.edit_user_fetch_error_fmt", "Sorry, I couldn't fetch the profile for user ID %d.")
 
 	// Set config file path, name, and type
 	if configPath != "" {

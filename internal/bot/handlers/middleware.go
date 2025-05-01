@@ -25,17 +25,19 @@ func AdminOnly(deps HandlerDeps) tgbot.Middleware {
 
 			if userID != adminID {
 				// User is not the admin
-				errMsg := deps.Config.Messages.NotAuthorized
+				chatID := update.Message.Chat.ID
+				// Get logger from deps
+				log := deps.Logger.With("middleware", "AdminOnly")
+				log.WarnContext(ctx, "Unauthorized access attempt", "user_id", userID, "chat_id", chatID)
+				// Send unauthorized message using config
 				_, err := bot.SendMessage(ctx, &tgbot.SendMessageParams{
-					ChatID: update.Message.Chat.ID,
-					Text:   errMsg,
+					ChatID: chatID,
+					Text:   deps.Config.Messages.ErrorUnauthorizedMsg, // Updated field name
 				})
 				if err != nil {
-					deps.Logger.ErrorContext(ctx, "Failed to send 'Not Authorized' message", "error", err, "user_id", userID, "chat_id", update.Message.Chat.ID)
+					log.ErrorContext(ctx, "Failed to send unauthorized message", "error", err, "chat_id", chatID)
 				}
-				// Stop processing this update for subsequent handlers/middleware
-				deps.Logger.WarnContext(ctx, "Unauthorized access attempt blocked", "user_id", userID, "admin_id", adminID)
-				return // Stop processing for this handler chain
+				return // Stop processing
 			}
 
 			// User is the admin, proceed to the next handler

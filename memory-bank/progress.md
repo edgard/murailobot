@@ -60,26 +60,18 @@
   - Closure-based scope management for complex operations
 - AI Response Formatting:
   - Updated `MentionSystemInstructionHeader` prompt to include a capabilities list (conversational assistant, admin commands, user profile analysis, image analysis, task scheduling, database operations) and prevent the AI from mimicking input message prefixes (timestamp/UID) in its replies.
+- Runtime bot information retrieval (`GetMe`) and storage in config.
 
 **What's Left to Build**
-- Unit and integration tests for the new scheduler implementation
-- Comprehensive testing for the enhanced mention handler
-- Integration tests for the bot orchestrator and component interactions
-- Database connection pooling improvements for better scalability
-- Database abstraction layer to potentially support other backends
-- Documentation improvements for the new gocron scheduler
-- Dockerization and CI/CD pipeline setup
-- Helper CLI scripts for development tasks (seeding, resetting state, database maintenance)
-- Additional test coverage for command handlers and transaction logic
-- Rate limiting middleware for public endpoints
-- More granular access control for different admin levels
-- Update `README.md` to reflect all the recent improvements and migration
-- Performance profiling and optimization for frequently accessed data
-- Consider implementing additional AI models beyond Gemini for comparison
-- Telemetry system for AI operation performance monitoring
-- Circuit breaker pattern implementation for external service resilience
-- Pagination implementation for large profile datasets
-- Optimization of message batch processing for throughput
+- Unit Tests: Scheduler, mention handler, transaction logic, middleware, profile analysis logic.
+- Integration Tests: Bot orchestrator, component interactions.
+- Documentation: Update `README.md` and internal docs for scheduler migration, new features.
+- CI/CD: Set up GitHub Actions for build, test, release, Docker builds (partially defined in README).
+- Dev Tools: Helper CLI scripts (seeding, reset, maintenance).
+- Scalability/Resilience: DB connection pooling, circuit breaker for AI, pagination for profiles, batch size optimization.
+- User Experience: Improved feedback for admin commands.
+- Monitoring: Telemetry for AI operations.
+- Exploration: Consider alternative AI models, database abstraction layer.
 
 **Current Status**
 - Core architecture and features are fully implemented with improved scheduler
@@ -98,20 +90,22 @@
 - Terminology has been standardized across code and database schema for better consistency
 - Configuration example updated with detailed inline documentation
 - AI prompts refined to ensure cleaner output formatting.
+- Runtime bot information is successfully retrieved and stored.
 
 **Known Issues**
-- No comprehensive tests for the new scheduler implementation yet
-- Need to verify the robustness of the mention handler under high load
-- Potential for optimization in database query patterns and connection pooling
-- Need to implement consistent error handling patterns across all handlers
-- Potential for optimization in database transaction patterns
-- Could improve the user feedback for administrative operations
-- No comprehensive testing strategy for middleware yet
-- Documentation needs to be updated to reflect the scheduler migration
-- AI analysis operations may timeout under high load or complex profiles
-- Need better telemetry for long-running AI operations
-- Large message batches may cause performance issues during analysis
-- ~~AI model sometimes mimics input message format (timestamp/UID prefix) in replies.~~ (Resolved by prompt update)
+- **Testing Gaps:** Lack of comprehensive unit/integration tests for:
+    - Scheduler logic and task execution.
+    - Mention handler robustness (especially under load).
+    - Database transaction atomicity and edge cases.
+    - Middleware functionality (e.g., AdminOnly).
+    - Profile analysis logic (`analyze_handler.go`).
+- Potential performance bottlenecks:
+    - Database query patterns under load.
+    - Large message batches during profile analysis.
+    - AI analysis operations timing out under load.
+- User feedback for admin operations could be more informative.
+- Documentation (README, etc.) needs updates for recent changes.
+- Lack of telemetry for AI operations.
 
 **Evolution of Decisions**
 - Moved from custom validators to built-in validators where possible for simplicity and maintainability
@@ -132,3 +126,4 @@
 - Added statistical reporting (processed/saved counts) to batch operations
 - Introduced dedicated timeout contexts for long-running AI operations
 - Refined AI prompts to explicitly guide output formatting and prevent unwanted mimicry of input structure.
+- Decided to enrich configuration at runtime with data fetched after initialization (e.g., BotInfo via `GetMe`).

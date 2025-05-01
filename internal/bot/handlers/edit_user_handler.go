@@ -48,7 +48,7 @@ func (h editUserHandler) Handle(ctx context.Context, b *bot.Bot, update *models.
 	if len(args) < 4 {
 		_, err := b.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID: chatID,
-			Text:   h.deps.Config.Messages.EditUserUsage,
+			Text:   h.deps.Config.Messages.EditUserUsageMsg,
 		})
 		if err != nil {
 			log.ErrorContext(ctx, "Failed to send usage message", "error", err, "chat_id", chatID)
@@ -65,7 +65,7 @@ func (h editUserHandler) Handle(ctx context.Context, b *bot.Bot, update *models.
 	if err != nil {
 		_, err := b.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID: chatID,
-			Text:   h.deps.Config.Messages.EditUserInvalidID,
+			Text:   h.deps.Config.Messages.EditUserInvalidIDErrorMsg,
 		})
 		if err != nil {
 			log.ErrorContext(ctx, "Failed to send invalid ID message", "error", err, "chat_id", chatID)
@@ -99,12 +99,14 @@ func (h editUserHandler) Handle(ctx context.Context, b *bot.Bot, update *models.
 	profile, err := h.deps.Store.GetUserProfile(ctx, userID)
 	if err != nil {
 		log.ErrorContext(ctx, "Failed to get user profile for editing", "error", err, "target_user_id", userID)
+		// Use specific fetch error format
+		replyMsg := fmt.Sprintf(h.deps.Config.Messages.EditUserFetchErrorFmt, userID)
 		_, sendErr := b.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID: chatID,
-			Text:   h.deps.Config.Messages.GeneralError,
+			Text:   replyMsg,
 		})
 		if sendErr != nil {
-			log.ErrorContext(ctx, "Failed to send error message", "error", sendErr, "chat_id", chatID)
+			log.ErrorContext(ctx, "Failed to send fetch error message", "error", sendErr, "chat_id", chatID)
 		}
 		return
 	}
@@ -144,7 +146,7 @@ func (h editUserHandler) Handle(ctx context.Context, b *bot.Bot, update *models.
 		log.ErrorContext(ctx, "Internal error: validated field name not handled in switch", "field_name", fieldName)
 		_, sendErr := b.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID: chatID,
-			Text:   h.deps.Config.Messages.GeneralError,
+			Text:   h.deps.Config.Messages.ErrorGeneralMsg, // Use general error config
 		})
 		if sendErr != nil {
 			log.ErrorContext(ctx, "Failed to send error message", "error", sendErr, "chat_id", chatID)
@@ -156,12 +158,14 @@ func (h editUserHandler) Handle(ctx context.Context, b *bot.Bot, update *models.
 	err = h.deps.Store.SaveUserProfile(ctx, profile)
 	if err != nil {
 		log.ErrorContext(ctx, "Failed to save updated user profile", "error", err, "target_user_id", userID)
+		// Use specific update error format
+		replyMsg := fmt.Sprintf(h.deps.Config.Messages.EditUserUpdateErrorFmt, fieldName)
 		_, sendErr := b.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID: chatID,
-			Text:   h.deps.Config.Messages.GeneralError,
+			Text:   replyMsg,
 		})
 		if sendErr != nil {
-			log.ErrorContext(ctx, "Failed to send error message", "error", sendErr, "chat_id", chatID)
+			log.ErrorContext(ctx, "Failed to send update error message", "error", sendErr, "chat_id", chatID)
 		}
 		return
 	}
