@@ -5,29 +5,32 @@
 [![Go Version](https://img.shields.io/badge/go-1.24-blue.svg)](https://golang.org)
 [![GitHub Release](https://img.shields.io/github/v/release/edgard/murailobot)](https://github.com/edgard/murailobot/releases/latest)
 
-A Telegram bot powered by Google's Gemini AI models that provides intelligent responses through the Telegram messaging platform.
+A Telegram bot powered by Google's Gemini AI models that provides intelligent responses through the Telegram messaging platform, with sophisticated user profiling and image analysis capabilities.
 
 ## Prerequisites
 
-- Go 1.24+
+- Go 1.20+
 - Telegram Bot Token (from @BotFather)
 - Google Gemini API Key
 
 ## Quick Start
 
 1. Get the bot:
+
 ```bash
 git clone https://github.com/edgard/murailobot.git
 cd murailobot
 ```
 
 2. Configure:
+
 ```bash
 cp config.yaml.example config.yaml
 # Edit config.yaml with your tokens and admin ID
 ```
 
 3. Run:
+
 ```bash
 make build
 ./murailobot
@@ -36,16 +39,26 @@ make build
 ## Configuration
 
 Minimal config.yaml example:
+
 ```yaml
 telegram:
   token: "your-telegram-bot-token" # Required
-  admin_user_id: 123456789         # Required
+  admin_user_id: 123456789 # Required
 
 gemini:
-  api_key: "your-gemini-api-key"   # Required
+  api_key: "your-gemini-api-key" # Required
 ```
 
-For a complete configuration with all options, see [config.yaml.example](config.yaml.example).
+For a complete configuration with all options and detailed documentation, see [config.yaml.example](config.yaml.example).
+
+Key configuration sections:
+
+- `telegram`: Bot token and admin user ID
+- `database`: SQLite database settings
+- `gemini`: Google Gemini API settings
+- `logger`: Logging configuration
+- `scheduler`: Scheduled task settings with cron expressions
+- `messages`: Customizable bot response templates
 
 ## Docker
 
@@ -53,6 +66,8 @@ For a complete configuration with all options, see [config.yaml.example](config.
 docker pull ghcr.io/edgard/murailobot:latest
 docker run -v $(pwd)/config.yaml:/app/config.yaml ghcr.io/edgard/murailobot:latest
 ```
+
+Both AMD64 and ARM64 architectures are supported.
 
 ## Usage
 
@@ -75,17 +90,32 @@ MurailoBot is designed to operate in Telegram group chats:
 4. The bot can analyze both text and images when mentioned
 5. Group messages are saved for context and profile generation
 
-## Features
+## Key Features
 
-- Chat with Google's Gemini AI through Telegram group mentions
-- Image analysis capabilities for photos shared in the chat
-- Persistent conversation history with sophisticated context management
-- Advanced user profiling system with behavioral analysis
-- Scheduled database maintenance tasks
-- Role-based access control for administrative commands
-- Docker support for both AMD64 and ARM64 architectures
-- Simple YAML configuration
-- Efficient database management with SQLite
+- **AI Conversation**: Chat with Google's Gemini AI through Telegram group mentions
+- **Image Analysis**: Process and understand photos shared in the group chat
+- **Context Management**: Persistent conversation history with sophisticated context handling
+- **User Profiling**: Advanced user profiling system with behavioral analysis
+- **Scheduled Tasks**: Automated database maintenance using gocron v2
+- **Admin Commands**: Protected administrative operations with proper access control
+- **Atomic Database Operations**: Consistent data handling with transaction management
+- **Docker Support**: Container images for both AMD64 and ARM64 architectures
+- **Robust Error Handling**: Comprehensive error management with user-friendly messages
+- **Context-aware Timeouts**: Prevent resource leaks in long-running AI operations
+
+## Technical Architecture
+
+MurailoBot features a modular architecture with:
+
+- **Configuration**: Viper-based with validation via go-playground/validator
+- **Logging**: Structured logging using Go's `slog`
+- **Database**: SQLite with embedded migrations and transaction management
+- **Scheduler**: Task scheduling with gocron v2 for improved job management
+- **AI Integration**: Google Gemini API with context timeout management
+- **Telegram API**: Integration via go-telegram/bot with middleware support
+- **Middleware**: Protection for administrative commands
+- **Component Lifecycle**: Proper startup/shutdown with context management
+- **Error Handling**: Consistent approach across components with structured logging
 
 ## User Profiling System
 
@@ -98,11 +128,37 @@ MurailoBot includes a sophisticated user profiling system that:
 - Supports manual profile editing by administrators
 
 The profiling system gathers insights by analyzing:
+
 - Language patterns and word choice
 - Emotional expressions and communication style
 - Recurring themes in communications
 - Cultural references and personal details
 - Group interaction dynamics
+
+## Development
+
+### Building from Source
+
+```bash
+# Build the application
+make build
+
+# Run the application
+make run
+
+# Apply database migrations manually
+make migrate
+```
+
+### Environment Variables
+
+All configuration options can also be set via environment variables with the `BOT_` prefix:
+
+```bash
+export BOT_TELEGRAM_TOKEN="your-telegram-bot-token"
+export BOT_GEMINI_API_KEY="your-gemini-api-key"
+export BOT_TELEGRAM_ADMIN_USER_ID=123456789
+```
 
 ## Release Process
 

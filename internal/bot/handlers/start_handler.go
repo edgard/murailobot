@@ -1,5 +1,3 @@
-// Package handlers contains Telegram bot command and message handlers,
-// along with their registration logic.
 package handlers
 
 import (
@@ -9,7 +7,8 @@ import (
 	"github.com/go-telegram/bot/models"
 )
 
-// NewStartHandler creates a handler for the /start command.
+// NewStartHandler creates a handler for the /start command that welcomes users
+// and provides initial guidance on how to interact with the bot.
 func NewStartHandler(deps HandlerDeps) bot.HandlerFunc {
 	return func(ctx context.Context, b *bot.Bot, update *models.Update) {
 		log := deps.Logger.With("handler", "start")

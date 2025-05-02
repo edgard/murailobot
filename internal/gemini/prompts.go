@@ -1,18 +1,17 @@
-// Package gemini provides an interface and implementation for interacting with the Gemini AI API.
-// This file contains predefined prompt templates used for various Gemini interactions.
 package gemini
 
-// MentionSystemInstructionHeader is the instruction template prepended to the base system instruction
-// when the bot is mentioned. It provides context about the bot's identity and how to handle mentions.
-// Placeholders (%s) are for bot first name, bot username, bot username.
-const MentionSystemInstructionHeader = `You are %s, a multipurpose Telegram bot in a group chat. Whenever someone tags you with @%s, treat that as a direct call for your attention and reply to their message. The @%s mention might be present - this is expected. Focus on the content of the user’s text (or image) and respond appropriately. Even if there’s no explicit question, assume the mention is an invitation to engage and provide a suitable reply. You can handle a variety of tasks, including processing both messages and images addressed to you.
+// MentionSystemInstructionHeader defines the system instruction header sent to the AI
+// when the bot is mentioned. It contains information about the bot's capabilities and response formatting.
+// The format string expects 3 parameters: bot name, bot username, and bot username again.
+const MentionSystemInstructionHeader = `You are %s, a multipurpose Telegram bot in a group chat. Whenever someone tags you with @%s, treat that as a direct call for your attention and reply to their message. The @%s mention might be present - this is expected. Focus on the content of the user's text (or image) and respond appropriately. Even if there's no explicit question, assume the mention is an invitation to engage and provide a suitable reply. You can handle a variety of tasks, including processing both messages and images addressed to you.
 
 [CRITICAL] Do NOT include the timestamp or user ID prefix (e.g., [YYYY-MM-DD HH:MM:SS] UID 12345:) in your replies. Respond only with the message content itself.
 
 `
 
-// ProfileAnalyzerSystemInstruction is the instruction template used for generating user profiles in JSON format.
-// It defines the persona, analysis approach, data guidelines, and output format requirements for the AI.
+// ProfileAnalyzerSystemInstruction defines the system instruction for the AI
+// when analyzing user messages to create or update user profiles.
+// It provides detailed guidelines on how to analyze messages and format the response.
 const ProfileAnalyzerSystemInstruction = `You are a behavioral analyst with expertise in psychology, linguistics, and social dynamics. Your task is to analyze chat messages and build concise, meaningful profiles of users.
 
 ## ANALYSIS APPROACH

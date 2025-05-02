@@ -1,3 +1,6 @@
+# MurailoBot Configuration Example
+# This file contains all available configuration options with descriptions and defaults
+
 # Telegram Bot Configuration
 telegram:
   token: "YOUR_TELEGRAM_BOT_TOKEN" # Bot token from BotFather (required)
@@ -6,14 +9,14 @@ telegram:
 # Database Configuration
 database:
   path: "storage.db" # SQLite database file path
-  max_history_messages: 100 # Maximum historical messages for context (range: > 0)
+  max_history_messages: 100 # Maximum historical messages for context (must be > 0)
 
-# Google Gemini API Configuration
+# Google Gemini AI Configuration
 gemini:
   api_key: "YOUR_GEMINI_API_KEY" # Gemini API Key (required)
   model_name: "gemini-2.0-flash" # Gemini model name
   temperature: 1.0 # Sampling temperature for generation (range: 0.0-2.0)
-  system_instruction: "You're a helpful assistant." # System instructions for AI behavior
+  system_instruction: "You are MurailoBot, a helpful AI assistant integrated into a Telegram group chat. Your primary goal is to understand the users based on their messages and maintain profiles about them. You can also answer general questions. Be concise and helpful." # System instructions for AI behavior
 
 # Logger Configuration
 logger:
@@ -25,31 +28,45 @@ scheduler:
   tasks:
     # SQL maintenance task runs daily at 3 AM
     sql_maintenance:
-      schedule: "0 3 * * *" # Cron schedule expression (valid cron format)
-      enabled: true # Whether task is active
-
-    # Profile update task runs daily at 1 AM
-    profile_update:
-      schedule: "0 1 * * *" # Cron schedule expression (valid cron format)
+      schedule: "0 3 * * *" # Cron schedule expression (required, valid cron format)
       enabled: true # Whether task is active
 
 # Bot Message Strings
 messages:
-  # General Messages
-  welcome: "Hello! Use @botname to chat with me." # Welcome message
-  general_error: "Sorry, something went wrong. Please try again later." # Generic error message
-  not_authorized: "You are not authorized to use this command." # Unauthorized access message
-  help: "Available commands:\n/help - Show this help message\nUse @botname to chat with the bot.\n\nAdmin commands:\n/mrl_reset - Delete all message history and profiles\n/mrl_analyze - Force analysis of unprocessed messages\n/mrl_profiles - Show all stored user profiles\n/mrl_edit_user <user_id> <field> <value> - Manually edit a user profile field (fields: aliases, origin_location, current_location, age_range, traits)" # Help command response
+  # General and Welcome Messages
+  start_welcome_msg: "Hello! I'm MurailoBot. Mention me (@<bot_username>) or use /help to see what I can do."
+  help_msg: "Here's how you can interact with me:\n- Mention me followed by your question or request.\n- Reply directly to one of my messages.\n- Use /help to see this message again.\n\nAdmin commands:\n/mrl_reset - Delete all message history and profiles\n/mrl_analyze - Force analysis of unprocessed messages\n/mrl_profiles - Show all stored user profiles\n/mrl_edit_user <user_id> <field> <value> - Manually edit a user profile field (fields: aliases, origin_location, current_location, age_range, traits)"
 
-  # Admin Command Responses
-  history_reset: "All message history and user profiles have been soft-deleted." # Response after reset
-  analyzing: "Analyzing unprocessed messages to update user profiles..." # Analysis start message
-  analysis_no_messages: "No new messages found to analyze." # Empty analysis result message
-  analysis_complete_fmt: "Analysis complete. Processed %d messages. Updated/created %d profiles." # Analysis completion message (must contain two %d format specifiers)
-  no_profiles: "No user profiles found in the database." # Empty profiles response
-  profiles_header: "--- User Profiles ---\nUserID | Aliases | Origin | Current | Age | Traits\n--------------------------------------------------\n" # Profile listing header
-  edit_user_usage: "Usage: /mrl_edit_user <user_id> <field_name> <new_value...>" # Usage instructions
-  edit_user_invalid_id: "Invalid User ID provided. It must be a number." # Invalid ID error message
-  edit_user_invalid_field_fmt: "Invalid field name: '%s'. Allowed fields are: %s" # Invalid field error (must contain %s format specifier)
-  edit_user_not_found_fmt: "User profile not found for ID: %d" # User not found error (must contain %d format specifier)
-  edit_user_success_fmt: "Successfully updated field '%s' for user %d." # Success message (must contain %s and %d format specifiers)
+  # Error Messages
+  error_general_msg: "Sorry, something went wrong on my end. Please try again later or contact the admin."
+  error_unauthorized_msg: "⛔ You are not authorized to use this command."
+
+  # Mention Handler Messages
+  mention_no_prompt_msg: "You mentioned me, but didn't provide a prompt. How can I help?"
+  mention_image_error_msg: "Sorry, I couldn't process the image you sent. Please try again."
+  mention_ai_empty_fallback_msg: "I processed your request but couldn't generate a meaningful response. Could you try rephrasing or providing more context?"
+  mention_empty_reply_fallback_msg: "Sorry, I couldn't come up with a response for that."
+
+  # Reset Command Messages
+  reset_confirm_msg: "✅ All message history and user profiles have been successfully deleted."
+  reset_error_msg: "❌ Error: Failed to reset data. Please check the logs."
+  reset_timeout_msg: "⏳ Warning: The data reset operation timed out. It might be partially complete. Please check the logs."
+
+  # Analyze Command Messages
+  analyze_progress_msg: "⏳ Analyzing unprocessed messages to update user profiles..."
+  analyze_no_messages_msg: "ℹ️ No new messages found to analyze."
+  analyze_complete_fmt: "✅ Analysis complete. Processed %d messages. Updated/created %d profiles."
+  analyze_timeout_msg: "⏳ Warning: The profile analysis operation timed out. It might be partially complete. Please check the logs."
+
+  # Profiles Command Messages
+  profiles_empty_msg: "ℹ️ No user profiles found in the database."
+  profiles_header_msg: "👤 **Stored User Profiles** 👤\n\nUserID | Aliases | Origin | Current | Age | Traits\n--------------------------------------------------\n"
+
+  # Edit User Command Messages
+  edit_user_usage_msg: "⚠️ Usage: /mrl_edit_user <user_id> <field_name> <new_value...>\nExample: /mrl_edit_user 12345 traits friendly, helpful"
+  edit_user_invalid_id_error_msg: "❌ Error: Invalid User ID provided. It must be a number."
+  edit_user_invalid_field_fmt: "❌ Error: Invalid field name: '%s'. Allowed fields are: %s"
+  edit_user_not_found_fmt: "❌ Error: User profile not found for ID: %d"
+  edit_user_success_fmt: "✅ Successfully updated field '%s' for user %d."
+  edit_user_update_error_fmt: "❌ Error: Failed to update field '%s'. Please check the logs."
+  edit_user_fetch_error_fmt: "❌ Error: Could not fetch the profile for user ID %d. Please check the logs."

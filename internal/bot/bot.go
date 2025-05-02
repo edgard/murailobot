@@ -1,33 +1,36 @@
-// Package bot provides core orchestration and scheduler for the Telegram bot.
+// Package bot implements the core bot functionality, lifecycle management,
+// and component orchestration for the MurailoBot Telegram bot.
 package bot
 
 import (
 	"context"
 	"errors"
-	"fmt" // Import fmt for error formatting
+	"fmt"
 	"log/slog"
 
-	tgbot "github.com/go-telegram/bot" // Alias tgbot
+	tgbot "github.com/go-telegram/bot"
 	"github.com/jmoiron/sqlx"
-	"golang.org/x/sync/errgroup" // Use errgroup for managing goroutines
+	"golang.org/x/sync/errgroup"
 
 	"github.com/edgard/murailobot/internal/config"
 	"github.com/edgard/murailobot/internal/database"
 	"github.com/edgard/murailobot/internal/gemini"
 )
 
-// Bot orchestrates the main components of the application.
+// Bot represents the main bot application and manages its components' lifecycle.
 type Bot struct {
 	logger       *slog.Logger
 	cfg          *config.Config
-	db           *sqlx.DB // Keep DB connection for potential direct needs or easier closing management in main
+	db           *sqlx.DB
 	store        database.Store
 	geminiClient gemini.Client
-	tgBot        *tgbot.Bot // Renamed from gobot.Bot for clarity
-	scheduler    *Scheduler // Use the custom Scheduler wrapper
+	tgBot        *tgbot.Bot
+	scheduler    *Scheduler
 }
 
-// NewBot creates a new Bot instance.
+// NewBot creates a new instance of the bot with all required dependencies.
+// It initializes the bot with a logger, configuration, database, store, AI client,
+// Telegram client, and scheduler for managing scheduled tasks.
 func NewBot(
 	logger *slog.Logger,
 	cfg *config.Config,
@@ -48,67 +51,52 @@ func NewBot(
 	}
 }
 
-// Run starts the bot's main components (Telegram listener, scheduler)
-// and waits for a shutdown signal via the context using an errgroup.
-// It returns an error if any component fails unexpectedly.
+// Run starts the bot and all its components, handling graceful shutdown on context cancellation.
+// It returns an error if any component fails during startup or execution.
 func (b *Bot) Run(ctx context.Context) error {
 	b.logger.Info("Starting bot orchestrator...")
 
-	// Use errgroup to manage lifecycles of concurrent components
 	g, gCtx := errgroup.WithContext(ctx)
 
-	// Goroutine for the Telegram bot listener
 	g.Go(func() error {
 		b.logger.Info("Starting Telegram bot listener...")
-		// tgBot.Start blocks until the context is cancelled or an error occurs
+
 		b.tgBot.Start(gCtx)
 		b.logger.Info("Telegram bot listener stopped.")
-		// If Start stops due to context cancellation, it returns nil or context.Canceled.
-		// We only care if it stops unexpectedly.
+
 		if gCtx.Err() == nil {
 			b.logger.Warn("Telegram bot listener stopped unexpectedly without context cancellation.")
-			// Return an error to signal the errgroup that something went wrong.
+
 			return fmt.Errorf("telegram listener stopped unexpectedly")
 		}
-		return nil // Return nil on expected shutdown (context cancelled)
+		return nil
 	})
 
-	// Goroutine for the scheduler
 	g.Go(func() error {
 		b.logger.Info("Starting scheduler...")
 		if err := b.scheduler.Start(); err != nil {
 			b.logger.Error("Failed to start scheduler", "error", err)
-			return fmt.Errorf("failed to start scheduler: %w", err) // Propagate error to errgroup
+			return fmt.Errorf("failed to start scheduler: %w", err)
 		}
-		// The scheduler.Start() function now handles its own completion logging
 
-		// Wait for the context to be done to trigger shutdown.
-		<-gCtx.Done() // Wait for shutdown signal from context cancellation
+		<-gCtx.Done()
 		b.logger.Info("Shutdown signal received, stopping scheduler...")
 
-		// Stop the scheduler gracefully. gocron's Shutdown is blocking.
 		if err := b.scheduler.Stop(); err != nil {
 			b.logger.Error("Error stopping scheduler", "error", err)
-			// Even if stopping fails, we don't necessarily want to return an error
-			// during graceful shutdown, but logging it is important.
 		}
-		// The scheduler.Stop() function now handles its own completion logging
-		return nil // Return nil after attempting shutdown
+
+		return nil
 	})
 
-	// Wait for the first error or for all goroutines to finish
 	b.logger.Info("Bot orchestrator running. Waiting for shutdown signal or error...")
 	err := g.Wait()
 
-	// Ignore context.Canceled errors as they indicate graceful shutdown.
 	if err != nil && !errors.Is(err, context.Canceled) {
 		b.logger.Error("Bot orchestrator stopped due to error", "error", err)
-		return err // Propagate the actual error
+		return err
 	}
 
 	b.logger.Info("Bot orchestrator stopped gracefully.")
 	return nil
 }
-
-// Note: Closing of DB and Gemini client is handled by defer in main.go
-// after Run() returns.

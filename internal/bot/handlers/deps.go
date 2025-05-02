@@ -1,5 +1,3 @@
-// Package handlers contains Telegram bot command and message handlers,
-// along with their registration logic and shared dependencies.
 package handlers
 
 import (
@@ -10,7 +8,8 @@ import (
 	"github.com/edgard/murailobot/internal/gemini"
 )
 
-// HandlerDeps provides dependencies for Telegram command handlers.
+// HandlerDeps contains all dependencies required by the handlers.
+// It provides access to logging, database, AI client, and configuration.
 type HandlerDeps struct {
 	Logger       *slog.Logger
 	Config       *config.Config

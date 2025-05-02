@@ -1,5 +1,3 @@
-// Package handlers contains Telegram bot command and message handlers,
-// along with their registration logic.
 package handlers
 
 import (
@@ -12,7 +10,8 @@ import (
 	"github.com/go-telegram/bot/models"
 )
 
-// NewEditUserHandler returns a handler for the /mrl_edit_user command.
+// NewEditUserHandler creates a handler for the /mrl_edit_user command that allows
+// administrators to edit user profile information.
 func NewEditUserHandler(deps HandlerDeps) bot.HandlerFunc {
 	return editUserHandler{deps}.Handle
 }
@@ -21,11 +20,6 @@ type editUserHandler struct {
 	deps HandlerDeps
 }
 
-// Handle processes the /mrl_edit_user command.
-// It expects arguments: <user_id> <field_name> <new_value>.
-// It validates the arguments, fetches the user profile, updates the specified field,
-// saves the profile, and sends a confirmation or error message.
-// This handler requires admin privileges (enforced by middleware).
 func (h editUserHandler) Handle(ctx context.Context, b *bot.Bot, update *models.Update) {
 	log := h.deps.Logger.With("handler", "edit_user")
 	allowedFields := map[string]bool{
@@ -35,14 +29,13 @@ func (h editUserHandler) Handle(ctx context.Context, b *bot.Bot, update *models.
 		"age_range":        true,
 		"traits":           true,
 	}
-	// Create a list of allowed field names for error messages
+
 	allowedKeys := make([]string, 0, len(allowedFields))
 	for k := range allowedFields {
 		allowedKeys = append(allowedKeys, k)
 	}
 	allowedFieldsStr := strings.Join(allowedKeys, ", ")
 
-	// Ensure Message and From are not nil (should be guaranteed by middleware/handler registration)
 	if update.Message == nil || update.Message.From == nil {
 		log.ErrorContext(ctx, "EditUser handler called with nil Message or From", "update_id", update.ID)
 		return
@@ -51,7 +44,6 @@ func (h editUserHandler) Handle(ctx context.Context, b *bot.Bot, update *models.
 	chatID := update.Message.Chat.ID
 	args := strings.Fields(update.Message.Text)
 
-	// 2. Validate Arguments
 	if len(args) < 4 {
 		_, err := b.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID: chatID,
@@ -64,10 +56,9 @@ func (h editUserHandler) Handle(ctx context.Context, b *bot.Bot, update *models.
 	}
 
 	userIDStr := args[1]
-	fieldName := strings.ToLower(args[2])   // Normalize field name
-	newValue := strings.Join(args[3:], " ") // Join the rest as the value
+	fieldName := strings.ToLower(args[2])
+	newValue := strings.Join(args[3:], " ")
 
-	// Parse UserID
 	userID, err := strconv.ParseInt(userIDStr, 10, 64)
 	if err != nil {
 		_, err := b.SendMessage(ctx, &bot.SendMessageParams{
@@ -80,9 +71,7 @@ func (h editUserHandler) Handle(ctx context.Context, b *bot.Bot, update *models.
 		return
 	}
 
-	// Validate Field Name
 	if !allowedFields[fieldName] {
-		// Use config message format string
 		replyMsg := fmt.Sprintf(h.deps.Config.Messages.EditUserInvalidFieldFmt, fieldName, allowedFieldsStr)
 		_, err := b.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID: chatID,
@@ -102,11 +91,10 @@ func (h editUserHandler) Handle(ctx context.Context, b *bot.Bot, update *models.
 		"new_value", newValue,
 	)
 
-	// 3. Fetch User Profile
 	profile, err := h.deps.Store.GetUserProfile(ctx, userID)
 	if err != nil {
 		log.ErrorContext(ctx, "Failed to get user profile for editing", "error", err, "target_user_id", userID)
-		// Use specific fetch error format
+
 		replyMsg := fmt.Sprintf(h.deps.Config.Messages.EditUserFetchErrorFmt, userID)
 		_, sendErr := b.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID: chatID,
@@ -118,7 +106,6 @@ func (h editUserHandler) Handle(ctx context.Context, b *bot.Bot, update *models.
 		return
 	}
 	if profile == nil {
-		// Use config message format string
 		replyMsg := fmt.Sprintf(h.deps.Config.Messages.EditUserNotFoundFmt, userID)
 		_, err := b.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID: chatID,
@@ -130,7 +117,6 @@ func (h editUserHandler) Handle(ctx context.Context, b *bot.Bot, update *models.
 		return
 	}
 
-	// 4. Update Profile Field
 	originalValue := ""
 	switch fieldName {
 	case "aliases":
@@ -149,11 +135,11 @@ func (h editUserHandler) Handle(ctx context.Context, b *bot.Bot, update *models.
 		originalValue = profile.Traits
 		profile.Traits = newValue
 	default:
-		// Should not happen due to validation above, but good practice
+
 		log.ErrorContext(ctx, "Internal error: validated field name not handled in switch", "field_name", fieldName)
 		_, sendErr := b.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID: chatID,
-			Text:   h.deps.Config.Messages.ErrorGeneralMsg, // Use general error config
+			Text:   h.deps.Config.Messages.ErrorGeneralMsg,
 		})
 		if sendErr != nil {
 			log.ErrorContext(ctx, "Failed to send error message", "error", sendErr, "chat_id", chatID)
@@ -161,11 +147,10 @@ func (h editUserHandler) Handle(ctx context.Context, b *bot.Bot, update *models.
 		return
 	}
 
-	// 5. Save Updated Profile
 	err = h.deps.Store.SaveUserProfile(ctx, profile)
 	if err != nil {
 		log.ErrorContext(ctx, "Failed to save updated user profile", "error", err, "target_user_id", userID)
-		// Use specific update error format
+
 		replyMsg := fmt.Sprintf(h.deps.Config.Messages.EditUserUpdateErrorFmt, fieldName)
 		_, sendErr := b.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID: chatID,
@@ -177,14 +162,13 @@ func (h editUserHandler) Handle(ctx context.Context, b *bot.Bot, update *models.
 		return
 	}
 
-	// 6. Send Confirmation
 	log.InfoContext(ctx, "Successfully updated user profile field",
 		"target_user_id", userID,
 		"field", fieldName,
 		"old_value", originalValue,
 		"new_value", newValue,
 	)
-	// Use config message format string
+
 	replyMsg := fmt.Sprintf(h.deps.Config.Messages.EditUserSuccessFmt, fieldName, userID)
 	_, err = b.SendMessage(ctx, &bot.SendMessageParams{
 		ChatID: chatID,

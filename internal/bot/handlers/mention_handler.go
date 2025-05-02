@@ -1,5 +1,3 @@
-// Package handlers contains Telegram bot command and message handlers,
-// along with their registration logic.
 package handlers
 
 import (
@@ -25,28 +23,23 @@ const (
 	dbSaveTimeout        = 5 * time.Second
 )
 
-// mentionHandler holds dependencies for processing mention events.
 type mentionHandler struct {
 	deps HandlerDeps
 }
 
-// NewMentionHandler returns a handler for bot mentions.
-// This handler acts as the default handler when no specific command matches.
+// NewMentionHandler creates a handler that responds to messages where the bot is mentioned.
+// It processes the message content and generates responses using the AI client.
 func NewMentionHandler(deps HandlerDeps) bot.HandlerFunc {
 	return mentionHandler{deps}.Handle
 }
 
-// Handle processes incoming messages to check for mentions or replies to the bot.
-// It saves the incoming message, retrieves context, and dispatches to either
-// text or image processing based on the message content.
 func (h mentionHandler) Handle(ctx context.Context, b *bot.Bot, update *models.Update) {
 	deps := h.deps
 	log := deps.Logger.With("handler", "mention")
 
-	// Use the configurable maxHistoryMessages from the database config
 	maxHistoryMessages := deps.Config.Database.MaxHistoryMessages
 	if maxHistoryMessages <= 0 {
-		maxHistoryMessages = 100 // Default value if config is invalid
+		maxHistoryMessages = 100
 		log.WarnContext(ctx, "Invalid maxHistoryMessages in config, using default", "default", maxHistoryMessages)
 	}
 
@@ -56,7 +49,6 @@ func (h mentionHandler) Handle(ctx context.Context, b *bot.Bot, update *models.U
 		return
 	}
 
-	// Safely handle potentially nil Text and Caption fields
 	msgText := ""
 	if msg.Text != "" {
 		msgText = msg.Text
@@ -66,7 +58,6 @@ func (h mentionHandler) Handle(ctx context.Context, b *bot.Bot, update *models.U
 		msgCaption = msg.Caption
 	}
 
-	// Consolidate text and caption, preferring text if both exist
 	text := msgText
 	if msgText != "" && msgCaption != "" {
 		text = msgText + " " + msgCaption
@@ -78,10 +69,8 @@ func (h mentionHandler) Handle(ctx context.Context, b *bot.Bot, update *models.U
 	username := deps.Config.Telegram.BotInfo.Username
 	if username == "" {
 		log.WarnContext(ctx, "Bot username empty in config, cannot check mentions reliably")
-		// Depending on requirements, might want to return here or proceed cautiously
 	}
 
-	// Check if the bot was mentioned, replied to, or otherwise referenced
 	if !h.shouldHandle(msg) {
 		log.DebugContext(ctx, "Bot not mentioned or referenced, skipping mention handler logic", "chat_id", chatID)
 		return
@@ -89,7 +78,6 @@ func (h mentionHandler) Handle(ctx context.Context, b *bot.Bot, update *models.U
 
 	log.DebugContext(ctx, "Handling mention", "chat_id", chatID, "message_id", msg.ID)
 
-	// Save incoming message with retries
 	incomingMsg := &database.Message{
 		ChatID:    chatID,
 		UserID:    msg.From.ID,
@@ -98,7 +86,6 @@ func (h mentionHandler) Handle(ctx context.Context, b *bot.Bot, update *models.U
 	}
 	SaveMessageWithRetry(ctx, deps, incomingMsg, "incoming message")
 
-	// Guard against empty prompts after saving the message
 	if strings.TrimSpace(text) == "" && len(msg.Photo) == 0 {
 		log.InfoContext(ctx, "Mention received but prompt is empty", "chat_id", chatID)
 		if _, err := b.SendMessage(ctx, &bot.SendMessageParams{ChatID: chatID, Text: deps.Config.Messages.MentionNoPromptMsg}); err != nil {
@@ -107,10 +94,8 @@ func (h mentionHandler) Handle(ctx context.Context, b *bot.Bot, update *models.U
 		return
 	}
 
-	// Retrieve and prepare context messages for the AI
 	contextMessages := h.getContextMessages(ctx, chatID, incomingMsg, maxHistoryMessages)
 
-	// Dispatch to image or text processing
 	if len(msg.Photo) > 0 {
 		h.processImageMention(ctx, b, chatID, msg.ID, contextMessages, msg.Photo)
 	} else {
@@ -118,11 +103,6 @@ func (h mentionHandler) Handle(ctx context.Context, b *bot.Bot, update *models.U
 	}
 }
 
-// shouldHandle returns true if the message warrants a bot response.
-// It checks for:
-// 1. Entity-based @mentions (ignoring commands).
-// 2. Exact word match of the bot's username (case-insensitive, ignoring punctuation).
-// 3. Direct replies to a message sent by the bot.
 func (h mentionHandler) shouldHandle(msg *models.Message) bool {
 	if msg == nil {
 		return false
@@ -130,7 +110,6 @@ func (h mentionHandler) shouldHandle(msg *models.Message) bool {
 	botID := h.deps.Config.Telegram.BotInfo.ID
 	username := h.deps.Config.Telegram.BotInfo.Username
 	if username == "" {
-		// Cannot reliably check mentions without username
 		return false
 	}
 
@@ -143,16 +122,14 @@ func (h mentionHandler) shouldHandle(msg *models.Message) bool {
 		msgCaption = msg.Caption
 	}
 
-	// Combine text and caption, lowercased for case-insensitive matching
 	text := strings.ToLower(msgText + " " + msgCaption)
 	mention := "@" + strings.ToLower(username)
 
-	// 1. Entity-based @mention check (skipping commands)
 	for _, e := range append(msg.Entities, msg.CaptionEntities...) {
 		if e.Type == models.MessageEntityTypeBotCommand {
-			continue // Ignore commands like /start@BotName
+			continue
 		}
-		// Check if the mention entity matches the bot's username
+
 		if e.Type == models.MessageEntityTypeMention && e.Offset >= 0 && e.Length > 0 && e.Offset+e.Length <= len(text) {
 			if text[e.Offset:e.Offset+e.Length] == mention {
 				return true
@@ -160,7 +137,6 @@ func (h mentionHandler) shouldHandle(msg *models.Message) bool {
 		}
 	}
 
-	// 2. Exact word match check (strip punctuation)
 	for _, w := range strings.Fields(text) {
 		stripped := strings.TrimFunc(w, unicode.IsPunct)
 		if stripped == strings.ToLower(username) {
@@ -168,7 +144,6 @@ func (h mentionHandler) shouldHandle(msg *models.Message) bool {
 		}
 	}
 
-	// 3. Direct reply check
 	if msg.ReplyToMessage != nil && msg.ReplyToMessage.From != nil && msg.ReplyToMessage.From.ID == botID {
 		return true
 	}
@@ -176,62 +151,53 @@ func (h mentionHandler) shouldHandle(msg *models.Message) bool {
 	return false
 }
 
-// getContextMessages retrieves recent message history for the chat, appends the current
-// incoming message, sorts them chronologically, and truncates to the specified maxHistory limit.
 func (h mentionHandler) getContextMessages(ctx context.Context, chatID int64, incomingMsg *database.Message, maxHistory int) []*database.Message {
 	deps := h.deps
 	log := deps.Logger.With("handler", "mention")
 	msgs, err := deps.Store.GetRecentMessages(ctx, chatID, maxHistory, incomingMsg.ID)
 	if err != nil {
 		log.ErrorContext(ctx, "Failed to retrieve message history", "error", err, "chat_id", chatID)
-		msgs = []*database.Message{} // Use empty slice on error
+		msgs = []*database.Message{}
 	}
 
-	// Append the current message to the history
 	msgs = append(msgs, incomingMsg)
 
-	// Sort messages by timestamp, then by ID for stability
 	sort.Slice(msgs, func(i, j int) bool {
 		if msgs[i] == nil || msgs[j] == nil {
-			return i < j // Handle potential nils gracefully, though unlikely
+			return i < j
 		}
 		if msgs[i].Timestamp.Equal(msgs[j].Timestamp) {
-			return msgs[i].ID < msgs[j].ID // Use DB ID as tie-breaker
+			return msgs[i].ID < msgs[j].ID
 		}
 		return msgs[i].Timestamp.Before(msgs[j].Timestamp)
 	})
 
-	// Truncate if history exceeds the maximum limit
 	if len(msgs) > maxHistory {
 		return msgs[len(msgs)-maxHistory:]
 	}
 	return msgs
 }
 
-// processTextMention handles mentions that contain only text by delegating to AIProcess.
 func (h mentionHandler) processTextMention(ctx context.Context, b *bot.Bot, chatID int64, messageID int, contextMessages []*database.Message) {
 	deps := h.deps
 	log := deps.Logger.With("handler", "mention")
 	log.InfoContext(ctx, "Handling text mention", "chat_id", chatID, "message_id", messageID)
 	if contextMessages == nil {
-		contextMessages = []*database.Message{} // Ensure non-nil slice
+		contextMessages = []*database.Message{}
 	}
 
 	AIProcess(ctx, b, deps, chatID, messageID, contextMessages,
 		func(aiCtx context.Context, msgs []*database.Message) (string, error) {
-			// Use GenerateReply for text-based interactions
 			return deps.GeminiClient.GenerateReply(aiCtx, msgs,
 				deps.Config.Telegram.BotInfo.ID,
 				deps.Config.Telegram.BotInfo.Username,
 				deps.Config.Telegram.BotInfo.FirstName,
-				true, // Include system instructions
+				true,
 			)
 		},
 	)
 }
 
-// processImageMention handles mentions that include an image. It selects the best quality
-// photo, downloads it, and then delegates to AIProcess for analysis.
 func (h mentionHandler) processImageMention(ctx context.Context, b *bot.Bot, chatID int64, messageID int, contextMessages []*database.Message, photoSizes []models.PhotoSize) {
 	deps := h.deps
 	log := deps.Logger.With("handler", "mention")
@@ -249,11 +215,10 @@ func (h mentionHandler) processImageMention(ctx context.Context, b *bot.Bot, cha
 		return
 	}
 
-	// Find the best quality photo (approximated by largest dimensions)
 	var bestPhoto models.PhotoSize
 	bestQuality := 0
 	for _, photo := range photoSizes {
-		quality := photo.Width * photo.Height // Use area as quality heuristic
+		quality := photo.Width * photo.Height
 		if quality > bestQuality {
 			bestQuality = quality
 			bestPhoto = photo
@@ -263,7 +228,6 @@ func (h mentionHandler) processImageMention(ctx context.Context, b *bot.Bot, cha
 	fileID := bestPhoto.FileID
 	log.DebugContext(ctx, "Selected best quality photo", "file_id", fileID, "width", bestPhoto.Width, "height", bestPhoto.Height)
 
-	// Download the selected image data
 	data, mimeType, err := DownloadPhoto(ctx, b, deps.Config.Telegram.Token, fileID)
 	if err != nil {
 		log.ErrorContext(ctx, "Photo download failed", "error", err, "chat_id", chatID, "file_id", fileID)
@@ -273,22 +237,20 @@ func (h mentionHandler) processImageMention(ctx context.Context, b *bot.Bot, cha
 		return
 	}
 
-	// Delegate to AIProcess for image analysis
 	AIProcess(ctx, b, deps, chatID, messageID, contextMessages,
 		func(aiCtx context.Context, msgs []*database.Message) (string, error) {
-			// Use GenerateImageAnalysis for image-based interactions
 			return deps.GeminiClient.GenerateImageAnalysis(aiCtx, msgs, mimeType, data,
 				deps.Config.Telegram.BotInfo.ID,
 				deps.Config.Telegram.BotInfo.Username,
 				deps.Config.Telegram.BotInfo.FirstName,
-				true, // Include system instructions
+				true,
 			)
 		},
 	)
 }
 
-// DownloadPhoto retrieves file metadata from Telegram using GetFile, constructs the download URL,
-// performs an HTTP GET request with a timeout, reads the response body, and detects the MIME type.
+// DownloadPhoto downloads a photo from Telegram's API using the provided file ID.
+// It returns the photo data, detected MIME type, and any error encountered.
 func DownloadPhoto(ctx context.Context, b *bot.Bot, token, fileID string) (data []byte, mimeType string, err error) {
 	if token == "" {
 		return nil, "", fmt.Errorf("empty token provided for photo download")
@@ -324,7 +286,7 @@ func DownloadPhoto(ctx context.Context, b *bot.Bot, token, fileID string) (data 
 	if resp == nil {
 		return nil, "", fmt.Errorf("nil HTTP response received from %s", url)
 	}
-	// Ensure body is closed, capturing potential close error
+
 	defer func() {
 		if closeErr := resp.Body.Close(); closeErr != nil && err == nil {
 			err = fmt.Errorf("failed to close response body from %s: %w", url, closeErr)
@@ -332,13 +294,11 @@ func DownloadPhoto(ctx context.Context, b *bot.Bot, token, fileID string) (data 
 	}()
 
 	if resp.StatusCode != http.StatusOK {
-		// Attempt to read body for more details, but don't overwrite original error if read fails
-		bodyBytes, _ := io.ReadAll(io.LimitReader(resp.Body, 1024)) // Limit read size for error body
+		bodyBytes, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
 		return nil, "", fmt.Errorf("unexpected status code %d from %s: %s", resp.StatusCode, url, string(bodyBytes))
 	}
 
-	// Limit download size to prevent excessive memory usage
-	const maxDownloadSize = 10 * 1024 * 1024 // 10 MB
+	const maxDownloadSize = 10 * 1024 * 1024
 	data, err = io.ReadAll(io.LimitReader(resp.Body, maxDownloadSize))
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to read file data from %s: %w", url, err)
@@ -351,9 +311,8 @@ func DownloadPhoto(ctx context.Context, b *bot.Bot, token, fileID string) (data 
 	return data, mimeType, nil
 }
 
-// SendAndSaveReply sends a reply message via the bot API and then attempts to save
-// the bot's reply message to the database using SaveMessageWithRetry.
-// It uses a fallback message if the provided text is empty.
+// SendAndSaveReply sends a reply message to the chat and saves it in the database.
+// It manages both the Telegram API call and the persistent storage of the bot's response.
 func SendAndSaveReply(ctx context.Context, b *bot.Bot, deps HandlerDeps, chatID int64, replyTo int, text string) {
 	log := deps.Logger.With("handler", "mention")
 	if b == nil || chatID == 0 || replyTo <= 0 {
@@ -361,7 +320,6 @@ func SendAndSaveReply(ctx context.Context, b *bot.Bot, deps HandlerDeps, chatID 
 		return
 	}
 
-	// Use fallback message if AI response is empty
 	if text == "" {
 		log.WarnContext(ctx, "Empty text provided for reply, using fallback", "chat_id", chatID, "reply_to", replyTo)
 		text = deps.Config.Messages.MentionEmptyReplyFallbackMsg
@@ -381,34 +339,32 @@ func SendAndSaveReply(ctx context.Context, b *bot.Bot, deps HandlerDeps, chatID 
 	})
 	if err != nil {
 		log.ErrorContext(ctx, "Failed to send reply message", "error", err, "chat_id", chatID)
-		return // Don't attempt to save if sending failed
+		return
 	}
 
 	log.InfoContext(ctx, "Sent reply", "chat_id", chatID, "message_id", sent.ID)
 
-	// Save the bot's reply to the database
 	if deps.Config.Telegram.BotInfo.ID == 0 {
 		log.WarnContext(ctx, "Invalid botID (0), skipping saving bot reply", "chat_id", chatID)
 		return
 	}
 	msg := &database.Message{
 		ChatID:    chatID,
-		UserID:    deps.Config.Telegram.BotInfo.ID, // Bot's own user ID
+		UserID:    deps.Config.Telegram.BotInfo.ID,
 		Content:   text,
-		Timestamp: time.Now().UTC(), // Use current time for bot message timestamp
+		Timestamp: time.Now().UTC(),
 	}
 	SaveMessageWithRetry(ctx, deps, msg, "bot reply")
 }
 
-// SaveMessageWithRetry attempts to save a message to the database with a fixed number
-// of retries and exponential backoff. It respects the parent context for cancellation.
+// SaveMessageWithRetry attempts to save a message to the database with retry logic.
+// It handles failures and logs appropriate warning messages.
 func SaveMessageWithRetry(ctx context.Context, deps HandlerDeps, msg *database.Message, msgType string) {
 	log := deps.Logger.With("handler", "mention")
 	const maxRetries = 3
 	var err error
 
 	for i := range [maxRetries]struct{}{} {
-		// Check if the parent context was cancelled before attempting save/retry
 		if ctx.Err() != nil {
 			log.WarnContext(ctx, fmt.Sprintf("Context cancelled, aborting %s save attempts", msgType),
 				"error", ctx.Err(), "chat_id", msg.ChatID, "attempt", i+1)
@@ -417,60 +373,51 @@ func SaveMessageWithRetry(ctx context.Context, deps HandlerDeps, msg *database.M
 
 		dbCtx, cancel := context.WithTimeout(ctx, dbSaveTimeout)
 		err = deps.Store.SaveMessage(dbCtx, msg)
-		cancel() // Release context resources promptly
+		cancel()
 
 		if err == nil {
 			log.DebugContext(ctx, fmt.Sprintf("%s saved successfully", msgType), "db_message_id", msg.ID, "chat_id", msg.ChatID)
-			return // Success
+			return
 		}
 
-		// Log error and prepare for retry
 		log.ErrorContext(ctx, fmt.Sprintf("Failed to save %s, retrying", msgType), "error", err, "chat_id", msg.ChatID, "attempt", i+1)
-		// Exponential backoff: 500ms, 1000ms, 1500ms
+
 		time.Sleep(time.Duration(500*(i+1)) * time.Millisecond)
 	}
 
-	// Log final failure after all retries
 	log.ErrorContext(ctx, fmt.Sprintf("Failed to save %s after %d retries", msgType, maxRetries), "last_error", err, "chat_id", msg.ChatID)
 }
 
-// DeduplicateMessages removes duplicate messages based on their database ID, preserving order.
-// It handles messages with ID=0 (e.g., unsaved incoming messages) by assigning temporary,
-// non-conflicting IDs during processing to ensure they aren't incorrectly deduplicated.
+// DeduplicateMessages removes duplicate messages from a message slice based on content and timestamp.
+// It's used to clean up message history before processing by the AI.
 func DeduplicateMessages(messages []*database.Message) []*database.Message {
 	if len(messages) <= 1 {
-		return messages // No duplicates possible
+		return messages
 	}
 
 	unique := make(map[uint]*database.Message)
-	// Counter for assigning temporary IDs to messages with ID 0.
-	// Start from 1 and use high bits to avoid collision with real DB IDs.
+
 	tempIDCounter := uint(1)
 
 	for _, m := range messages {
 		if m != nil {
 			if m.ID == 0 {
-				// Assign a temporary unique ID starting from the highest possible uint value downwards.
-				// This assumes real DB IDs won't reach this range.
 				tempID := ^uint(0) - tempIDCounter
 				tempIDCounter++
-				unique[tempID] = m // Store with temporary ID
+				unique[tempID] = m
 			} else {
-				unique[m.ID] = m // Use actual DB ID
+				unique[m.ID] = m
 			}
 		}
 	}
 
-	// Extract unique messages from the map
 	result := make([]*database.Message, 0, len(unique))
 	for _, m := range unique {
 		result = append(result, m)
 	}
 
-	// Sort the unique messages back into chronological order
 	sort.Slice(result, func(i, j int) bool {
 		if result[i].Timestamp.Equal(result[j].Timestamp) {
-			// Use original ID (or 0 for temp ones) as tie-breaker for stability
 			return result[i].ID < result[j].ID
 		}
 		return result[i].Timestamp.Before(result[j].Timestamp)
@@ -479,9 +426,8 @@ func DeduplicateMessages(messages []*database.Message) []*database.Message {
 	return result
 }
 
-// AIProcess handles the common workflow for AI interactions: sending typing action,
-// deduplicating messages, calling the provided AI generation function with a timeout,
-// handling errors or empty responses with fallbacks, and sending/saving the final reply.
+// AIProcess handles the AI processing workflow, invoking the provided generate function
+// and managing response generation, error handling, and message sending.
 func AIProcess(ctx context.Context, b *bot.Bot, deps HandlerDeps, chatID int64, messageID int, messages []*database.Message, generate func(context.Context, []*database.Message) (string, error)) {
 	log := deps.Logger.With("handler", "mention")
 	if ctx.Err() != nil || chatID == 0 || messageID <= 0 || generate == nil {
@@ -489,34 +435,29 @@ func AIProcess(ctx context.Context, b *bot.Bot, deps HandlerDeps, chatID int64, 
 		return
 	}
 
-	// Indicate activity to the user
 	_, _ = b.SendChatAction(ctx, &bot.SendChatActionParams{ChatID: chatID, Action: models.ChatActionTyping})
 
-	// Ensure message history is clean before sending to AI
 	finalMsgs := DeduplicateMessages(messages)
 	if len(finalMsgs) != len(messages) {
 		log.DebugContext(ctx, "Deduplicated messages before sending to AI", "original_count", len(messages), "final_count", len(finalMsgs), "chat_id", chatID)
 	}
 
-	// Call the specific AI generation function (reply or image analysis) with timeout
 	aiCtx, cancel := context.WithTimeout(ctx, aiProcessingTimeout)
 	defer cancel()
 	resp, err := generate(aiCtx, finalMsgs)
 	if err != nil {
 		log.ErrorContext(ctx, "AI generation failed", "error", err, "chat_id", chatID)
-		// Send a generic error message on AI failure
+
 		if _, sendErr := b.SendMessage(ctx, &bot.SendMessageParams{ChatID: chatID, Text: deps.Config.Messages.ErrorGeneralMsg}); sendErr != nil {
 			log.ErrorContext(ctx, "Failed to send AI error message", "error", sendErr, "chat_id", chatID)
 		}
 		return
 	}
 
-	// Handle empty AI response with a fallback message
 	if resp == "" {
 		log.WarnContext(ctx, "Empty AI response received, using fallback", "chat_id", chatID, "message_id", messageID)
 		resp = deps.Config.Messages.MentionAIEmptyFallbackMsg
 	}
 
-	// Send the final response and save it
 	SendAndSaveReply(ctx, b, deps, chatID, messageID, resp)
 }

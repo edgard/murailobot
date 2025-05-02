@@ -1,4 +1,5 @@
-// Package logger provides structured logging setup using Go's slog package.
+// Package logger provides structured logging functionality for MurailoBot.
+// It uses Go's slog package for logging with configurable levels and formats.
 package logger
 
 import (
@@ -11,8 +12,8 @@ import (
 	"github.com/go-telegram/bot/models"
 )
 
-// NewLogger creates a new slog.Logger instance based on configuration.
-// It supports different log levels (debug, info, warn, error) and JSON/text output formats.
+// NewLogger creates a new slog Logger with the specified level and format.
+// If jsonOutput is true, logs will be formatted as JSON, otherwise as text.
 func NewLogger(levelStr string, jsonOutput bool) *slog.Logger {
 	var level slog.Level
 	switch levelStr {
@@ -25,12 +26,11 @@ func NewLogger(levelStr string, jsonOutput bool) *slog.Logger {
 	case "error":
 		level = slog.LevelError
 	default:
-		level = slog.LevelInfo // Default to Info level if config is invalid
+		level = slog.LevelInfo
 	}
 
 	opts := &slog.HandlerOptions{
 		Level: level,
-		// AddSource: true, // Uncomment to include source file and line number in logs (useful for debugging)
 	}
 
 	var handler slog.Handler
@@ -41,36 +41,31 @@ func NewLogger(levelStr string, jsonOutput bool) *slog.Logger {
 	}
 
 	logger := slog.New(handler)
-	slog.SetDefault(logger) // Set this logger as the default for the application
+	slog.SetDefault(logger)
 	return logger
 }
 
-// Middleware returns a Telegram bot middleware function that logs incoming updates
-// and the time taken to process them.
+// Middleware creates a logging middleware for the Telegram bot.
+// It logs information about incoming updates and messages for debugging purposes.
 func Middleware(log *slog.Logger) bot.Middleware {
-	// This function returns the actual middleware handler.
 	return func(next bot.HandlerFunc) bot.HandlerFunc {
-		// This is the handler function executed for each update.
-		// It logs details about the update before and after calling the next handler.
 		return func(ctx context.Context, b *bot.Bot, update *models.Update) {
 			startTime := time.Now()
 
-			// Prepare base log entry with common fields.
 			logEntry := log.With(
 				"update_id", update.ID,
 				"start_time", startTime.Format(time.RFC3339),
 			)
 
-			// Extract and log specific details based on the update type.
 			var updateType string
 			var chatID int64
 			var userID int64
-			var text string // Holds message text or callback data
+			var text string
 
 			if update.Message != nil {
 				updateType = "message"
 				chatID = update.Message.Chat.ID
-				if update.Message.From != nil { // User might be nil for channel posts forwarded to groups
+				if update.Message.From != nil {
 					userID = update.Message.From.ID
 				}
 				text = update.Message.Text
@@ -78,7 +73,7 @@ func Middleware(log *slog.Logger) bot.Middleware {
 					"message_id", update.Message.ID,
 					"chat_id", chatID,
 					"user_id", userID,
-					"text_preview", truncateString(text, 50), // Log a preview, avoid logging potentially large/sensitive text
+					"text_preview", truncateString(text, 50),
 				)
 			} else if update.CallbackQuery != nil {
 				updateType = "callback_query"
@@ -90,44 +85,34 @@ func Middleware(log *slog.Logger) bot.Middleware {
 					"data", text,
 				)
 
-				// CallbackQuery.Message can be either *models.Message or *models.InaccessibleMessage.
-				// We need to check which one it is to correctly access Chat.ID.
-				// The `Date` field is only present in the accessible `Message` struct.
 				if update.CallbackQuery.Message.Message.Date != 0 {
-					// Message is accessible (type *models.Message)
 					chatID = update.CallbackQuery.Message.Message.Chat.ID
 					logEntry = logEntry.With("chat_id", chatID, "message_accessible", true)
 				} else {
-					// Message is inaccessible (type *models.InaccessibleMessage)
 					chatID = update.CallbackQuery.Message.InaccessibleMessage.Chat.ID
 					logEntry = logEntry.With("chat_id", chatID, "message_accessible", false)
 				}
 			} else {
 				updateType = "other"
-				// Consider adding logging for other relevant update types if needed
-				// (e.g., edited_message, channel_post, inline_query).
 			}
 			logEntry = logEntry.With("update_type", updateType)
 
 			logEntry.InfoContext(ctx, "Processing update")
 
-			// Execute the actual handler logic.
 			next(ctx, b, update)
 
-			// Log completion details.
 			duration := time.Since(startTime)
 			logEntry.InfoContext(ctx, "Finished processing update", "duration", duration)
 		}
 	}
 }
 
-// truncateString limits a string to a maximum length, adding "..." if truncated.
 func truncateString(s string, maxLen int) string {
 	if len(s) <= maxLen {
 		return s
 	}
 	if maxLen <= 3 {
-		return "..." // Not enough space for meaningful truncation
+		return "..."
 	}
 	return s[:maxLen-3] + "..."
 }

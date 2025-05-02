@@ -1,27 +1,24 @@
-// Package handlers contains Telegram bot command and message handlers,
-// along with their registration logic.
 package handlers
 
 import (
 	tgbot "github.com/go-telegram/bot"
 )
 
-// RegisteredHandler holds the pattern and the handler function along with optional middleware.
+// RegisteredHandler represents a command handler with its description and middleware.
+// It encapsulates all information needed to register and document a command.
 type RegisteredHandler struct {
-	HandlerType tgbot.HandlerType // Type of the update (message text, callback, etc.)
-	Pattern     string            // Command like "/start" or message pattern
+	HandlerType tgbot.HandlerType
+	Pattern     string
 	Handler     tgbot.HandlerFunc
-	Middleware  []tgbot.Middleware // Middleware specific to this handler
-	MatchType   tgbot.MatchType    // Matching type: Prefix, Regexp, Func, etc.
+	Middleware  []tgbot.Middleware
+	MatchType   tgbot.MatchType
 }
 
-// RegisterAllCommands initializes and returns a map of all registered command handlers.
-// It calls the factory function for each handler (e.g., NewHelpHandler) and applies
-// the AdminOnly middleware to administrative commands.
+// RegisterAllCommands initializes and returns a map of all available bot commands.
+// It configures each command with appropriate handlers and middleware.
 func RegisterAllCommands(deps HandlerDeps) map[string]RegisteredHandler {
 	handlers := make(map[string]RegisteredHandler)
 
-	// --- Register Public Commands ---
 	handlers["/start"] = RegisteredHandler{
 		HandlerType: tgbot.HandlerTypeMessageText,
 		Pattern:     "start",
@@ -34,9 +31,7 @@ func RegisterAllCommands(deps HandlerDeps) map[string]RegisteredHandler {
 		Handler:     NewHelpHandler(deps),
 		MatchType:   tgbot.MatchTypeCommandStartOnly,
 	}
-	// Add other public commands here...
 
-	// --- Register Admin Commands (with AdminOnly middleware) ---
 	adminMiddleware := []tgbot.Middleware{AdminOnly(deps)}
 
 	handlers["/mrl_reset"] = RegisteredHandler{
@@ -70,6 +65,3 @@ func RegisterAllCommands(deps HandlerDeps) map[string]RegisteredHandler {
 
 	return handlers
 }
-
-// --- Placeholder Handler Factories ---
-// Implementations are now in separate files (e.g., help.go, reset.go, etc.)

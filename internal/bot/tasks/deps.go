@@ -1,4 +1,5 @@
-// Package tasks provides interfaces and dependencies for scheduled background tasks.
+// Package tasks implements scheduled tasks for the MurailoBot Telegram bot.
+// It includes task definitions, dependencies, and registration mechanisms.
 package tasks
 
 import (
@@ -9,10 +10,11 @@ import (
 	"github.com/edgard/murailobot/internal/gemini"
 )
 
-// TaskDeps provides dependencies for scheduled tasks.
+// TaskDeps contains all dependencies required by scheduled tasks.
+// It provides access to logging, database, AI client, and configuration.
 type TaskDeps struct {
 	Logger       *slog.Logger
-	Config       *config.Config
 	Store        database.Store
 	GeminiClient gemini.Client
+	Config       *config.Config
 }

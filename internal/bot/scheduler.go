@@ -5,25 +5,27 @@ import (
 	"fmt"
 	"log/slog"
 	"sync"
-	"time" // gocron uses time.Duration
+	"time"
 
-	"github.com/go-co-op/gocron/v2" // Replaced cron library
+	"github.com/go-co-op/gocron/v2"
 
 	"github.com/edgard/murailobot/internal/bot/tasks"
 	"github.com/edgard/murailobot/internal/config"
 )
 
-// Scheduler manages scheduled tasks using the gocron library.
+// Scheduler manages scheduled tasks using gocron v2.
+// It handles task registration, execution, and graceful shutdown.
 type Scheduler struct {
-	scheduler gocron.Scheduler // Changed from cron.Cron
+	scheduler gocron.Scheduler
 	logger    *slog.Logger
 	cfg       *config.SchedulerConfig
-	taskMap   map[string]tasks.ScheduledTaskFunc // Map of registered task functions
-	mu        sync.Mutex                         // To protect access during start/stop
+	taskMap   map[string]tasks.ScheduledTaskFunc
+	mu        sync.Mutex
 	running   bool
 }
 
-// NewScheduler creates a new scheduler instance using gocron.
+// NewScheduler creates a new scheduler with the provided logger, configuration, and task map.
+// Task map contains task names as keys and their implementation functions as values.
 func NewScheduler(logger *slog.Logger, cfg *config.SchedulerConfig, taskMap map[string]tasks.ScheduledTaskFunc) *Scheduler {
 	if logger == nil {
 		logger = slog.Default()
@@ -32,14 +34,10 @@ func NewScheduler(logger *slog.Logger, cfg *config.SchedulerConfig, taskMap map[
 
 	s, err := gocron.NewScheduler()
 	if err != nil {
-		// This error typically occurs only if time.LoadLocation fails, which is rare.
 		log.Error("Failed to create gocron scheduler", "error", err)
-		// Handle error appropriately, maybe panic or return an error
+
 		panic(fmt.Sprintf("failed to create gocron scheduler: %v", err))
 	}
-
-	// gocron v2 doesn't have built-in structured logging integration like slog yet.
-	// We log before/after job execution within the task wrapper.
 
 	return &Scheduler{
 		scheduler: s,
@@ -49,8 +47,8 @@ func NewScheduler(logger *slog.Logger, cfg *config.SchedulerConfig, taskMap map[
 	}
 }
 
-// Start schedules and starts all enabled tasks based on the configuration.
-// It uses gocron's job registration and starts the scheduler's internal ticking.
+// Start initializes and starts all scheduled tasks.
+// It returns an error if any task fails to be scheduled.
 func (s *Scheduler) Start() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -63,7 +61,7 @@ func (s *Scheduler) Start() error {
 
 	if s.cfg == nil || len(s.cfg.Tasks) == 0 {
 		s.logger.Warn("No scheduler tasks configured.")
-		s.scheduler.Start() // Start the scheduler even if no jobs yet
+		s.scheduler.Start()
 		s.running = true
 		return nil
 	}
@@ -87,28 +85,27 @@ func (s *Scheduler) Start() error {
 		}
 
 		_, err := s.scheduler.NewJob(
-			gocron.CronJob(taskConfig.Schedule, true), // true = use seconds field if present
+			gocron.CronJob(taskConfig.Schedule, true),
 			gocron.NewTask(
-				// Wrap the original task func to add logging and context handling
+
 				func(ctx context.Context, name string) {
 					s.logger.Info("Running scheduled task", "task_name", name)
 					startTime := time.Now()
-					// Pass the context provided by gocron to the task and capture error
+
 					if taskErr := taskFunc(ctx); taskErr != nil {
 						s.logger.Error("Scheduled task failed", "task_name", name, "error", taskErr)
 					}
 					duration := time.Since(startTime)
 					s.logger.Info("Finished scheduled task", "task_name", name, "duration", duration)
 				},
-				context.Background(), // Base context for the task wrapper
-				taskName,             // Pass task name to the wrapper
+				context.Background(),
+				taskName,
 			),
-			gocron.WithName(taskName), // Set a name for the job for logging/management
-			// gocron.WithSingletonMode(gocron.LimitModeReschedule), // Example: Prevent job overrun if needed
+			gocron.WithName(taskName),
 		)
 		if err != nil {
 			s.logger.Error("Failed to schedule task", "task_name", taskName, "schedule", taskConfig.Schedule, "error", err)
-			continue // Continue scheduling other tasks
+			continue
 		}
 
 		s.logger.Info("Scheduled task", "task_name", taskName, "schedule", taskConfig.Schedule)
@@ -122,8 +119,8 @@ func (s *Scheduler) Start() error {
 	return nil
 }
 
-// Stop gracefully stops the scheduler, waiting for running jobs to complete.
-// gocron's Shutdown waits for jobs.
+// Stop gracefully shuts down the scheduler and waits for all tasks to complete.
+// It returns an error if the shutdown process fails or times out.
 func (s *Scheduler) Stop() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -134,14 +131,13 @@ func (s *Scheduler) Stop() error {
 	}
 
 	s.logger.Debug("Stopping scheduler gracefully (waiting for jobs)...")
-	err := s.scheduler.Shutdown() // Shutdown waits for running jobs
+	err := s.scheduler.Shutdown()
 	if err != nil {
 		s.logger.Error("Error during scheduler shutdown", "error", err)
-		// Fallthrough to mark as not running anyway
 	} else {
 		s.logger.Info("Scheduler stopped gracefully.")
 	}
 
 	s.running = false
-	return err // Return shutdown error if any
+	return err
 }

@@ -1,4 +1,5 @@
-// Package main contains the entrypoint for the Telegram bot application.
+// Package main is the entry point for the MurailoBot Telegram bot application.
+// It initializes all components, sets up the bot, and manages its lifecycle.
 package main
 
 import (
@@ -28,12 +29,10 @@ import (
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	exitCode := run(ctx)
-	stop() // Ensure context cancellation is signaled before exit
+	stop()
 	os.Exit(exitCode)
 }
 
-// run initializes and starts all application components (config, logger, db, ai client, bot, scheduler),
-// handles graceful shutdown, and returns an exit code (0 for success, 1 for failure).
 func run(ctx context.Context) int {
 	configPath := flag.String("config", "./config.yaml", "Path to configuration file")
 	flag.Parse()
@@ -53,7 +52,7 @@ func run(ctx context.Context) int {
 		log.Error("Failed to connect to database", "path", cfg.Database.Path, "error", err)
 		return 1
 	}
-	defer database.CloseDB(db) // Ensure DB is closed on function exit
+	defer database.CloseDB(db)
 	store := database.NewStore(db, log)
 
 	gemClient, err := gemini.NewClient(ctx, cfg.Gemini, log)
@@ -61,7 +60,6 @@ func run(ctx context.Context) int {
 		log.Error("Failed to initialize Gemini client", "error", err)
 		return 1
 	}
-	// Note: Gemini client does not have an explicit Close method in the SDK used.
 
 	hDeps := handlers.HandlerDeps{
 		Logger:       log,
@@ -86,7 +84,6 @@ func run(ctx context.Context) int {
 		return 1
 	}
 
-	// Retrieve bot info and store it in the config for runtime use
 	cfg.Telegram.BotInfo, err = tg.GetMe(ctx)
 	if err != nil {
 		log.Error("Failed to get bot info", "error", err)
@@ -104,19 +101,18 @@ func run(ctx context.Context) int {
 	app := bot.NewBot(log, cfg, db, store, gemClient, tg, sched)
 
 	log.Info("Starting bot...")
-	runErr := app.Run(ctx) // Run blocks until context is cancelled or an error occurs
+	runErr := app.Run(ctx)
 	log.Info("Bot run loop finished. Initiating shutdown...")
 
-	// Check if the error is significant (not just context cancellation)
 	if runErr != nil && !errors.Is(runErr, context.Canceled) {
 		log.Error("Bot stopped due to error", "error", runErr)
-		// Allow logs to flush before exiting on error
+
 		time.Sleep(time.Second)
 		return 1
 	}
 
 	log.Info("Bot stopped gracefully.")
-	// Allow logs to flush before exiting gracefully
+
 	log.Info("Waiting briefly before exit...")
 	time.Sleep(time.Second)
 	return 0

@@ -1,5 +1,3 @@
-// Package handlers contains Telegram bot command and message handlers,
-// along with their registration logic and middleware.
 package handlers
 
 import (
@@ -9,15 +7,12 @@ import (
 	"github.com/go-telegram/bot/models"
 )
 
-// AdminOnly creates a middleware that checks if the message sender is the configured admin user.
-// If not, it sends a "Not Authorized" message and stops processing by returning early.
+// AdminOnly creates a middleware that restricts command access to users listed
+// in the admin_users configuration. It protects sensitive administrative operations.
 func AdminOnly(deps HandlerDeps) tgbot.Middleware {
 	return func(next tgbot.HandlerFunc) tgbot.HandlerFunc {
 		return func(ctx context.Context, bot *tgbot.Bot, update *models.Update) {
-			// Ensure it's a message update and From is not nil
 			if update.Message == nil || update.Message.From == nil {
-				// Not a message or no sender info, let it pass or handle as needed
-				// For command handlers, this usually won't happen, but good practice.
 				next(ctx, bot, update)
 				return
 			}
@@ -37,10 +32,9 @@ func AdminOnly(deps HandlerDeps) tgbot.Middleware {
 				if err != nil {
 					log.ErrorContext(ctx, "Failed to send unauthorized message", "error", err, "chat_id", chatID)
 				}
-				return // Stop processing
+				return
 			}
 
-			// User is the admin, proceed to the next handler
 			next(ctx, bot, update)
 		}
 	}

@@ -1,5 +1,3 @@
-// Package handlers contains Telegram bot command and message handlers,
-// along with their registration logic.
 package handlers
 
 import (
@@ -12,12 +10,9 @@ import (
 	"github.com/go-telegram/bot/models"
 )
 
-// NewProfilesHandler creates a handler for the /mrl_profiles command.
+// NewProfilesHandler creates a handler for the /mrl_profiles command that displays
+// information about all stored user profiles to administrators.
 func NewProfilesHandler(deps HandlerDeps) bot.HandlerFunc {
-	// This function returns the actual handler logic for the /mrl_profiles command.
-	// It fetches all stored user profiles, formats them into a readable list,
-	// and sends the list back to the admin user who invoked the command.
-	// Requires admin privileges (enforced by middleware).
 	return func(ctx context.Context, b *bot.Bot, update *models.Update) {
 		log := deps.Logger.With("handler", "profiles")
 
@@ -56,7 +51,6 @@ func NewProfilesHandler(deps HandlerDeps) bot.HandlerFunc {
 			return
 		}
 
-		// Sort user IDs for consistent output order
 		userIDs := make([]int64, 0, len(profilesMap))
 		for id := range profilesMap {
 			userIDs = append(userIDs, id)
@@ -65,13 +59,12 @@ func NewProfilesHandler(deps HandlerDeps) bot.HandlerFunc {
 			return userIDs[i] < userIDs[j]
 		})
 
-		// Format the profiles into a single message string
 		var sb strings.Builder
-		sb.WriteString(deps.Config.Messages.ProfilesHeaderMsg) // Add header
+		sb.WriteString(deps.Config.Messages.ProfilesHeaderMsg)
 
 		for _, userID := range userIDs {
 			p := profilesMap[userID]
-			// Add spacing after commas for better readability
+
 			aliasesFormatted := strings.ReplaceAll(p.Aliases, ",", ", ")
 			traitsFormatted := strings.ReplaceAll(p.Traits, ",", ", ")
 			sb.WriteString(fmt.Sprintf("%d | %s | %s | %s | %s | %s\n\n",
@@ -84,14 +77,13 @@ func NewProfilesHandler(deps HandlerDeps) bot.HandlerFunc {
 			))
 		}
 
-		// Send the formatted list
 		_, err = b.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID: chatID,
 			Text:   sb.String(),
 		})
 		if err != nil {
 			log.ErrorContext(ctx, "Failed to send profiles list message", "error", err)
-			// Attempt to send a generic error if the main message failed
+
 			_, sendErr := b.SendMessage(ctx, &bot.SendMessageParams{
 				ChatID: chatID,
 				Text:   deps.Config.Messages.ErrorGeneralMsg,
