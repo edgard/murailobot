@@ -97,7 +97,7 @@ func Middleware(log *slog.Logger) bot.Middleware {
 			}
 			logEntry = logEntry.With("update_type", updateType)
 
-			logEntry.InfoContext(ctx, "Processing update")
+			logEntry.DebugContext(ctx, "Processing update")
 
 			next(ctx, b, update)
 
