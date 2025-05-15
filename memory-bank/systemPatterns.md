@@ -1,6 +1,7 @@
 # System Patterns
 
 **Architecture & Layout**
+
 - Entry point: `cmd/bot/main.go` initializes config, logger, DB, AI client, scheduler, handlers, tasks, retrieves bot info (`GetMe`) storing it in config, and starts the orchestrator.
 - Modular packages under `internal/`:
   - `config`: Viper-based `LoadConfig` and validation
@@ -11,6 +12,7 @@
   - `bot`: orchestrator `Run(ctx)` using `errgroup` and scheduler integration
 
 **Design Patterns & Practices**
+
 - Dependency Injection: interfaces (e.g., `Store`, `Client`) passed via `HandlerDeps`/`TaskDeps`.
 - Registry Pattern: centralized `registry.go` in handlers/tasks for dynamic command/task registration.
 - Scheduler Architecture:
@@ -24,6 +26,7 @@
   - `errgroup.Group` for concurrent goroutines
   - `signal.NotifyContext` for graceful shutdown on OS signals
   - Component lifecycle management with clean startup/shutdown
+  - Default `slog` logger is explicitly set in `cmd/bot/main.go` after custom logger initialization.
 - Transaction Management:
   - Begin-commit/rollback pattern with deferred cleanup
   - Atomic operations for related database modifications
@@ -59,6 +62,12 @@
   - Explicit state checks before progressing to subsequent steps
   - Use of JSON schema mode for structured output (`GenerateProfiles`)
   - Dynamic system instruction header injection for context (`GenerateReply`, `GenerateImageAnalysis`)
+  - `MentionSystemInstructionHeader` is parameterized (bot name, bot username) for dynamic bot identity in prompts.
+  - `ProfileAnalyzerSystemInstruction` includes detailed guidelines for data preservation (especially existing info), trait quality (brevity, max count, no redundancy, consolidation, prioritization, simple terms, avoiding weak observations), and provides explicit examples.
+- Deprecation Logging:
+  - Deprecated functions (e.g., in `internal/database/store.go`) log a warning when called to track usage and encourage migration.
+- Data Retrieval Specifics:
+  - `GetRecentMessages` in `store.go` uses `effectiveBeforeID = ^uint(0)` (max uint) when `beforeID` is 0, to fetch all messages up to the specified limit.
 
 ## MentionSystemInstructionHeader
 

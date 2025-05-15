@@ -13,14 +13,14 @@ import (
 // NewEditUserHandler creates a handler for the /mrl_edit_user command that allows
 // administrators to edit user profile information.
 func NewEditUserHandler(deps HandlerDeps) bot.HandlerFunc {
-	return editUserHandler{deps}.Handle
+	return editUserHandler{deps}.handle
 }
 
 type editUserHandler struct {
 	deps HandlerDeps
 }
 
-func (h editUserHandler) Handle(ctx context.Context, b *bot.Bot, update *models.Update) {
+func (h editUserHandler) handle(ctx context.Context, b *bot.Bot, update *models.Update) {
 	log := h.deps.Logger.With("handler", "edit_user")
 	allowedFields := map[string]bool{
 		"aliases":          true,

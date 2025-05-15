@@ -34,8 +34,8 @@ func NewDB(dbPath string) (*sqlx.DB, error) {
 	db.SetMaxIdleConns(1)
 	db.SetConnMaxLifetime(5 * time.Minute)
 
-	dbName := ExtractDBNameFromPath(dbPath)
-	if err := ApplyMigrations(db.DB, dbName); err != nil {
+	dbName := extractDBNameFromPath(dbPath)
+	if err := applyMigrations(db.DB, dbName); err != nil {
 		if closeErr := db.Close(); closeErr != nil {
 			slog.Error("Error closing database after migration failure", "close_error", closeErr, "migration_error", err)
 		}
@@ -58,9 +58,9 @@ func CloseDB(db *sqlx.DB) {
 	}
 }
 
-// ApplyMigrations runs database migrations to ensure the schema is up to date.
+// applyMigrations runs database migrations to ensure the schema is up to date.
 // It uses the embedded migration files to apply any pending schema changes.
-func ApplyMigrations(db *sql.DB, dbName string) error {
+func applyMigrations(db *sql.DB, dbName string) error {
 	if db == nil {
 		return errors.New("database connection is nil, cannot apply migrations")
 	}
@@ -106,8 +106,8 @@ func ApplyMigrations(db *sql.DB, dbName string) error {
 	return nil
 }
 
-// ExtractDBNameFromPath extracts the database name from a file path for migration purposes.
-func ExtractDBNameFromPath(path string) string {
+// extractDBNameFromPath extracts the database name from a file path for migration purposes.
+func extractDBNameFromPath(path string) string {
 	path = strings.TrimPrefix(path, "file:")
 
 	if idx := strings.Index(path, "?"); idx != -1 {

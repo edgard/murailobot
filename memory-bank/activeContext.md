@@ -1,6 +1,7 @@
 # Active Context
 
 **Current Work Focus**
+
 - Configuration system improvements and validation refinements
 - Scheduler library migration from cron to gocron v2 for improved job management
 - Enhanced mention handler with improved context handling and image processing
@@ -12,8 +13,10 @@
 - Ensuring consistent error handling across all components
 - Enhanced profile analysis with improved robustness and error recovery
 - Consolidated timeout management for long-running AI operations
+- Completed a comprehensive dead code analysis across the entire Go codebase.
 
 **Recent Changes**
+
 - Configuration system improvements:
   - Refined validation approach in configuration using built-in validators
   - Removed custom validators in favor of built-in ones from go-playground/validator
@@ -65,10 +68,14 @@
   - Improved logging with operation timing and result statistics
   - Added structured error reporting for both users and logs
 - Gemini Prompt Refinement:
-  - Updated `MentionSystemInstructionHeader` to include a capabilities list (conversational assistant, admin commands, user profile analysis, image analysis, task scheduling, database operations) and explicitly instruct the model *not* to mimic the input message format (timestamp/UID prefix) in its replies.
+  - Updated `MentionSystemInstructionHeader` to include a capabilities list (conversational assistant, admin commands, user profile analysis, image analysis, task scheduling, database operations), accept bot name and username as format parameters, and explicitly instruct the model _not_ to mimic the input message format (timestamp/UID prefix) in its replies.
+  - Detailed `ProfileAnalyzerSystemInstruction` with guidelines for preserving existing profile data, specific quality requirements for traits (brevity, max 15-20 traits, no redundancy, aggressive consolidation, prioritization of personality traits, use of simple terms, avoidance of weak observations), and illustrative examples of good/bad trait formatting.
 - Bot Info Retrieval: Implemented runtime retrieval of bot information (`GetMe`) and storage within the configuration struct.
+- Removed deprecated methods `GetRecentMessagesInChat`, `DeleteAllMessages`, and `DeleteAllUserProfiles` from `internal/database/store.go`.
+- Systematically analyzed all Go files (`cmd/`, `internal/`, `migrations/`) for dead code. No further dead code was identified.
 
 **Next Steps**
+
 - Implement comprehensive unit tests for scheduler, mention handler, transaction logic, middleware, and profile analysis logic.
 - Add integration tests for the bot orchestrator and component interactions.
 - Update `README.md` and other documentation to reflect recent changes (scheduler, commands, features).
@@ -80,8 +87,10 @@
 - Consider implementing pagination for large profile datasets (`/mrl_profiles`).
 - Optimize message processing batch sizes for improved throughput.
 - Explore database connection pooling improvements.
+- Awaiting further instructions or tasks.
 
 **Active Decisions & Considerations**
+
 - Use built-in validators from go-playground/validator when available instead of custom implementations
 - Provide sensible defaults for all configuration options while maintaining validation
 - Use gocron v2 for all scheduled task management for better reliability
@@ -100,8 +109,11 @@
 - Prefer explicit cancellation and timeout handling over generic error checks
 - Ensure AI responses do not include the input message formatting prefixes (timestamp/UID).
 - Enrich configuration at runtime where necessary (e.g., BotInfo from `GetMe`).
+- AI Prompting: Explicitly instruct the model on desired output formatting, including what _not_ to include (e.g., input prefixes). Ensure `MentionSystemInstructionHeader` is parameterized for bot identity. Enforce strict content and formatting guidelines for `ProfileAnalyzerSystemInstruction` including data preservation and trait quality.
+- The codebase is now leaner after the removal of unused database methods. The systematic check confirms no other obvious dead code.
 
 **Important Patterns & Preferences**
+
 - Configuration: Prefer built-in validators and provide sensible defaults for all options
 - Scheduler Management: Use gocron v2's job API for registration and NewTask for execution
 - Context Management: Propagate context through all operations with proper timeout handling
@@ -116,10 +128,12 @@
 - Batch Processing: Include detailed statistics (processed/saved counts) in logs and responses
 - Error Recovery: Implement graceful degradation with partial success handling in batch operations
 - Concurrency Management: Use proper timeout contexts for long-running operations with clear duration
-- AI Prompting: Explicitly instruct the model on desired output formatting, including what *not* to include (e.g., input prefixes).
+- AI Prompting: Explicitly instruct the model on desired output formatting, including what _not_ to include (e.g., input prefixes). Parameterize `MentionSystemInstructionHeader` for bot identity. Apply strict guidelines for `ProfileAnalyzerSystemInstruction` regarding data preservation and trait quality (brevity, max traits, consolidation).
 - Enrich configuration struct at runtime with dynamic data (e.g., BotInfo) when feasible.
+- Continue maintaining clean code and removing unused components as the project evolves.
 
 **Learnings & Project Insights**
+
 - Consolidated error handling in batch operations significantly improves robustness and maintainability
 - Statistical reporting (processed/saved counts) provides valuable operational insights
 - Context timeout management is critical for AI operations which may hang indefinitely
@@ -127,4 +141,6 @@
 - Factory functions for handlers create consistent initialization patterns and dependency injection
 - Explicit context management with timeouts prevents resource leaks in long-running operations
 - Structured logging with operation timing provides valuable diagnostic information
-- Separating core system instructions (like bot capabilities) from response formatting instructions (like avoiding prefixes) in AI prompts leads to cleaner and more maintainable prompt management.
+- Separating core system instructions (like bot capabilities) from response formatting instructions (like avoiding prefixes) in AI prompts leads to cleaner and more maintainable prompt management. Parameterizing prompts (e.g. `MentionSystemInstructionHeader`) enhances flexibility.
+- Detailed guidelines and examples in `ProfileAnalyzerSystemInstruction` are crucial for consistent and high-quality AI output for user profiling.
+- Regular dead code analysis is beneficial for maintaining codebase health.

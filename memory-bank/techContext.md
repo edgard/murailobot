@@ -1,10 +1,12 @@
 # Technical Context
 
 **Languages & Frameworks**
-- Go (>=1.20), module-enabled (`go.mod`)
+
+- Go (>=1.24), module-enabled (`go.mod`)
 
 **Key Libraries & Dependencies**
-- Telegram API: github.com/go-telegram/bot v1.14.2
+
+- Telegram API: github.com/go-telegram/bot v1.15.0
 - Scheduler: github.com/go-co-op/gocron/v2 v2.16.1 (upgraded from older cron library)
 - Configuration: github.com/spf13/viper v1.20.1, go-playground/validator/v10 v10.26.0
 - Database: modernc.org/sqlite v1.37.0, github.com/jmoiron/sqlx v1.4.0
@@ -14,11 +16,13 @@
 - Concurrency: golang.org/x/sync/errgroup v0.13.0
 
 **Development Setup**
+
 - VSCode with Go extension and auto-formatting (gofmt/slog style)
 - Makefile targets: `make build`, `make run`, `make migrate`
 - Example configuration file: `config.yaml.example`
 
 **Tool Usage Patterns**
+
 - gocron v2 for task scheduling with proper lifecycle management and error handling
 - Viper for config loading and struct validation
 - Slog for structured logging with adjustable levels and formats
@@ -29,6 +33,7 @@
 - Explicit context timeouts for AI operations with appropriate durations
 
 **Technical Constraints**
+
 - SQLite for local persistence
 - No external database dependencies
 - AI integration limited to Gemini/GenAI SDK
@@ -37,6 +42,7 @@
 - Timeout constraints for long-running AI operations
 
 **Operational Patterns**
+
 - Component lifecycle management:
   - Clear initialization sequence in main.go
   - Graceful termination with context cancellation

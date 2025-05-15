@@ -12,14 +12,14 @@ import (
 // NewResetHandler creates a handler for the /mrl_reset command that deletes
 // all messages and user profiles from the database, providing a clean slate.
 func NewResetHandler(deps HandlerDeps) bot.HandlerFunc {
-	return resetHandler{deps}.Handle
+	return resetHandler{deps}.handle
 }
 
 type resetHandler struct {
 	deps HandlerDeps
 }
 
-func (h resetHandler) Handle(ctx context.Context, b *bot.Bot, update *models.Update) {
+func (h resetHandler) handle(ctx context.Context, b *bot.Bot, update *models.Update) {
 	log := h.deps.Logger.With("handler", "reset")
 
 	if update.Message == nil || update.Message.From == nil {

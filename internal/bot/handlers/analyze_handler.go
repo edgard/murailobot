@@ -15,14 +15,14 @@ import (
 // NewAnalyzeHandler creates a handler for the /mrl_analyze command that processes unanalyzed messages
 // and generates/updates user profiles based on message content.
 func NewAnalyzeHandler(deps HandlerDeps) bot.HandlerFunc {
-	return analyzeHandler{deps}.Handle
+	return analyzeHandler{deps}.handle
 }
 
 type analyzeHandler struct {
 	deps HandlerDeps
 }
 
-func (h analyzeHandler) Handle(ctx context.Context, b *bot.Bot, update *models.Update) {
+func (h analyzeHandler) handle(ctx context.Context, b *bot.Bot, update *models.Update) {
 	log := h.deps.Logger.With("handler", "analyze")
 
 	if update.Message == nil || update.Message.From == nil {

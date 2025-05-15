@@ -30,10 +30,10 @@ type mentionHandler struct {
 // NewMentionHandler creates a handler that responds to messages where the bot is mentioned.
 // It processes the message content and generates responses using the AI client.
 func NewMentionHandler(deps HandlerDeps) bot.HandlerFunc {
-	return mentionHandler{deps}.Handle
+	return mentionHandler{deps}.handle
 }
 
-func (h mentionHandler) Handle(ctx context.Context, b *bot.Bot, update *models.Update) {
+func (h mentionHandler) handle(ctx context.Context, b *bot.Bot, update *models.Update) {
 	deps := h.deps
 	log := deps.Logger.With("handler", "mention")
 
@@ -84,7 +84,7 @@ func (h mentionHandler) Handle(ctx context.Context, b *bot.Bot, update *models.U
 		Content:   text,
 		Timestamp: time.Unix(int64(msg.Date), 0),
 	}
-	SaveMessageWithRetry(ctx, deps, incomingMsg, "incoming message")
+	saveMessageWithRetry(ctx, deps, incomingMsg, "incoming message")
 
 	if strings.TrimSpace(text) == "" && len(msg.Photo) == 0 {
 		log.InfoContext(ctx, "Mention received but prompt is empty", "chat_id", chatID)
@@ -186,7 +186,7 @@ func (h mentionHandler) processTextMention(ctx context.Context, b *bot.Bot, chat
 		contextMessages = []*database.Message{}
 	}
 
-	AIProcess(ctx, b, deps, chatID, messageID, contextMessages,
+	aiProcess(ctx, b, deps, chatID, messageID, contextMessages,
 		func(aiCtx context.Context, msgs []*database.Message) (string, error) {
 			return deps.GeminiClient.GenerateReply(aiCtx, msgs,
 				deps.Config.Telegram.BotInfo.ID,
@@ -228,7 +228,7 @@ func (h mentionHandler) processImageMention(ctx context.Context, b *bot.Bot, cha
 	fileID := bestPhoto.FileID
 	log.DebugContext(ctx, "Selected best quality photo", "file_id", fileID, "width", bestPhoto.Width, "height", bestPhoto.Height)
 
-	data, mimeType, err := DownloadPhoto(ctx, b, deps.Config.Telegram.Token, fileID)
+	data, mimeType, err := downloadPhoto(ctx, b, deps.Config.Telegram.Token, fileID)
 	if err != nil {
 		log.ErrorContext(ctx, "Photo download failed", "error", err, "chat_id", chatID, "file_id", fileID)
 		if _, sendErr := b.SendMessage(ctx, &bot.SendMessageParams{ChatID: chatID, Text: deps.Config.Messages.ErrorGeneralMsg}); sendErr != nil {
@@ -237,7 +237,7 @@ func (h mentionHandler) processImageMention(ctx context.Context, b *bot.Bot, cha
 		return
 	}
 
-	AIProcess(ctx, b, deps, chatID, messageID, contextMessages,
+	aiProcess(ctx, b, deps, chatID, messageID, contextMessages,
 		func(aiCtx context.Context, msgs []*database.Message) (string, error) {
 			return deps.GeminiClient.GenerateImageAnalysis(aiCtx, msgs, mimeType, data,
 				deps.Config.Telegram.BotInfo.ID,
@@ -249,9 +249,9 @@ func (h mentionHandler) processImageMention(ctx context.Context, b *bot.Bot, cha
 	)
 }
 
-// DownloadPhoto downloads a photo from Telegram's API using the provided file ID.
+// downloadPhoto downloads a photo from Telegram's API using the provided file ID.
 // It returns the photo data, detected MIME type, and any error encountered.
-func DownloadPhoto(ctx context.Context, b *bot.Bot, token, fileID string) (data []byte, mimeType string, err error) {
+func downloadPhoto(ctx context.Context, b *bot.Bot, token, fileID string) (data []byte, mimeType string, err error) {
 	if token == "" {
 		return nil, "", fmt.Errorf("empty token provided for photo download")
 	}
@@ -311,9 +311,9 @@ func DownloadPhoto(ctx context.Context, b *bot.Bot, token, fileID string) (data 
 	return data, mimeType, nil
 }
 
-// SendAndSaveReply sends a reply message to the chat and saves it in the database.
+// sendAndSaveReply sends a reply message to the chat and saves it in the database.
 // It manages both the Telegram API call and the persistent storage of the bot's response.
-func SendAndSaveReply(ctx context.Context, b *bot.Bot, deps HandlerDeps, chatID int64, replyTo int, text string) {
+func sendAndSaveReply(ctx context.Context, b *bot.Bot, deps HandlerDeps, chatID int64, replyTo int, text string) {
 	log := deps.Logger.With("handler", "mention")
 	if b == nil || chatID == 0 || replyTo <= 0 {
 		log.ErrorContext(ctx, "Invalid parameters to SendAndSaveReply", "chat_id", chatID, "reply_to", replyTo)
@@ -354,12 +354,12 @@ func SendAndSaveReply(ctx context.Context, b *bot.Bot, deps HandlerDeps, chatID 
 		Content:   text,
 		Timestamp: time.Now().UTC(),
 	}
-	SaveMessageWithRetry(ctx, deps, msg, "bot reply")
+	saveMessageWithRetry(ctx, deps, msg, "bot reply")
 }
 
-// SaveMessageWithRetry attempts to save a message to the database with retry logic.
+// saveMessageWithRetry attempts to save a message to the database with retry logic.
 // It handles failures and logs appropriate warning messages.
-func SaveMessageWithRetry(ctx context.Context, deps HandlerDeps, msg *database.Message, msgType string) {
+func saveMessageWithRetry(ctx context.Context, deps HandlerDeps, msg *database.Message, msgType string) {
 	log := deps.Logger.With("handler", "mention")
 	const maxRetries = 3
 	var err error
@@ -388,9 +388,9 @@ func SaveMessageWithRetry(ctx context.Context, deps HandlerDeps, msg *database.M
 	log.ErrorContext(ctx, fmt.Sprintf("Failed to save %s after %d retries", msgType, maxRetries), "last_error", err, "chat_id", msg.ChatID)
 }
 
-// DeduplicateMessages removes duplicate messages from a message slice based on content and timestamp.
+// deduplicateMessages removes duplicate messages from a message slice based on content and timestamp.
 // It's used to clean up message history before processing by the AI.
-func DeduplicateMessages(messages []*database.Message) []*database.Message {
+func deduplicateMessages(messages []*database.Message) []*database.Message {
 	if len(messages) <= 1 {
 		return messages
 	}
@@ -426,9 +426,9 @@ func DeduplicateMessages(messages []*database.Message) []*database.Message {
 	return result
 }
 
-// AIProcess handles the AI processing workflow, invoking the provided generate function
+// aiProcess handles the AI processing workflow, invoking the provided generate function
 // and managing response generation, error handling, and message sending.
-func AIProcess(ctx context.Context, b *bot.Bot, deps HandlerDeps, chatID int64, messageID int, messages []*database.Message, generate func(context.Context, []*database.Message) (string, error)) {
+func aiProcess(ctx context.Context, b *bot.Bot, deps HandlerDeps, chatID int64, messageID int, messages []*database.Message, generate func(context.Context, []*database.Message) (string, error)) {
 	log := deps.Logger.With("handler", "mention")
 	if ctx.Err() != nil || chatID == 0 || messageID <= 0 || generate == nil {
 		log.ErrorContext(ctx, "Invalid parameters or cancelled context for AIProcess", "chat_id", chatID, "message_id", messageID, "generate_nil", generate == nil)
@@ -437,7 +437,7 @@ func AIProcess(ctx context.Context, b *bot.Bot, deps HandlerDeps, chatID int64, 
 
 	_, _ = b.SendChatAction(ctx, &bot.SendChatActionParams{ChatID: chatID, Action: models.ChatActionTyping})
 
-	finalMsgs := DeduplicateMessages(messages)
+	finalMsgs := deduplicateMessages(messages)
 	if len(finalMsgs) != len(messages) {
 		log.DebugContext(ctx, "Deduplicated messages before sending to AI", "original_count", len(messages), "final_count", len(finalMsgs), "chat_id", chatID)
 	}
@@ -459,5 +459,5 @@ func AIProcess(ctx context.Context, b *bot.Bot, deps HandlerDeps, chatID int64, 
 		resp = deps.Config.Messages.MentionAIEmptyFallbackMsg
 	}
 
-	SendAndSaveReply(ctx, b, deps, chatID, messageID, resp)
+	sendAndSaveReply(ctx, b, deps, chatID, messageID, resp)
 }

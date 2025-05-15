@@ -19,8 +19,6 @@ type Store interface {
 
 	SaveMessage(ctx context.Context, message *Message) error
 
-	GetRecentMessagesInChat(ctx context.Context, chatID int64, limit int) ([]Message, error)
-
 	RunSQLMaintenance(ctx context.Context) error
 
 	GetUserProfile(ctx context.Context, userID int64) (*UserProfile, error)
@@ -32,10 +30,6 @@ type Store interface {
 	GetUnprocessedMessages(ctx context.Context) ([]*Message, error)
 
 	MarkMessagesAsProcessed(ctx context.Context, messageIDs []uint) error
-
-	DeleteAllMessages(ctx context.Context) error
-
-	DeleteAllUserProfiles(ctx context.Context) error
 
 	GetRecentMessages(ctx context.Context, chatID int64, limit int, beforeID uint) ([]*Message, error)
 
@@ -126,42 +120,6 @@ func (s *sqlxStore) SaveMessage(ctx context.Context, message *Message) error {
 
 	s.logger.DebugContext(ctx, "Message saved successfully", "message_id", message.ID)
 	return nil
-}
-
-func (s *sqlxStore) GetRecentMessagesInChat(ctx context.Context, chatID int64, limit int) ([]Message, error) {
-	s.logger.WarnContext(ctx, "Deprecated function GetRecentMessagesInChat called", "chat_id", chatID)
-	if chatID == 0 {
-		return nil, fmt.Errorf("chat_id cannot be zero")
-	}
-	if limit <= 0 {
-		limit = 20
-	} else if limit > 100 {
-		limit = 100
-	}
-
-	if ctx.Err() != nil {
-		return nil, ctx.Err()
-	}
-
-	var messages []Message
-	query := `
-        SELECT id, chat_id, user_id, content, timestamp, created_at, updated_at, processed_at
-        FROM messages
-        WHERE chat_id = ?
-        ORDER BY timestamp DESC
-        LIMIT ?;
-    `
-	err := s.db.SelectContext(ctx, &messages, query, chatID, limit)
-
-	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
-		s.logger.WarnContext(ctx, "Context timeout/cancellation fetching recent messages (deprecated)", "error", err)
-		return nil, err
-	}
-	if err != nil {
-		s.logger.ErrorContext(ctx, "Error getting recent messages (deprecated)", "error", err)
-		return nil, fmt.Errorf("failed to get recent messages for chat %d: %w", chatID, err)
-	}
-	return messages, nil
 }
 
 func (s *sqlxStore) RunSQLMaintenance(ctx context.Context) error {
@@ -436,32 +394,6 @@ func (s *sqlxStore) MarkMessagesAsProcessed(ctx context.Context, messageIDs []ui
 	tx = nil
 
 	s.logger.DebugContext(ctx, "Marked messages as processed successfully", "count", affected)
-	return nil
-}
-
-func (s *sqlxStore) DeleteAllMessages(ctx context.Context) error {
-	s.logger.WarnContext(ctx, "Deprecated function DeleteAllMessages called")
-	query := `DELETE FROM messages`
-	result, err := s.db.ExecContext(ctx, query)
-	if err != nil {
-		s.logger.ErrorContext(ctx, "Error deleting all messages (deprecated)", "error", err)
-		return fmt.Errorf("failed to delete all messages: %w", err)
-	}
-	count, _ := result.RowsAffected()
-	s.logger.InfoContext(ctx, "Deleted all messages (deprecated)", "count", count)
-	return nil
-}
-
-func (s *sqlxStore) DeleteAllUserProfiles(ctx context.Context) error {
-	s.logger.WarnContext(ctx, "Deprecated function DeleteAllUserProfiles called")
-	query := `DELETE FROM user_profiles`
-	result, err := s.db.ExecContext(ctx, query)
-	if err != nil {
-		s.logger.ErrorContext(ctx, "Error deleting all user profiles (deprecated)", "error", err)
-		return fmt.Errorf("failed to delete all user profiles: %w", err)
-	}
-	count, _ := result.RowsAffected()
-	s.logger.InfoContext(ctx, "Deleted all user profiles (deprecated)", "count", count)
 	return nil
 }
 

@@ -1,6 +1,7 @@
 # Progress
 
 **What Works**
+
 - Configuration loading and validation via Viper and go-playground/validator:
   - Improved validation using built-in validators instead of custom ones
   - Added comprehensive defaults for all configuration options
@@ -59,10 +60,19 @@
   - Explicit error categorization and handling
   - Closure-based scope management for complex operations
 - AI Response Formatting:
-  - Updated `MentionSystemInstructionHeader` prompt to include a capabilities list (conversational assistant, admin commands, user profile analysis, image analysis, task scheduling, database operations) and prevent the AI from mimicking input message prefixes (timestamp/UID) in its replies.
+  - Updated `MentionSystemInstructionHeader` prompt to include a capabilities list, accept bot name/username parameters, and prevent the AI from mimicking input message prefixes (timestamp/UID) in its replies.
+  - `ProfileAnalyzerSystemInstruction` updated with detailed guidelines for preserving existing profile data, and specific quality requirements for traits (brevity, max 15-20 traits, no redundancy, aggressive consolidation, prioritization of personality traits, use of simple terms, avoidance of weak observations), including examples.
 - Runtime bot information retrieval (`GetMe`) and storage in config.
+- Core bot functionality (message handling, AI replies, image analysis, user profiling).
+- Database operations (storing/retrieving messages, users, profiles).
+- Scheduled tasks (SQL maintenance, profile generation).
+- Configuration loading and logging.
+- Telegram API integration.
+- AI integration with Gemini.
+- Database migrations.
 
 **What's Left to Build**
+
 - Unit Tests: Scheduler, mention handler, transaction logic, middleware, profile analysis logic.
 - Integration Tests: Bot orchestrator, component interactions.
 - Documentation: Update `README.md` and internal docs for scheduler migration, new features.
@@ -74,6 +84,7 @@
 - Exploration: Consider alternative AI models, database abstraction layer.
 
 **Current Status**
+
 - Core architecture and features are fully implemented with improved scheduler
 - Configuration system refined with better validation and comprehensive defaults
 - Scheduler migration to gocron v2 is complete and functioning properly
@@ -91,23 +102,29 @@
 - Configuration example updated with detailed inline documentation
 - AI prompts refined to ensure cleaner output formatting.
 - Runtime bot information is successfully retrieved and stored.
+- Completed a full codebase review for dead/obsolete code.
+- Removed identified deprecated database methods from `internal/database/store.go`.
+- Confirmed no other dead code in the Go source files.
+- The project is stable and current tasks are complete.
 
 **Known Issues**
+
 - **Testing Gaps:** Lack of comprehensive unit/integration tests for:
-    - Scheduler logic and task execution.
-    - Mention handler robustness (especially under load).
-    - Database transaction atomicity and edge cases.
-    - Middleware functionality (e.g., AdminOnly).
-    - Profile analysis logic (`analyze_handler.go`).
+  - Scheduler logic and task execution.
+  - Mention handler robustness (especially under load).
+  - Database transaction atomicity and edge cases.
+  - Middleware functionality (e.g., AdminOnly).
+  - Profile analysis logic (`analyze_handler.go`).
 - Potential performance bottlenecks:
-    - Database query patterns under load.
-    - Large message batches during profile analysis.
-    - AI analysis operations timing out under load.
+  - Database query patterns under load.
+  - Large message batches during profile analysis.
+  - AI analysis operations timing out under load.
 - User feedback for admin operations could be more informative.
 - Documentation (README, etc.) needs updates for recent changes.
 - Lack of telemetry for AI operations.
 
 **Evolution of Decisions**
+
 - Moved from custom validators to built-in validators where possible for simplicity and maintainability
 - Adopted approach of providing sensible defaults for all configuration options
 - Migrated from cron library to gocron v2 for improved task management
@@ -125,5 +142,7 @@
 - Implemented partial success handling for batch operations rather than all-or-nothing approach
 - Added statistical reporting (processed/saved counts) to batch operations
 - Introduced dedicated timeout contexts for long-running AI operations
-- Refined AI prompts to explicitly guide output formatting and prevent unwanted mimicry of input structure.
+- Refined AI prompts to explicitly guide output formatting and prevent unwanted mimicry of input structure. `MentionSystemInstructionHeader` is now parameterized. `ProfileAnalyzerSystemInstruction` has strict guidelines for content generation, especially regarding trait quality and preservation of existing data.
 - Decided to enrich configuration at runtime with data fetched after initialization (e.g., BotInfo via `GetMe`).
+- Decision to perform a full dead code audit has been completed, leading to a cleaner `store.go`.
+- Reinforced the practice of ensuring all code components have clear usage.

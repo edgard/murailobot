@@ -9,7 +9,7 @@ A Telegram bot powered by Google's Gemini AI models that provides intelligent re
 
 ## Prerequisites
 
-- Go 1.20+
+- Go 1.24+
 - Telegram Bot Token (from @BotFather)
 - Google Gemini API Key
 
