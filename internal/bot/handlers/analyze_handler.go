@@ -92,7 +92,12 @@ func (h analyzeHandler) handle(ctx context.Context, b *bot.Bot, update *models.U
 		}
 		logicLog.InfoContext(ctx, "Fetched existing profiles", "count", len(existingProfiles))
 
-		updatedProfiles, err := h.deps.GeminiClient.GenerateProfiles(timeoutCtx, messages, existingProfiles)
+		// Get bot info from config
+		botID := h.deps.Config.Telegram.BotInfo.ID
+		botUsername := h.deps.Config.Telegram.BotInfo.Username
+		botFirstName := h.deps.Config.Telegram.BotInfo.FirstName
+
+		updatedProfiles, err := h.deps.GeminiClient.GenerateProfiles(timeoutCtx, messages, existingProfiles, botID, botUsername, botFirstName)
 		if err != nil {
 			if errors.Is(err, context.DeadlineExceeded) {
 				logicLog.WarnContext(ctx, "Timeout generating profiles via Gemini")

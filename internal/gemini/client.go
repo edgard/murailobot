@@ -23,7 +23,7 @@ import (
 type Client interface {
 	GenerateReply(ctx context.Context, messages []*database.Message, botID int64, botUsername, botFirstName string, searchGrounding bool) (string, error)
 
-	GenerateProfiles(ctx context.Context, messages []*database.Message, existingProfiles map[int64]*database.UserProfile) (map[int64]*database.UserProfile, error)
+	GenerateProfiles(ctx context.Context, messages []*database.Message, existingProfiles map[int64]*database.UserProfile, botID int64, botUsername, botFirstName string) (map[int64]*database.UserProfile, error)
 
 	GenerateImageAnalysis(ctx context.Context, messages []*database.Message, mimeType string, imageData []byte, botID int64, botUsername, botFirstName string, searchGrounding bool) (string, error)
 }
@@ -151,6 +151,7 @@ func (c *sdkClient) GenerateProfiles(
 	ctx context.Context,
 	messages []*database.Message,
 	existingProfiles map[int64]*database.UserProfile,
+	botID int64, botUsername, botFirstName string,
 ) (map[int64]*database.UserProfile, error) {
 	c.log.DebugContext(ctx, "Generating profiles using JSON schema mode", "message_count", len(messages), "existing_profile_count", len(existingProfiles))
 	if len(messages) == 0 {
@@ -159,7 +160,7 @@ func (c *sdkClient) GenerateProfiles(
 	}
 
 	var sb strings.Builder
-	sb.WriteString(ProfileAnalyzerSystemInstruction)
+	sb.WriteString(fmt.Sprintf(ProfileAnalyzerSystemInstruction, botID, botUsername, botFirstName))
 
 	existingJSON, err := json.MarshalIndent(existingProfiles, "", "  ")
 	if err != nil {

@@ -49,6 +49,17 @@ GOOD (focused, prioritized): "observant, philosophical, self-deprecating"
 BAD (overly detailed): "denies being otaku, plays video games, likes wordplay, tech-inquisitive, uses informal language, enjoys cultural references, confrontational, uses profanity liberally"
 GOOD (essence captured): "confrontational, tech-savvy, informal communicator"
 
+## BOT IDENTIFICATION [IMPORTANT]
+Bot UID: %d
+Bot Username: %s
+Bot First Name: %s
+
+### BOT INFLUENCE AWARENESS [IMPORTANT]
+- DO NOT attribute traits based on topics introduced by the bot
+- If the bot mentions a topic and the user merely responds, this is not evidence of a personal trait
+- Only identify traits from topics and interests the user has independently demonstrated
+- Ignore creative embellishments that might have been added by the bot in previous responses
+
 ### INSTRUCTIONS
 Analyze the following conversation messages and existing user profiles. Update the profiles based on new information revealed in the messages.
 Return ONLY a valid JSON array containing objects for each user whose profile needs updating or creation, matching the provided schema.
