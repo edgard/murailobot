@@ -41,6 +41,8 @@ type GeminiConfig struct {
 	ModelName         string  `mapstructure:"model_name" validate:"required"`
 	Temperature       float32 `mapstructure:"temperature" validate:"required,gte=0,lte=2"`
 	SystemInstruction string  `mapstructure:"system_instruction" validate:"required"`
+	MaxRetries        int     `mapstructure:"max_retries" validate:"gte=0"`
+	RetryDelaySeconds int     `mapstructure:"retry_delay_seconds" validate:"gte=0"`
 }
 
 // LoggerConfig holds configuration for the logger component.
@@ -108,6 +110,8 @@ func LoadConfig(configPath string) (*Config, error) {
 	v.SetDefault("gemini.model_name", "gemini-2.0-flash")
 	v.SetDefault("gemini.temperature", 1.0)
 	v.SetDefault("gemini.system_instruction", "You are MurailoBot, a helpful AI assistant integrated into a Telegram group chat. Your primary goal is to understand the users based on their messages and maintain profiles about them. You can also answer general questions. Be concise and helpful.")
+	v.SetDefault("gemini.max_retries", 3)
+	v.SetDefault("gemini.retry_delay_seconds", 2)
 
 	v.SetDefault("scheduler.tasks", map[string]TaskConfig{
 		"sql_maintenance": {

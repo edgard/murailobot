@@ -5,12 +5,14 @@ package gemini
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"regexp"
 	"runtime"
 	"strconv"
 	"strings"
+	"time"
 
 	"google.golang.org/genai"
 
@@ -33,6 +35,8 @@ type sdkClient struct {
 	log              *slog.Logger
 	contentConfig    *genai.GenerateContentConfig
 	defaultModelName string
+	maxRetries       int
+	retryDelay       time.Duration
 }
 
 func (c *sdkClient) prependBotHeader(cfg *genai.GenerateContentConfig, botUsername, botFirstName string) *genai.GenerateContentConfig {
@@ -97,7 +101,44 @@ func NewClient(
 		log:              logger,
 		contentConfig:    baseCfg,
 		defaultModelName: cfg.ModelName,
+		maxRetries:       cfg.MaxRetries,
+		retryDelay:       time.Duration(cfg.RetryDelaySeconds) * time.Second,
 	}, nil
+}
+
+func (c *sdkClient) generateContentWithRetries(ctx context.Context, modelName string, contents []*genai.Content, cfg *genai.GenerateContentConfig) (*genai.GenerateContentResponse, error) {
+	var resp *genai.GenerateContentResponse
+	var err error
+
+	for i := 0; i <= c.maxRetries; i++ {
+		resp, err = c.genaiClient.Models.GenerateContent(ctx, modelName, contents, cfg)
+		if err == nil {
+			return resp, nil
+		}
+
+		c.log.WarnContext(ctx, "Gemini API call failed, checking for retry", "attempt", i+1, "max_retries", c.maxRetries, "error", err)
+
+		var genAiAPIError *genai.APIError
+		// Use errors.As to check if the error (or an error it wraps) is a *genai.APIError
+		if errors.As(err, &genAiAPIError) && (genAiAPIError.Code == 500 || genAiAPIError.Code == 503) { // Retriable HTTP codes
+			if i < c.maxRetries {
+				c.log.InfoContext(ctx, "Retrying Gemini API call due to retriable APIError", "delay", c.retryDelay, "code", genAiAPIError.Code)
+				time.Sleep(c.retryDelay)
+				continue
+			}
+			// Max retries reached for a retriable genai.APIError
+			c.log.ErrorContext(ctx, "Gemini API call failed after max retries with APIError", "error", err, "code", genAiAPIError.Code)
+			return nil, fmt.Errorf("gemini API call failed after %d retries (APIError code %d): %w", c.maxRetries, genAiAPIError.Code, err)
+		}
+
+		// Not a retriable genai.APIError (either not genai.APIError, or not a 500/503 code, or errors.As returned false)
+		c.log.ErrorContext(ctx, "Gemini API call failed with non-retriable error", "error", err)
+		return nil, fmt.Errorf("gemini API call failed: %w", err) // Return the original error, wrapped
+	}
+	// This part of the code should be unreachable if maxRetries >= 0,
+	// as the loop's conditions will always lead to a return or continue.
+	// Returning the last error to satisfy the compiler and cover edge cases.
+	return nil, err
 }
 
 func (c *sdkClient) GenerateReply(ctx context.Context, messages []*database.Message, botID int64, botUsername, botFirstName string, searchGrounding bool) (string, error) {
@@ -119,7 +160,7 @@ func (c *sdkClient) GenerateReply(ctx context.Context, messages []*database.Mess
 
 	cfgWithHeader := c.prependBotHeader(&copyCfg, botUsername, botFirstName)
 
-	resp, err := c.genaiClient.Models.GenerateContent(ctx, c.defaultModelName, contents, cfgWithHeader)
+	resp, err := c.generateContentWithRetries(ctx, c.defaultModelName, contents, cfgWithHeader)
 	if err != nil {
 		c.log.ErrorContext(ctx, "Gemini reply generation failed", "error", err)
 		return "", fmt.Errorf("gemini API call failed: %w", err)
@@ -182,7 +223,7 @@ func (c *sdkClient) GenerateProfiles(
 	copyCfg.ResponseMIMEType = "application/json"
 	copyCfg.ResponseSchema = profileListSchema
 
-	resp, err := c.genaiClient.Models.GenerateContent(ctx, c.defaultModelName, contents, &copyCfg)
+	resp, err := c.generateContentWithRetries(ctx, c.defaultModelName, contents, &copyCfg)
 	if err != nil {
 		c.log.ErrorContext(ctx, "Gemini profiles generation API call failed", "error", err)
 		return nil, fmt.Errorf("failed to generate profiles: %w", err)
@@ -273,7 +314,7 @@ func (c *sdkClient) GenerateImageAnalysis(
 	}
 	cfgWithHeader := c.prependBotHeader(&copyCfg, botUsername, botFirstName)
 
-	resp, err := c.genaiClient.Models.GenerateContent(ctx, c.defaultModelName, contents, cfgWithHeader)
+	resp, err := c.generateContentWithRetries(ctx, c.defaultModelName, contents, cfgWithHeader)
 	if err != nil {
 		c.log.ErrorContext(ctx, "Gemini image analysis API call failed", "error", err)
 		return "", fmt.Errorf("gemini image analysis failed: %w", err)
