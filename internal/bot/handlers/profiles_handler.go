@@ -63,6 +63,9 @@ func NewProfilesHandler(deps HandlerDeps) bot.HandlerFunc {
 		sb.WriteString(deps.Config.Messages.ProfilesHeaderMsg)
 
 		for _, userID := range userIDs {
+			if userID == b.ID() {
+				continue
+			}
 			p := profilesMap[userID]
 
 			aliasesFormatted := strings.ReplaceAll(p.Aliases, ",", ", ")
