@@ -79,11 +79,6 @@ type BotMessagesConfig struct {
 	ResetErrorMsg   string `mapstructure:"reset_error_msg" validate:"required"`
 	ResetTimeoutMsg string `mapstructure:"reset_timeout_msg" validate:"required"`
 
-	AnalyzeProgressMsg   string `mapstructure:"analyze_progress_msg" validate:"required"`
-	AnalyzeNoMessagesMsg string `mapstructure:"analyze_no_messages_msg" validate:"required"`
-	AnalyzeCompleteFmt   string `mapstructure:"analyze_complete_fmt" validate:"required,contains=%d"`
-	AnalyzeTimeoutMsg    string `mapstructure:"analyze_timeout_msg" validate:"required"`
-
 	ProfilesEmptyMsg  string `mapstructure:"profiles_empty_msg" validate:"required"`
 	ProfilesHeaderMsg string `mapstructure:"profiles_header_msg" validate:"required"`
 
@@ -121,7 +116,7 @@ func LoadConfig(configPath string) (*Config, error) {
 	})
 
 	v.SetDefault("messages.start_welcome_msg", "Hello!. Mention me or use /help to see what I can do.")
-	v.SetDefault("messages.help_msg", "Here's how you can interact with me:\n- Mention me followed by your question or request.\n- Reply directly to one of my messages.\n- Use /help to see this message again.\n\nAdmin commands:\n/mrl_reset - Delete all message history and profiles\n/mrl_analyze - Force analysis of unprocessed messages\n/mrl_profiles - Show all stored user profiles\n/mrl_edit_user <user_id> <field> <value> - Manually edit a user profile field (fields: aliases, origin_location, current_location, age_range, traits)")
+	v.SetDefault("messages.help_msg", "Here's how you can interact with me:\n- Mention me followed by your question or request.\n- Reply directly to one of my messages.\n- Use /help to see this message again.\n\nAdmin commands:\n/mrl_reset - Delete all message history and profiles\n/mrl_profiles - Show all stored user profiles\n/mrl_edit_user <user_id> <field> <value> - Manually edit a user profile field (fields: aliases, origin_location, current_location, age_range, traits)")
 
 	v.SetDefault("messages.error_general_msg", "Sorry, something went wrong on my end. Please try again later or contact the admin.")
 	v.SetDefault("messages.error_unauthorized_msg", "⛔ You are not authorized to use this command.")
@@ -134,11 +129,6 @@ func LoadConfig(configPath string) (*Config, error) {
 	v.SetDefault("messages.reset_confirm_msg", "✅ All message history and user profiles have been successfully deleted.")
 	v.SetDefault("messages.reset_error_msg", "❌ Error: Failed to reset data. Please check the logs.")
 	v.SetDefault("messages.reset_timeout_msg", "⏳ Warning: The data reset operation timed out. It might be partially complete. Please check the logs.")
-
-	v.SetDefault("messages.analyze_progress_msg", "⏳ Analyzing unprocessed messages to update user profiles...")
-	v.SetDefault("messages.analyze_no_messages_msg", "ℹ️ No new messages found to analyze.")
-	v.SetDefault("messages.analyze_complete_fmt", "✅ Analysis complete. Processed %d messages. Updated/created %d profiles.")
-	v.SetDefault("messages.analyze_timeout_msg", "⏳ Warning: The profile analysis operation timed out. It might be partially complete. Please check the logs.")
 
 	v.SetDefault("messages.profiles_empty_msg", "ℹ️ No user profiles found in the database.")
 	v.SetDefault("messages.profiles_header_msg", "👤 **Stored User Profiles** 👤\n\nUserID | Aliases | Origin | Current | Age | Traits\n--------------------------------------------------\n")

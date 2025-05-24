@@ -31,11 +31,16 @@ scheduler:
       schedule: "0 3 * * *" # Cron schedule expression (required, valid cron format)
       enabled: true # Whether task is active
 
+    # Profile analysis task runs every day at 2 AM
+    profile_analysis:
+      schedule: "0 2 * * *" # Cron schedule expression (required, valid cron format)
+      enabled: true # Whether task is active
+
 # Bot Message Strings
 messages:
   # General and Welcome Messages
   start_welcome_msg: "Hello! I'm MurailoBot. Mention me (@<bot_username>) or use /help to see what I can do."
-  help_msg: "Here's how you can interact with me:\n- Mention me followed by your question or request.\n- Reply directly to one of my messages.\n- Use /help to see this message again.\n\nAdmin commands:\n/mrl_reset - Delete all message history and profiles\n/mrl_analyze - Force analysis of unprocessed messages\n/mrl_profiles - Show all stored user profiles\n/mrl_edit_user <user_id> <field> <value> - Manually edit a user profile field (fields: aliases, origin_location, current_location, age_range, traits)"
+  help_msg: "Here's how you can interact with me:\n- Mention me followed by your question or request.\n- Reply directly to one of my messages.\n- Use /help to see this message again.\n\nAdmin commands:\n/mrl_reset - Delete all message history and profiles\n/mrl_profiles - Show all stored user profiles\n/mrl_edit_user <user_id> <field> <value> - Manually edit a user profile field (fields: aliases, origin_location, current_location, age_range, traits)"
 
   # Error Messages
   error_general_msg: "Sorry, something went wrong on my end. Please try again later or contact the admin."
@@ -51,12 +56,6 @@ messages:
   reset_confirm_msg: "✅ All message history and user profiles have been successfully deleted."
   reset_error_msg: "❌ Error: Failed to reset data. Please check the logs."
   reset_timeout_msg: "⏳ Warning: The data reset operation timed out. It might be partially complete. Please check the logs."
-
-  # Analyze Command Messages
-  analyze_progress_msg: "⏳ Analyzing unprocessed messages to update user profiles..."
-  analyze_no_messages_msg: "ℹ️ No new messages found to analyze."
-  analyze_complete_fmt: "✅ Analysis complete. Processed %d messages. Updated/created %d profiles."
-  analyze_timeout_msg: "⏳ Warning: The profile analysis operation timed out. It might be partially complete. Please check the logs."
 
   # Profiles Command Messages
   profiles_empty_msg: "ℹ️ No user profiles found in the database."

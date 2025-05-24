@@ -2,6 +2,12 @@
 
 **What Works**
 
+- Automated profile analysis via scheduled tasks:
+  - Daily scheduled profile_analysis task runs at 2 AM using gocron v2 scheduler
+  - Comprehensive timeout handling (5-minute operation timeout)
+  - Proper error handling and logging for scheduled analysis operations
+  - Automatic processing of unprocessed messages without manual intervention
+  - Removed manual /mrl_analyze command in favor of automated approach
 - Configuration loading and validation via Viper and go-playground/validator:
   - Improved validation using built-in validators instead of custom ones
   - Added comprehensive defaults for all configuration options
@@ -48,6 +54,7 @@
   - /mrl_edit_user command for user profile management
   - /mrl_profiles command for viewing all stored profiles
   - All protected with AdminOnly middleware
+  - Removed manual /mrl_analyze command as analysis is now automated
 - Security implementation:
   - Middleware-based protection of administrative commands
   - Proper validation of administrative request parameters
@@ -65,7 +72,7 @@
 - Runtime bot information retrieval (`GetMe`) and storage in config.
 - Core bot functionality (message handling, AI replies, image analysis, user profiling).
 - Database operations (storing/retrieving messages, users, profiles).
-- Scheduled tasks (SQL maintenance, profile generation).
+- Scheduled tasks (SQL maintenance at 3 AM, automated profile analysis at 2 AM).
 - Configuration loading and logging.
 - Telegram API integration.
 - AI integration with Gemini.
@@ -86,6 +93,7 @@
 **Current Status**
 
 - Core architecture and features are fully implemented with improved scheduler
+- Automated profile analysis now runs daily via scheduled tasks instead of manual commands
 - Configuration system refined with better validation and comprehensive defaults
 - Scheduler migration to gocron v2 is complete and functioning properly
 - Mention handler has been enhanced with improved image processing

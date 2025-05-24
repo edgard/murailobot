@@ -41,13 +41,6 @@ func RegisterAllCommands(deps HandlerDeps) map[string]RegisteredHandler {
 		MatchType:   tgbot.MatchTypeCommandStartOnly,
 		Middleware:  adminMiddleware,
 	}
-	handlers["/mrl_analyze"] = RegisteredHandler{
-		HandlerType: tgbot.HandlerTypeMessageText,
-		Pattern:     "mrl_analyze",
-		Handler:     NewAnalyzeHandler(deps),
-		MatchType:   tgbot.MatchTypeCommandStartOnly,
-		Middleware:  adminMiddleware,
-	}
 	handlers["/mrl_profiles"] = RegisteredHandler{
 		HandlerType: tgbot.HandlerTypeMessageText,
 		Pattern:     "mrl_profiles",

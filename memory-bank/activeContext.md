@@ -2,6 +2,7 @@
 
 **Current Work Focus**
 
+- Automated profile analysis implementation with scheduled tasks
 - Configuration system improvements and validation refinements
 - Scheduler library migration from cron to gocron v2 for improved job management
 - Enhanced mention handler with improved context handling and image processing
@@ -17,6 +18,14 @@
 
 **Recent Changes**
 
+- Automated profile analysis implementation:
+  - Created new scheduled profile_analysis task that runs daily at 2 AM
+  - Moved profile analysis logic from manual /mrl_analyze command to automated scheduler
+  - Implemented comprehensive timeout handling (5-minute timeout for entire operation)
+  - Added proper error handling and logging for scheduled analysis operations
+  - Removed manual /mrl_analyze command as profile analysis is now automated
+  - Updated configuration with profile_analysis task settings
+  - Cleaned up analyze-related message templates and configuration
 - Configuration system improvements:
   - Refined validation approach in configuration using built-in validators
   - Removed custom validators in favor of built-in ones from go-playground/validator
