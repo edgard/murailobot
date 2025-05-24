@@ -113,6 +113,10 @@ func LoadConfig(configPath string) (*Config, error) {
 			Schedule: "0 3 * * *",
 			Enabled:  true,
 		},
+		"profile_analysis": {
+			Schedule: "0 2 * * *",
+			Enabled:  true,
+		},
 	})
 
 	v.SetDefault("messages.start_welcome_msg", "Hello!. Mention me or use /help to see what I can do.")
