@@ -10,8 +10,8 @@ require (
 	github.com/jmoiron/sqlx v1.4.0
 	github.com/spf13/viper v1.20.1
 	golang.org/x/sync v0.14.0
-	google.golang.org/genai v1.5.0
-	modernc.org/sqlite v1.37.0
+	google.golang.org/genai v1.6.0
+	modernc.org/sqlite v1.37.1
 )
 
 require (
