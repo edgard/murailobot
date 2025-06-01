@@ -23,11 +23,11 @@ import (
 // Client defines the interface for AI operations used throughout the application.
 // It provides methods for generating replies, analyzing images, and creating user profiles.
 type Client interface {
-	GenerateReply(ctx context.Context, messages []*database.Message, botID int64, botUsername, botFirstName string, searchGrounding bool) (string, error)
+	GenerateReply(ctx context.Context, messages []*database.Message, botID int64, botUsername, botFirstName string) (string, error)
 
 	GenerateProfiles(ctx context.Context, messages []*database.Message, existingProfiles map[int64]*database.UserProfile, botID int64, botUsername, botFirstName string) (map[int64]*database.UserProfile, error)
 
-	GenerateImageAnalysis(ctx context.Context, messages []*database.Message, mimeType string, imageData []byte, botID int64, botUsername, botFirstName string, searchGrounding bool) (string, error)
+	GenerateImageAnalysis(ctx context.Context, messages []*database.Message, mimeType string, imageData []byte, botID int64, botUsername, botFirstName string) (string, error)
 }
 
 type sdkClient struct {
@@ -141,8 +141,8 @@ func (c *sdkClient) generateContentWithRetries(ctx context.Context, modelName st
 	return nil, err
 }
 
-func (c *sdkClient) GenerateReply(ctx context.Context, messages []*database.Message, botID int64, botUsername, botFirstName string, searchGrounding bool) (string, error) {
-	c.log.DebugContext(ctx, "Generating reply", "message_count", len(messages), "search_grounding", searchGrounding)
+func (c *sdkClient) GenerateReply(ctx context.Context, messages []*database.Message, botID int64, botUsername, botFirstName string) (string, error) {
+	c.log.DebugContext(ctx, "Generating reply", "message_count", len(messages))
 
 	var contents []*genai.Content
 	for _, m := range messages {
@@ -154,10 +154,8 @@ func (c *sdkClient) GenerateReply(ctx context.Context, messages []*database.Mess
 	}
 
 	copyCfg := *c.contentConfig
-	if searchGrounding {
-		copyCfg.Tools = append(copyCfg.Tools, &genai.Tool{GoogleSearch: &genai.GoogleSearch{}})
-	}
-
+	copyCfg.Tools = append(copyCfg.Tools, &genai.Tool{GoogleSearch: &genai.GoogleSearch{}})
+	copyCfg.Tools = append(copyCfg.Tools, &genai.Tool{URLContext: &genai.URLContext{}})
 	cfgWithHeader := c.prependBotHeader(&copyCfg, botUsername, botFirstName)
 
 	resp, err := c.generateContentWithRetries(ctx, c.defaultModelName, contents, cfgWithHeader)
@@ -290,9 +288,8 @@ func (c *sdkClient) GenerateImageAnalysis(
 	mimeType string,
 	imageData []byte,
 	botID int64, botUsername, botFirstName string,
-	searchGrounding bool,
 ) (string, error) {
-	c.log.DebugContext(ctx, "Generating image analysis", "image_size", len(imageData), "mime_type", mimeType, "message_count", len(messages), "search_grounding", searchGrounding)
+	c.log.DebugContext(ctx, "Generating image analysis", "image_size", len(imageData), "mime_type", mimeType, "message_count", len(messages))
 	if len(imageData) == 0 || mimeType == "" {
 		return "", fmt.Errorf("image data and MIME type are required for analysis")
 	}
@@ -309,9 +306,7 @@ func (c *sdkClient) GenerateImageAnalysis(
 	contents = append(contents, genai.NewContentFromParts([]*genai.Part{genai.NewPartFromBytes(imageData, mimeType)}, genai.RoleUser))
 
 	copyCfg := *c.contentConfig
-	if searchGrounding {
-		copyCfg.Tools = append(copyCfg.Tools, &genai.Tool{GoogleSearch: &genai.GoogleSearch{}})
-	}
+	copyCfg.Tools = nil
 	cfgWithHeader := c.prependBotHeader(&copyCfg, botUsername, botFirstName)
 
 	resp, err := c.generateContentWithRetries(ctx, c.defaultModelName, contents, cfgWithHeader)

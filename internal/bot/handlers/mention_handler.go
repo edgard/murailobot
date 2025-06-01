@@ -192,7 +192,6 @@ func (h mentionHandler) processTextMention(ctx context.Context, b *bot.Bot, chat
 				deps.Config.Telegram.BotInfo.ID,
 				deps.Config.Telegram.BotInfo.Username,
 				deps.Config.Telegram.BotInfo.FirstName,
-				true,
 			)
 		},
 	)
@@ -243,7 +242,6 @@ func (h mentionHandler) processImageMention(ctx context.Context, b *bot.Bot, cha
 				deps.Config.Telegram.BotInfo.ID,
 				deps.Config.Telegram.BotInfo.Username,
 				deps.Config.Telegram.BotInfo.FirstName,
-				true,
 			)
 		},
 	)
