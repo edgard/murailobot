@@ -9,9 +9,9 @@ require (
 	github.com/golang-migrate/migrate/v4 v4.18.3
 	github.com/jmoiron/sqlx v1.4.0
 	github.com/spf13/viper v1.20.1
-	golang.org/x/sync v0.14.0
-	google.golang.org/genai v1.8.0
-	modernc.org/sqlite v1.37.1
+	golang.org/x/sync v0.15.0
+	google.golang.org/genai v1.10.0
+	modernc.org/sqlite v1.38.0
 )
 
 require (
@@ -65,7 +65,7 @@ require (
 	google.golang.org/grpc v1.72.2 // indirect
 	google.golang.org/protobuf v1.36.6 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
-	modernc.org/libc v1.65.8 // indirect
+	modernc.org/libc v1.65.10 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.11.0 // indirect
 )
