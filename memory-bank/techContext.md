@@ -7,13 +7,13 @@
 **Key Libraries & Dependencies**
 
 - Telegram API: github.com/go-telegram/bot v1.15.0
-- Scheduler: github.com/go-co-op/gocron/v2 v2.16.1 (upgraded from older cron library)
+- Scheduler: github.com/go-co-op/gocron/v2 v2.16.2 (upgraded from older cron library)
 - Configuration: github.com/spf13/viper v1.20.1, go-playground/validator/v10 v10.26.0
-- Database: modernc.org/sqlite v1.37.0, github.com/jmoiron/sqlx v1.4.0
+- Database: modernc.org/sqlite v1.37.1, github.com/jmoiron/sqlx v1.4.0
 - Migrations: github.com/golang-migrate/migrate/v4 v4.18.3
 - Logging: Go `log/slog`
-- AI Client: google.golang.org/genai v1.2.0
-- Concurrency: golang.org/x/sync/errgroup v0.13.0
+- AI Client: google.golang.org/genai v1.8.0
+- Concurrency: golang.org/x/sync/errgroup v0.14.0
 
 **Development Setup**
 

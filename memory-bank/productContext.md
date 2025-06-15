@@ -4,6 +4,7 @@
 Provide AI-powered interactive experiences within Telegram group chats for general conversation, assistance, and community engagement. The bot listens for mentions, commands, and context to answer questions, facilitate discussions, and automate routine tasks.
 
 **Problems It Solves**
+
 - Reduces context switching by providing AI assistance directly in group chats.
 - Streamlines group discussions, knowledge sharing, and information retrieval.
 - Automates routine tasks such as reminders, summaries, and moderation suggestions.
@@ -11,7 +12,9 @@ Provide AI-powered interactive experiences within Telegram group chats for gener
 - Provides image analysis capabilities directly within group chat context.
 
 **User Experience Goals**
-- Intuitive command set (`/help`, `/info`, `/chat`, `/profile`) and mention handling.
+
+- Intuitive command set (`/start`, `/help`) and mention handling.
+- Administrative commands (`/mrl_reset`, `/mrl_profiles`, `/mrl_edit_user`) protected by proper access control.
 - Fast, context-aware responses powered by GenAI.
 - Reliable and consistent scheduled tasks for maintenance and user notifications.
 - Robust image analysis with helpful, context-aware descriptions.
@@ -31,6 +34,7 @@ Provide AI-powered interactive experiences within Telegram group chats for gener
   - Prevent resource leaks through proper context management
 
 **Feature Highlights**
+
 - Mention-based AI chat assistant for natural conversation flow.
 - Image analysis capabilities for shared photos.
 - Context-aware responses that consider recent conversation history.
@@ -39,6 +43,7 @@ Provide AI-powered interactive experiences within Telegram group chats for gener
 - Comprehensive error handling with user-friendly messages.
 
 **Technical Experience Goals**
+
 - Data consistency through proper transaction management
 - Resource efficiency through context-aware operations
 - Clean component lifecycle management with proper initialization and shutdown

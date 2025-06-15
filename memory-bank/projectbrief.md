@@ -6,6 +6,7 @@
 Provide AI-powered interactive experiences within Telegram group chats. The bot listens for messages or commands in group contexts and responds using a general-purpose AI client to answer questions, facilitate discussions, and automate routine tasks.
 
 **Core Requirements & Goals:**
+
 - Modular architecture with clear separation of concerns (config, logging, database, AI client, Telegram integration, handlers, scheduler).
 - Support for group chat contexts, including message routing and mention detection.
 - Image analysis capabilities for photos shared in group chats.
@@ -22,7 +23,9 @@ Provide AI-powered interactive experiences within Telegram group chats. The bot 
 - Graceful error handling and component lifecycle management
 
 **Success Criteria:**
-- Bot correctly responds in group chats when mentioned or when commands like `/help`, `/info`, or `/chat` are used.
+
+- Bot correctly responds in group chats when mentioned or when commands like `/start` and `/help` are used.
+- Administrative commands (`/mrl_reset`, `/mrl_profiles`, `/mrl_edit_user`) are properly protected and functional.
 - Successfully analyzes images shared in group chats with context-aware descriptions.
 - Scheduled tasks execute reliably using gocron v2 and report status properly.
 - Persistent storage of user preferences, chat settings, and message history.

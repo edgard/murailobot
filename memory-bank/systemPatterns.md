@@ -4,17 +4,22 @@
 
 - Entry point: `cmd/bot/main.go` initializes config, logger, DB, AI client, scheduler, handlers, tasks, retrieves bot info (`GetMe`) storing it in config, and starts the orchestrator.
 - Modular packages under `internal/`:
-  - `config`: Viper-based `LoadConfig` and validation
-  - `logger`: `NewLogger` using Go `slog`
-  - `database`: `NewDB`, migrations, models, `Store` interface + implementation
-  - `gemini`: AI client interface (`Client`) and SDK wrapper
-  - `telegram`: `NewTelegramBot` and `RegisterHandlers` for command routing
-  - `bot`: orchestrator `Run(ctx)` using `errgroup` and scheduler integration
+  - `config`: Viper-based `LoadConfig` and validation with comprehensive defaults
+  - `logger`: `NewLogger` using Go `slog` with configurable levels and formats
+  - `database`: `NewDB`, migrations, models, `Store` interface + implementation with transaction management
+  - `gemini`: AI client interface (`Client`) and SDK wrapper with timeout management
+  - `telegram`: `NewTelegramBot` and `RegisterHandlers` for command routing with middleware support
+  - `bot`: orchestrator `Run(ctx)` using `errgroup` and scheduler integration with graceful shutdown
 
 **Design Patterns & Practices**
 
 - Dependency Injection: interfaces (e.g., `Store`, `Client`) passed via `HandlerDeps`/`TaskDeps`.
 - Registry Pattern: centralized `registry.go` in handlers/tasks for dynamic command/task registration.
+- Current Command Set:
+  - Public Commands: `/start` (welcome), `/help` (usage information)
+  - Protected Admin Commands: `/mrl_reset` (database reset), `/mrl_profiles` (view all profiles), `/mrl_edit_user` (edit user profiles)
+  - Default Handler: Mention handler for AI interactions and image analysis
+- Middleware System: AdminOnly middleware protects sensitive operations based on admin_user_id configuration
 - Scheduler Architecture:
   - gocron v2 scheduler wrapped in custom `Scheduler` type
   - Time-based job scheduling with cron syntax
