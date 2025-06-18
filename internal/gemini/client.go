@@ -90,6 +90,19 @@ func NewClient(
 		},
 	}
 
+	// Set thinking budget based on enable_thinking config
+	if cfg.EnableThinking {
+		thinkingBudget := int32(-1) // Dynamic thinking
+		baseCfg.ThinkingConfig = &genai.ThinkingConfig{
+			ThinkingBudget: &thinkingBudget,
+		}
+	} else {
+		thinkingBudget := int32(0) // No thinking
+		baseCfg.ThinkingConfig = &genai.ThinkingConfig{
+			ThinkingBudget: &thinkingBudget,
+		}
+	}
+
 	if cfg.SystemInstruction != "" {
 		baseCfg.SystemInstruction = &genai.Content{Parts: []*genai.Part{{Text: cfg.SystemInstruction}}}
 	}

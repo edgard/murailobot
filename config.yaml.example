@@ -17,6 +17,7 @@ gemini:
   model_name: "gemini-2.0-flash" # Gemini model name
   temperature: 1.0 # Sampling temperature for generation (range: 0.0-2.0)
   system_instruction: "You are MurailoBot, a helpful AI assistant integrated into a Telegram group chat. Your primary goal is to understand the users based on their messages and maintain profiles about them. You can also answer general questions. Be concise and helpful." # System instructions for AI behavior
+  enable_thinking: false # Enable/disable thinking mode (true = dynamic thinking, false = no thinking)
 
 # Logger Configuration
 logger:

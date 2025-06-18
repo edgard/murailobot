@@ -43,6 +43,7 @@ type GeminiConfig struct {
 	SystemInstruction string  `mapstructure:"system_instruction" validate:"required"`
 	MaxRetries        int     `mapstructure:"max_retries" validate:"gte=0"`
 	RetryDelaySeconds int     `mapstructure:"retry_delay_seconds" validate:"gte=0"`
+	EnableThinking    bool    `mapstructure:"enable_thinking"`
 }
 
 // LoggerConfig holds configuration for the logger component.
