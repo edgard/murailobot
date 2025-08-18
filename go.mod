@@ -5,12 +5,12 @@ go 1.24.2
 require (
 	github.com/go-co-op/gocron/v2 v2.16.3
 	github.com/go-playground/validator/v10 v10.27.0
-	github.com/go-telegram/bot v1.16.0
+	github.com/go-telegram/bot v1.17.0
 	github.com/golang-migrate/migrate/v4 v4.18.3
 	github.com/jmoiron/sqlx v1.4.0
 	github.com/spf13/viper v1.20.1
 	golang.org/x/sync v0.16.0
-	google.golang.org/genai v1.18.0
+	google.golang.org/genai v1.20.0
 	modernc.org/sqlite v1.38.2
 )
 
