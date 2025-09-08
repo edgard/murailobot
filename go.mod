@@ -3,14 +3,14 @@ module github.com/edgard/murailobot
 go 1.24.2
 
 require (
-	github.com/go-co-op/gocron/v2 v2.16.3
+	github.com/go-co-op/gocron/v2 v2.16.5
 	github.com/go-playground/validator/v10 v10.27.0
-	github.com/go-telegram/bot v1.16.0
-	github.com/golang-migrate/migrate/v4 v4.18.3
+	github.com/go-telegram/bot v1.17.0
+	github.com/golang-migrate/migrate/v4 v4.19.0
 	github.com/jmoiron/sqlx v1.4.0
 	github.com/spf13/viper v1.20.1
-	golang.org/x/sync v0.16.0
-	google.golang.org/genai v1.18.0
+	golang.org/x/sync v0.17.0
+	google.golang.org/genai v1.23.0
 	modernc.org/sqlite v1.38.2
 )
 
@@ -54,7 +54,6 @@ require (
 	go.opentelemetry.io/otel v1.37.0 // indirect
 	go.opentelemetry.io/otel/metric v1.37.0 // indirect
 	go.opentelemetry.io/otel/trace v1.37.0 // indirect
-	go.uber.org/atomic v1.11.0 // indirect
 	golang.org/x/crypto v0.40.0 // indirect
 	golang.org/x/exp v0.0.0-20250718183923-645b1fa84792 // indirect
 	golang.org/x/net v0.42.0 // indirect
